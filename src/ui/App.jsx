@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isRunning, isStale } from "../domain/time.js";
 import {
-  currentSession, deleteSession, heartbeat, liveSessions, pauseSession, recoverSession,
-  restoreSession, resumeSession, sessionsFor, startSession, stopSession,
+  currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled, liveSessions,
+  pauseSession, recoverSession, restoreSession, resumeSession, sessionsFor,
+  startSession, stopSession,
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject } from "../domain/projects.js";
 import { CSS } from "./styles.js";
@@ -168,8 +169,10 @@ export default function App({ store = createStore() }) {
 
         {project ? (
           <ProjectView
-            project={project} sessions={sessionsFor(state, project.id)} current={current} now={now}
-            onStart={() => commit((s) => startSession(s, project, Date.now(), uid()))}
+            project={project} current={current} now={now}
+            sessions={sessionsFor(state, project.id)}
+            idleSessions={idleSessionsFor(state, project.id)}
+            onStart={(kind) => commit((s) => startSession(s, project, Date.now(), uid(), kind))}
             onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
             onResume={() => commit((s) => resumeSession(s, current.id, Date.now()))}
             onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
@@ -187,7 +190,9 @@ export default function App({ store = createStore() }) {
           />
         ) : (
           <ProjectsView
-            projects={state.projects} sessions={liveSessions(state.sessions)} now={now}
+            projects={state.projects}
+            sessions={liveSessions(state.sessions).filter(isBilled)}
+            now={now}
             onOpen={setOpenProjectId}
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
             onExport={exportBackup} onImport={importBackup}

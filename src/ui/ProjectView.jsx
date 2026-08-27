@@ -4,6 +4,7 @@ import {
   earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
 import { periodStart } from "../domain/goals.js";
+import { isIdle, KIND, utilisation } from "../domain/sessions.js";
 import { GoalBar } from "./parts.jsx";
 import Settings from "./Settings.jsx";
 
@@ -12,11 +13,12 @@ const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit",
 const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
 export default function ProjectView({
-  project, sessions, current, now,
+  project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const running = current && isRunning(current);
+  const idling = current ? isIdle(current) : false;
 
   const shownMs = current ? elapsedMs(current, now) : 0;
   const currency = current?.currency ?? project.currency;
@@ -28,6 +30,10 @@ export default function ProjectView({
   const totalCents = sessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
   const totalMs = sessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
+  const idleMs = idleSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
+  const idleCents = idleSessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
+  const share = utilisation(totalMs, idleMs);
+
   const { sessionGoal, overallGoal } = project;
   const periodSessions = overallGoal
     ? sessions.filter((s) => startedAt(s) >= periodStart(overallGoal.period, now))
@@ -35,11 +41,12 @@ export default function ProjectView({
   const periodCents = periodSessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
   const periodMs = periodSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
-  const ordered = [...sessions].sort((a, b) => startedAt(b) - startedAt(a));
+  // The ledger shows both kinds; the totals above keep them apart.
+  const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
 
   return (
     <>
-      <div className="face">
+      <div className={"face" + (idling ? " idle" : "")}>
         <div className="face-top">
           <div>
             <div className="plate-name">{project.name}</div>
@@ -48,8 +55,8 @@ export default function ProjectView({
               {current && current.rate !== project.currentRate && " · rate locked for this session"}
             </div>
           </div>
-          <span className={`state${running ? " on" : ""}`}>
-            {running ? "Running" : current ? "Paused" : "Stopped"}
+          <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
+            {running ? (idling ? "Idling" : "Running") : current ? "Paused" : "Stopped"}
           </span>
         </div>
 
@@ -58,10 +65,12 @@ export default function ProjectView({
           {tail !== null && <span className="money-tail">{tail}</span>}
         </div>
 
+        {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
+
         <div className="clock">
           <span className="clock-main">{formatDuration(shownMs)}</span>
           <span className="clock-note">
-            {current ? `started ${time(startedAt(current))}` : "meter is idle"}
+            {current ? `started ${time(startedAt(current))}` : "meter is stopped"}
           </span>
         </div>
 
@@ -86,20 +95,44 @@ export default function ProjectView({
         </div>
 
         <div className="controls">
-          {!current && <button className="btn primary" onClick={onStart}>Start the meter</button>}
+          {!current && (
+            <>
+              <button className="btn primary" onClick={() => onStart(KIND.BILLED)}>
+                Start the meter
+              </button>
+              <button className="btn ghost" onClick={() => onStart(KIND.IDLE)}>
+                Start idle
+              </button>
+            </>
+          )}
           {running && (
             <>
               <button className="btn ghost" onClick={onPause}>Pause</button>
-              <button className="btn primary" onClick={onStop}>Stop and save</button>
+              <button className="btn primary" onClick={onStop}>
+                {idling ? "Stop idling" : "Stop and save"}
+              </button>
             </>
           )}
           {current && !running && (
             <>
               <button className="btn primary" onClick={onResume}>Resume</button>
-              <button className="btn ghost" onClick={onStart}>New session</button>
+              <button className="btn ghost" onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED)}>
+                New session
+              </button>
             </>
           )}
         </div>
+
+        {/* Switching kind is always explicit. Auto-starting the other timer
+            would attribute time to the wrong bucket with no trace of why. */}
+        {running && (
+          <div className="controls">
+            <button className="btn ghost"
+                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE)}>
+              {idling ? "Back to work" : "Switch to idle"}
+            </button>
+          </div>
+        )}
       </div>
 
       {(sessionGoal || overallGoal) && (
@@ -124,6 +157,33 @@ export default function ProjectView({
         </div>
       )}
 
+      {share !== null && idleMs > 0 && (
+        <div className="sec">
+          <div className="sec-head"><span className="eyebrow">Time at the desk</span></div>
+          <div className="panel">
+            <div className="util">
+              <span className="eyebrow">Billed</span>
+              <span className="util-pct">{Math.round(share * 100)}%</span>
+            </div>
+            <div className="split">
+              <div className="split-billed" style={{ width: `${share * 100}%` }} />
+              <div className="split-idle" style={{ width: `${(1 - share) * 100}%` }} />
+            </div>
+            <div className="split-legend">
+              <span className="legend-item">
+                <span className="swatch" style={{ background: "var(--jade)" }} />
+                {formatShortDuration(totalMs)} billed
+              </span>
+              <span className="legend-item">
+                <span className="swatch" style={{ background: "var(--amber)" }} />
+                {formatShortDuration(idleMs)} idle ·{" "}
+                {formatMoney(idleCents, project.currency)} unearned
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">Ledger</span>
@@ -135,10 +195,11 @@ export default function ProjectView({
           {ordered.length === 0 ? (
             <div className="empty">No sessions yet. Start the meter and this fills in.</div>
           ) : ordered.map((s) => (
-            <div className="row" key={s.id}>
+            <div className={"row" + (isIdle(s) ? " is-idle" : "")} key={s.id}>
               <div>
                 <div className="row-when">
                   {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
+                  {isIdle(s) && <span className="tag">Idle</span>}
                 </div>
                 <div className="row-meta">
                   {formatDuration(elapsedMs(s, now))} at{" "}
