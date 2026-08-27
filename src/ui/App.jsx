@@ -20,7 +20,14 @@ const TOAST_MS = 7_000;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const EMPTY = { projects: [], sessions: [] };
 
-export default function App({ store = createStore() }) {
+export default function App({ store: injectedStore }) {
+  // Created ONCE. A default parameter (`store = createStore()`) is evaluated on
+  // every render, which made this a new object every time — so the load effect's
+  // dependency changed on every render, re-ran, called setState with a freshly
+  // parsed object, and re-rendered. A runaway loop that also re-armed the
+  // startup banners, so dismissing one appeared to do nothing.
+  const [store] = useState(() => injectedStore ?? createStore());
+
   const [state, setState] = useState(EMPTY);
   const [ready, setReady] = useState(false);
   const [openProjectId, setOpenProjectId] = useState(null);
@@ -48,7 +55,14 @@ export default function App({ store = createStore() }) {
     toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
 
+  const booted = useRef(false);
+
+  /** Startup only. Guarded independently of the dependency array so that no
+   *  future change to these deps can resurrect the startup banners after the
+   *  user has already answered them. */
   useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
     let alive = true;
     store.load().then((loaded) => {
       if (!alive) return;

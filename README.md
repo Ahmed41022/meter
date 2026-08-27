@@ -108,6 +108,7 @@ Cases worth knowing about:
 - A paused session stays the current session; a stopped one doesn't.
 - Changing a project's rate leaves recorded and running sessions alone.
 - An overnight crash bills 2 hours to the last heartbeat, not the 11-hour gap.
+- Startup reads storage exactly once, and rendering never reads or writes it.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
 - Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.

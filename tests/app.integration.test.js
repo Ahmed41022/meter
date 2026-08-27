@@ -11,17 +11,47 @@ import { JSDOM } from "jsdom";
 const DIST = new URL("../dist/meter.html", import.meta.url);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Instruments localStorage before the bundle runs, so tests can assert that
+ * the app touches storage a bounded number of times. Reads are the tell for a
+ * render loop: the store is meant to load exactly once at startup.
+ */
+// Patched on the prototype: jsdom's Storage is a Proxy, so assigning
+// getItem directly on the instance is silently ignored.
+const COUNTER = `<script>
+  window.__reads = 0; window.__writes = 0;
+  const g = Storage.prototype.getItem, t = Storage.prototype.setItem;
+  Storage.prototype.getItem = function (...a) {
+    if (a[0] === 'meter:v1') window.__reads++;
+    return g.apply(this, a);
+  };
+  Storage.prototype.setItem = function (...a) {
+    if (a[0] === 'meter:v1') window.__writes++;
+    return t.apply(this, a);
+  };
+</script>`;
+
 const boot = async (seed) => {
   let html = readFileSync(DIST, "utf8");
-  if (seed) {
-    html = html.replace(
-      '<div id="root"></div>',
-      `<div id="root"></div><script>localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});</script>`
-    );
-  }
+  const preamble = seed
+    ? `<script>localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});</script>${COUNTER}`
+    : COUNTER;
+  html = html.replace('<div id="root"></div>', `<div id="root"></div>${preamble}`);
   const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
   await wait(700);
   return dom;
+};
+
+const runningSeed = (lastTickAgoMs) => {
+  const now = Date.now(), HOUR = 3_600_000;
+  return {
+    projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP",
+                 createdAt: now - HOUR, sessionGoal: null, overallGoal: null }],
+    sessions: [{ id: "s1", projectId: "p1", kind: "billed", rate: 450, currency: "EGP",
+                 createdAt: now - HOUR,
+                 segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now - lastTickAgoMs }],
+                 closedAt: null, deletedAt: null }],
+  };
 };
 
 const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test(b.textContent));
@@ -308,5 +338,82 @@ describe("idle time in the real UI", () => {
     await wait(200);
     expect(d.querySelector(".row.is-idle")).toBeNull();
     expect(d.querySelector(".util-pct")).toBeNull(); // no idle time, no split shown
+  }, 20_000);
+});
+
+describe("startup is bounded", () => {
+  /**
+   * Regression: `store` was a default parameter, so a new store object was
+   * built on every render. The load effect depended on it, re-ran every
+   * render, called setState with a freshly parsed object, and re-rendered —
+   * a runaway loop. It burned CPU on any launch with saved data, and because
+   * each pass re-ran the startup checks, dismissing a startup banner appeared
+   * to do nothing.
+   */
+  it("reads the store once, not once per render", async () => {
+    const dom = await boot(runningSeed(5_000));
+    const { window } = dom;
+    expect(window.__reads).toBe(1);
+
+    const before = window.__reads;
+    await wait(1200); // several render ticks while the meter runs
+    expect(window.__reads - before).toBe(0);
+  }, 20_000);
+
+  it("does not write to storage while merely rendering", async () => {
+    const dom = await boot(runningSeed(5_000));
+    const { window } = dom;
+    const before = window.__writes;
+    await wait(1200);
+    expect(window.__writes - before).toBe(0);
+  }, 20_000);
+
+  it("keeps rendering the live figures while it sits there", async () => {
+    // The counterpart to the two above: bounded storage access must not have
+    // been achieved by freezing the render loop.
+    const dom = await boot(runningSeed(5_000));
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(200);
+    const first = d.querySelector(".clock-main").textContent;
+    await wait(1300);
+    expect(d.querySelector(".clock-main").textContent).not.toBe(first);
+  }, 20_000);
+});
+
+describe("the tab-conflict notice", () => {
+  it("appears when a session was ticking moments ago", async () => {
+    const dom = await boot(runningSeed(5_000));
+    const banner = dom.window.document.querySelector(".banner");
+    expect(banner).not.toBeNull();
+    expect(banner.textContent).toContain("Already running");
+  }, 20_000);
+
+  it("stays dismissed after 'This tab only' — and does not come back", async () => {
+    const dom = await boot(runningSeed(5_000));
+    const d = dom.window.document;
+    btn(d, /This tab only/i).click();
+    await wait(200);
+    expect(d.querySelector(".banner")).toBeNull();
+
+    // The bug re-armed it on the very next render. Give it many.
+    await wait(1500);
+    expect(d.querySelector(".banner")).toBeNull();
+  }, 20_000);
+
+  it("leaves the running session alone when dismissed", async () => {
+    const dom = await boot(runningSeed(5_000));
+    const { window } = dom, d = window.document;
+    btn(d, /This tab only/i).click();
+    await wait(200);
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].closedAt).toBeNull();
+    expect(saved.sessions[0].segments[0].endedAt).toBeNull();
+  }, 20_000);
+
+  it("shows crash recovery instead when the heartbeat is stale", async () => {
+    const dom = await boot(runningSeed(9 * 3_600_000));
+    const banner = dom.window.document.querySelector(".banner");
+    expect(banner.textContent).toContain("Meter left running");
   }, 20_000);
 });
