@@ -22,6 +22,8 @@ Most of the design here exists to avoid a specific way of getting the numbers wr
 
 **Crash recovery bills the last heartbeat.** A running session writes a `lastTick` every 60 seconds. If the app reopens and finds a session that claims to be running but stopped checking in, it offers to close it at the last heartbeat rather than silently billing the eleven hours you were asleep.
 
+**Idle time shares the state machine but never the total.** Time at the desk that wasn't worked is a session with `kind: 'idle'` — same segments, same pause/resume, same crash recovery. What keeps it out of your earnings is the accessor shape: `sessionsFor()` returns billed sessions only, and idle time has to be asked for by name. A caller that forgets about kind under-reports idle time, which is harmless, rather than inflating income, which is not. Starting either timer stops the other one, on any project, because one person can't bill two things at once.
+
 **Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
 
 **Timestamps are UTC epoch integers; only display is localised.** Goal periods bucket in local time, because "this week" means the user's week — but the boundary is derived from a `Date` rather than wall-clock strings, so it stays correct across a DST transition.
@@ -35,7 +37,7 @@ src/
   domain/        Pure rules. No React, no storage, no clock.
     time.js        elapsed, running vs paused vs stopped, staleness
     money.js       earnings in minor units, formatting
-    sessions.js    start / pause / resume / stop / recover / delete
+    sessions.js    start / pause / resume / stop / recover / delete, billed vs idle
     projects.js    create, edit, remove, validate
     goals.js       period boundaries, progress
   storage/
@@ -107,6 +109,9 @@ Cases worth knowing about:
 - Changing a project's rate leaves recorded and running sessions alone.
 - An overnight crash bills 2 hours to the last heartbeat, not the 11-hour gap.
 - Weeks start Monday at local midnight, including across a DST shift.
+- Idle time never reaches an earnings total, a goal, or the cross-project headline.
+- Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
+- A session saved before idle tracking existed still counts as billed.
 
 ---
 
@@ -116,11 +121,11 @@ Everything lives in browser storage under `meter:v1`, as:
 
 ```js
 Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal }
-Session  { id, projectId, rate, currency, createdAt, segments[], closedAt, deletedAt }
+Session  { id, projectId, kind, rate, currency, createdAt, segments[], closedAt, deletedAt }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-The key is versioned so a future schema change can migrate rather than clobber.
+`kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
@@ -131,6 +136,7 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 - **No session editing.** You can't correct a session's times after the fact. Decide whether an edit is a mutation or an append-only correction before adding it — it changes the schema.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.
+- **Idle time isn't in goals.** Deliberate — a money goal fed by unbilled time is meaningless. If it belongs in goals later, the right shape is a utilisation target, not a second money target.
 - **Fonts load from Google Fonts.** First run with no internet falls back to system faces. Layout is unaffected.
 
 ## License

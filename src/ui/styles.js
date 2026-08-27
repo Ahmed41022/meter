@@ -8,6 +8,7 @@ export const CSS = `
   --ink:#101613; --ink-2:#3C4742; --muted:#75827B; --line:#E2E7E0; --line-2:#EDF0EA;
   --jade:#0F7B5A; --jade-hi:#12946B; --jade-soft:#DCEFE5;
   --flag:#C2493C; --flag-soft:#FBEAE7;
+  --amber:#A8762A; --amber-soft:#F4EBD8; --amber-line:#E3D3B0;
   --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:'DM Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
   --shadow:0 1px 2px rgba(16,22,19,.05), 0 10px 30px rgba(16,22,19,.06);
@@ -37,6 +38,32 @@ export const CSS = `
 .state{font-weight:600;text-transform:uppercase;letter-spacing:.09em;font-size:10px;
   padding:6px 11px;border-radius:999px;background:var(--line-2);color:var(--muted);white-space:nowrap;}
 .state.on{background:var(--jade-soft);color:var(--jade);}
+.state.idling{background:var(--amber-soft);color:var(--amber);}
+
+/* Idle mode repaints the whole face. The money figure sits in the same slot
+   but means the opposite thing, so it must never look the same. */
+.face.idle{background:#FCFAF5;border-color:var(--amber-line);}
+.face.idle .money-head{color:var(--amber);}
+.face.idle .money-tail{color:var(--amber);opacity:.55;}
+.face.idle .tick.filled{background:#EBDCBE;}
+.face.idle .tick.head{background:var(--amber);}
+.face.idle .btn.primary{background:var(--amber);border-color:var(--amber);}
+.face.idle .btn.primary:hover{background:#BE8930;border-color:#BE8930;}
+.money-label{margin-top:9px;font-size:12px;color:var(--amber);font-weight:600;}
+
+/* utilisation */
+.util{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px;}
+.util-pct{font-family:var(--mono);font-size:20px;font-variant-numeric:tabular-nums;}
+.split{display:flex;height:7px;border-radius:999px;overflow:hidden;background:var(--line-2);}
+.split-billed{background:var(--jade);}
+.split-idle{background:var(--amber);}
+.split-legend{display:flex;justify-content:space-between;margin-top:9px;gap:12px;}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
+.swatch{width:9px;height:9px;border-radius:3px;flex:none;}
+.row.is-idle .row-amt{color:var(--amber);}
+.tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--amber-soft);
+  color:var(--amber);margin-left:8px;vertical-align:1px;}
 
 .money{display:flex;align-items:baseline;gap:2px;color:var(--ink);line-height:.92;}
 .money-head{font-family:var(--mono);font-weight:500;font-size:clamp(38px,11vw,62px);

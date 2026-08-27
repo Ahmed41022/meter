@@ -187,3 +187,126 @@ describe("crash recovery in the real UI", () => {
     expect(saved.sessions[0].closedAt).toBe(lastTick);
   }, 20_000);
 });
+
+describe("idle time in the real UI", () => {
+  const makeProject = async (dom, rate = "450") => {
+    const { window } = dom, d = window.document;
+    btn(d, /New project/i).click();
+    await wait(120);
+    const [name, r] = d.querySelectorAll("input");
+    setValue(window, name, "Acme");
+    setValue(window, r, rate);
+    btn(d, /Add project/i).click();
+    await wait(180);
+    d.querySelector(".card").click();
+    await wait(150);
+  };
+
+  it("repaints the face so idle can never be mistaken for earnings", async () => {
+    const dom = await boot();
+    const d = dom.window.document;
+    await makeProject(dom);
+
+    btn(d, /Start idle/i).click();
+    await wait(1200);
+    expect(d.querySelector(".face").className).toContain("idle");
+    expect(d.querySelector(".state").textContent.trim()).toBe("Idling");
+    expect(d.querySelector(".money-label").textContent).toMatch(/not billed/i);
+  }, 20_000);
+
+  it("keeps idle money out of the grand total", async () => {
+    const dom = await boot();
+    const { window } = dom, d = window.document;
+    await makeProject(dom);
+
+    btn(d, /Start idle/i).click();
+    await wait(1300);
+    btn(d, /Stop idling/i).click();
+    await wait(200);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].kind).toBe("idle");
+
+    btn(d, /All projects/i).click();
+    await wait(200);
+    // One idle second recorded, zero billed: the headline total must be empty.
+    expect(d.querySelector(".grand-amt").textContent.trim()).toBe("—");
+  }, 20_000);
+
+  it("shows the idle row tagged in the ledger", async () => {
+    const dom = await boot();
+    const d = dom.window.document;
+    await makeProject(dom);
+    btn(d, /Start idle/i).click();
+    await wait(1200);
+    btn(d, /Stop idling/i).click();
+    await wait(200);
+    expect(d.querySelector(".row.is-idle")).not.toBeNull();
+    expect(d.querySelector(".tag").textContent.trim()).toBe("Idle");
+  }, 20_000);
+
+  it("stops the billed meter when idle starts, so wall-clock time is never double counted", async () => {
+    const dom = await boot();
+    const { window } = dom, d = window.document;
+    await makeProject(dom);
+
+    btn(d, /Start the meter/i).click();
+    await wait(1200);
+    btn(d, /Switch to idle/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".state").textContent.trim()).toBe("Idling");
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    const open = saved.sessions.filter((s) => !s.closedAt);
+    expect(open).toHaveLength(1);
+    expect(open[0].kind).toBe("idle");
+    expect(saved.sessions.find((s) => s.kind === "billed").closedAt).toBeTruthy();
+  }, 20_000);
+
+  it("reports the billable share of desk time", async () => {
+    const now = Date.now();
+    const HOUR = 3_600_000;
+    const base = { projectId: "p1", currency: "EGP", rate: 450, deletedAt: null };
+    const dom = await boot({
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP",
+                   createdAt: now - 9 * HOUR, sessionGoal: null, overallGoal: null }],
+      sessions: [
+        { ...base, id: "s1", kind: "billed", createdAt: now - 9 * HOUR,
+          segments: [{ startedAt: now - 9 * HOUR, endedAt: now - 3 * HOUR }],
+          closedAt: now - 3 * HOUR },
+        { ...base, id: "i1", kind: "idle", createdAt: now - 3 * HOUR,
+          segments: [{ startedAt: now - 3 * HOUR, endedAt: now - 1 * HOUR }],
+          closedAt: now - 1 * HOUR },
+      ],
+    });
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(200);
+
+    expect(d.querySelector(".util-pct").textContent.trim()).toBe("75%");
+    const legend = d.querySelector(".split-legend").textContent;
+    expect(legend).toContain("6h 00m billed");
+    expect(legend).toContain("2h 00m idle");
+    // 2 idle hours at 450 = 900 unearned
+    expect(legend).toMatch(/900\.00/);
+  }, 20_000);
+
+  it("treats a session saved before idle existed as billed", async () => {
+    const now = Date.now();
+    const HOUR = 3_600_000;
+    const dom = await boot({
+      projects: [{ id: "p1", name: "Legacy", currentRate: 450, currency: "EGP",
+                   createdAt: now - 2 * HOUR, sessionGoal: null, overallGoal: null }],
+      sessions: [{ id: "old", projectId: "p1", rate: 450, currency: "EGP", // no `kind`
+                   createdAt: now - 2 * HOUR,
+                   segments: [{ startedAt: now - 2 * HOUR, endedAt: now - HOUR }],
+                   closedAt: now - HOUR, deletedAt: null }],
+    });
+    const d = dom.window.document;
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
+    d.querySelector(".card").click();
+    await wait(200);
+    expect(d.querySelector(".row.is-idle")).toBeNull();
+    expect(d.querySelector(".util-pct")).toBeNull(); // no idle time, no split shown
+  }, 20_000);
+});

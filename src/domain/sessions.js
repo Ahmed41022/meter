@@ -1,6 +1,19 @@
 import { isOpen, isRunning, lastActivityAt } from "./time.js";
 
 /**
+ * A session is either billable work or time at the desk that wasn't worked.
+ * Both use the same state machine — segments, pause/resume, rate snapshot,
+ * crash recovery — they differ only in which total they land in.
+ */
+export const KIND = { BILLED: "billed", IDLE: "idle" };
+
+/** Sessions written before idle tracking existed have no `kind`. That absence
+ *  is unambiguous, so it reads as billed rather than needing a schema bump. */
+export const kindOf = (session) => session.kind ?? KIND.BILLED;
+export const isBilled = (session) => kindOf(session) === KIND.BILLED;
+export const isIdle = (session) => kindOf(session) === KIND.IDLE;
+
+/**
  * Pure state transitions. Every one takes (state, ..., now) and returns a new
  * state. No Date.now(), no random IDs, no storage — so every rule below can be
  * asserted in a test without mocking the clock.
@@ -17,28 +30,47 @@ const closeOpenSegments = (session, at) => ({
 
 export const liveSessions = (sessions) => sessions.filter((s) => !s.deletedAt);
 
-export const sessionsFor = (state, projectId) =>
+/** Every live session on a project, both kinds. For the ledger. */
+export const allSessionsFor = (state, projectId) =>
   liveSessions(state.sessions).filter((s) => s.projectId === projectId);
 
-/** The session the user hasn't stopped yet — running or paused. */
+/**
+ * Billable sessions only — this is deliberately the DEFAULT accessor.
+ * If a caller forgets to think about kind, it under-reports idle time
+ * (harmless) instead of inflating earnings (the expensive failure).
+ * Idle time must always be asked for by name.
+ */
+export const sessionsFor = (state, projectId) =>
+  allSessionsFor(state, projectId).filter(isBilled);
+
+export const idleSessionsFor = (state, projectId) =>
+  allSessionsFor(state, projectId).filter(isIdle);
+
+/** The session the user hasn't stopped yet, of either kind. */
 export const currentSession = (state, projectId) =>
-  sessionsFor(state, projectId)
+  allSessionsFor(state, projectId)
     .filter(isOpen)
     .sort((a, b) => b.createdAt - a.createdAt)[0] || null;
 
+/** Share of desk time that was billable, 0..1. Null when nothing is recorded,
+ *  because 0% and "no data" mean very different things. */
+export const utilisation = (billedMs, idleMs) => {
+  const total = billedMs + idleMs;
+  return total > 0 ? billedMs / total : null;
+};
+
 /**
- * Starting a session closes anything still open on that project. Without this
- * a project can accumulate several "open" sessions and the UI silently picks
- * one, which is how double-billing happens.
+ * Starting a session closes EVERY other open session, on any project, of
+ * either kind. One person cannot be billing two projects at once, and cannot
+ * be working and idle at once — two live meters double-count wall-clock time.
  *
  * The rate is SNAPSHOT here. Later edits to the project rate must never reach
- * a session already recorded.
+ * a session already recorded, and idle time is valued at the rate that was
+ * current when it happened.
  */
-export const startSession = (state, project, now, id) => {
+export const startSession = (state, project, now, id, kind = KIND.BILLED) => {
   const closed = state.sessions.map((s) =>
-    s.projectId === project.id && !s.deletedAt && isOpen(s)
-      ? { ...closeOpenSegments(s, now), closedAt: now }
-      : s
+    !s.deletedAt && isOpen(s) ? { ...closeOpenSegments(s, now), closedAt: now } : s
   );
   return {
     ...state,
@@ -47,6 +79,7 @@ export const startSession = (state, project, now, id) => {
       {
         id,
         projectId: project.id,
+        kind,
         rate: project.currentRate,
         currency: project.currency,
         createdAt: now,
