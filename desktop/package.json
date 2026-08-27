@@ -1,0 +1,7 @@
+{
+  "name": "meter",
+  "productName": "Meter",
+  "version": "1.0.0",
+  "description": "Hourly earnings timer",
+  "main": "main.js"
+}
