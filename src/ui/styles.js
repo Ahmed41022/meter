@@ -90,6 +90,16 @@ export const CSS = `
 .row.sel{background:var(--jade-soft);}
 .row-check{width:18px;height:18px;accent-color:var(--jade);cursor:pointer;flex:none;}
 .row.pick{grid-template-columns:auto 1fr auto auto;}
+.preview{margin-top:16px;padding:14px 15px;border-radius:10px;background:var(--card);
+  border:1px solid var(--line);}
+.preview-line{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:7px;}
+.preview-now{font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums;
+  color:var(--jade);}
+.preview-was{font-family:var(--mono);font-size:12.5px;color:var(--muted);
+  text-decoration:line-through;}
+.edited{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--line-2);
+  color:var(--muted);margin-left:8px;vertical-align:1px;}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 .linkish:hover{color:var(--jade-hi);}

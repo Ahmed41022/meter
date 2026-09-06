@@ -152,3 +152,52 @@ export const assignTaskToMany = (state, sessionIds, taskId) => {
 
 export const assignTask = (state, sessionId, taskId) =>
   assignTaskToMany(state, [sessionId], taskId);
+
+/**
+ * Correct a finished session's start and end.
+ *
+ * Immutability was there to stop a record drifting by accident, but a session
+ * you forgot to stop is already wrong, and a wrong number you cannot fix is
+ * worse than one you can. What deserves protecting is not that the figure
+ * never moves — it's that you can always see what the meter actually recorded.
+ * So a correction keeps the original segments alongside the new ones rather
+ * than overwriting them, and only the FIRST correction captures it: edit twice
+ * and `original` still holds what was measured, not your previous guess.
+ *
+ * Pause structure is preserved rather than collapsed. Collapsing a session
+ * with a four-hour break into one start→end block would silently bill the
+ * break, which is the exact failure this app is built to avoid.
+ */
+export const correctSession = (state, sessionId, { startedAt, endedAt }, now) =>
+  mapSessions(state, (s) => {
+    if (s.id !== sessionId || s.deletedAt || isOpen(s)) return s;
+
+    const start = Math.min(startedAt, endedAt);
+    const end = Math.max(startedAt, endedAt);
+    const ordered = [...s.segments].sort((a, b) => a.startedAt - b.startedAt);
+
+    const rebuilt = ordered
+      .map((seg, i) => ({
+        ...seg,
+        startedAt: i === 0 ? start : Math.max(seg.startedAt, start),
+        endedAt: i === ordered.length - 1 ? end : Math.min(seg.endedAt ?? end, end),
+      }))
+      .filter((seg) => seg.endedAt > seg.startedAt);
+
+    return {
+      ...s,
+      segments: rebuilt.length ? rebuilt : [{ startedAt: start, endedAt: end }],
+      closedAt: end,
+      original: s.original ?? { segments: s.segments, closedAt: s.closedAt, correctedAt: now },
+    };
+  });
+
+export const wasCorrected = (session) => !!session.original;
+
+/** Put back exactly what the meter recorded. */
+export const revertCorrection = (state, sessionId) =>
+  mapSessions(state, (s) => {
+    if (s.id !== sessionId || !s.original) return s;
+    const { original, ...rest } = s; // destructured to drop the key entirely
+    return { ...rest, segments: original.segments, closedAt: original.closedAt };
+  });

@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { elapsedMs, isRunning, startedAt } from "../domain/time.js";
+import { elapsedMs, isOpen, isRunning, startedAt } from "../domain/time.js";
 import {
   earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
 import { periodStart } from "../domain/goals.js";
-import { isIdle, KIND, utilisation } from "../domain/sessions.js";
+import { isIdle, KIND, utilisation, wasCorrected } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
 } from "../domain/tasks.js";
 import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
 import TaskEditor from "./TaskEditor.jsx";
+import SessionEditor from "./SessionEditor.jsx";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
  *  the per-task figures stay reachable without a long scroll. */
@@ -25,7 +26,7 @@ const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
-  onAssign, onSaveTask, onDeleteTask,
+  onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
@@ -34,6 +35,7 @@ export default function ProjectView({
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
   const [bulkPrompt, setBulkPrompt] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [editingSession, setEditingSession] = useState(null);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
@@ -325,6 +327,18 @@ export default function ProjectView({
           </div>
         )}
 
+        {editingSession && (
+          <div style={{ marginBottom: 12 }}>
+            <SessionEditor
+              session={[...sessions, ...idleSessions].find((x) => x.id === editingSession)}
+              project={project}
+              onCancel={() => setEditingSession(null)}
+              onSave={(window_) => { onCorrect(editingSession, window_); setEditingSession(null); }}
+              onRevert={() => { onRevertCorrection(editingSession); setEditingSession(null); }}
+            />
+          </div>
+        )}
+
         {showLedger && (
         <div className="panel">
           {visible.length === 0 ? (
@@ -341,6 +355,13 @@ export default function ProjectView({
                 <div className="row-when">
                   {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
                   {isIdle(s) && <span className="tag">Idle</span>}
+                  {wasCorrected(s) && <span className="edited">Edited</span>}
+                  {!isOpen(s) && (
+                    <>
+                      {" "}
+                      <button className="linkish" onClick={() => setEditingSession(s.id)}>edit</button>
+                    </>
+                  )}
                 </div>
                 <div className="row-meta">
                   {s.taskId ? `${taskLabel(project, s.taskId)} · ` : "No task · "}
