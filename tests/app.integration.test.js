@@ -796,3 +796,154 @@ describe("re-filing old sessions", () => {
     expect(saved.sessions[0].closedAt).toBeNull(); // still running
   }, 30_000);
 });
+
+describe("managing tasks", () => {
+  const HOUR = 3_600_000;
+  const seed = ({ rate = null } = {}) => {
+    const now = Date.now();
+    return {
+      projects: [{ id: "p1", name: "Acme", currentRate: 100, currency: "USD",
+                   createdAt: now - 9 * HOUR, sessionGoal: null, overallGoal: null,
+                   tasks: [{ id: "t1", label: "1234", createdAt: now - 9 * HOUR, rate },
+                           { id: "t2", label: "5678", createdAt: now - 9 * HOUR, rate: null }] }],
+      sessions: [
+        { id: "s1", projectId: "p1", kind: "billed", taskId: "t1", rate: 100, currency: "USD",
+          createdAt: now - 9 * HOUR,
+          segments: [{ startedAt: now - 9 * HOUR, endedAt: now - 7 * HOUR }],
+          closedAt: now - 7 * HOUR, deletedAt: null },
+        { id: "s2", projectId: "p1", kind: "billed", taskId: "t2", rate: 100, currency: "USD",
+          createdAt: now - 7 * HOUR,
+          segments: [{ startedAt: now - 7 * HOUR, endedAt: now - 6 * HOUR }],
+          closedAt: now - 6 * HOUR, deletedAt: null },
+      ],
+    };
+  };
+  const open = async (dom) => {
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    return d;
+  };
+  const editTask = async (d, label) => {
+    const row = [...d.querySelectorAll(".trow")].find((r) => r.textContent.includes(label));
+    [...row.querySelectorAll("button")].find((b) => b.textContent === "edit").click();
+    await wait(200);
+  };
+
+  it("renames a task everywhere at once", async () => {
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    await editTask(d, "1234");
+
+    const [name] = d.querySelectorAll(".prompt input");
+    setValue(window, name, "PR review");
+    btn(d, /^Save$/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".trow-label").textContent).toBe("PR review");
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks.find((t) => t.id === "t1").label).toBe("PR review");
+    // Sessions hold the id, so nothing about them had to change.
+    expect(saved.sessions[0].taskId).toBe("t1");
+  }, 30_000);
+
+  it("reprices finished work when the paid rate turns out lower", async () => {
+    // 2h recorded at $100. The task actually pays $90.
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    const amount = (label) => [...d.querySelectorAll(".trow")]
+      .find((r) => r.textContent.includes(label)).querySelector(".trow-amt").textContent;
+    expect(amount("1234")).toMatch(/200\.00/);
+
+    await editTask(d, "1234");
+    const [, rate] = d.querySelectorAll(".prompt input");
+    setValue(window, rate, "90");
+    btn(d, /^Save$/i).click();
+    await wait(300);
+
+    expect(amount("1234")).toMatch(/180\.00/); // 2h at 90
+    expect(amount("5678")).toMatch(/100\.00/); // untouched
+  }, 30_000);
+
+  it("keeps the recorded hours and the original snapshot intact when repricing", async () => {
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    const before = JSON.parse(window.localStorage.getItem("meter:v1")).sessions[0];
+
+    await editTask(d, "1234");
+    setValue(window, d.querySelectorAll(".prompt input")[1], "90");
+    btn(d, /^Save$/i).click();
+    await wait(300);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    const after = saved.sessions.find((s) => s.id === before.id);
+    expect(after.segments).toEqual(before.segments);
+    expect(after.rate).toBe(100); // the snapshot is the audit trail
+    expect(saved.projects[0].tasks.find((t) => t.id === "t1").rate).toBe(90);
+  }, 30_000);
+
+  it("marks a repriced session in the ledger", async () => {
+    const dom = await boot(seed({ rate: 90 }));
+    const d = await open(dom);
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    const rows = [...d.querySelectorAll(".row-meta")].map((r) => r.textContent);
+    expect(rows.find((r) => r.includes("1234"))).toContain("task rate");
+    expect(rows.find((r) => r.includes("5678"))).not.toContain("task rate");
+  }, 30_000);
+
+  it("clears the override and returns to the recorded rate", async () => {
+    const dom = await boot(seed({ rate: 90 }));
+    const { window } = dom;
+    const d = await open(dom);
+    await editTask(d, "1234");
+    setValue(window, d.querySelectorAll(".prompt input")[1], "");
+    btn(d, /^Save$/i).click();
+    await wait(300);
+    expect([...d.querySelectorAll(".trow")]
+      .find((r) => r.textContent.includes("1234")).querySelector(".trow-amt").textContent)
+      .toMatch(/200\.00/);
+  }, 30_000);
+
+  it("warns how many sessions a delete would unfile, then unfiles them", async () => {
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    await editTask(d, "1234");
+
+    btn(d, /^Delete$/i).click();
+    await wait(200);
+    expect(d.querySelector(".prompt").textContent).toContain("1 session");
+
+    btn(d, /Yes, delete it/i).click();
+    await wait(350);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks.map((t) => t.id)).toEqual(["t2"]);
+    // The hours survive; only the filing changed.
+    const orphan = saved.sessions.find((s) => s.id === "s1");
+    expect(orphan.taskId).toBeNull();
+    expect(orphan.segments).toEqual(seed().sessions[0].segments.map(() => orphan.segments[0]));
+    expect([...d.querySelectorAll(".trow")].some((r) => r.textContent.includes("No task"))).toBe(true);
+  }, 30_000);
+
+  it("undoes a task delete", async () => {
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    await editTask(d, "1234");
+    btn(d, /^Delete$/i).click();
+    await wait(200);
+    btn(d, /Yes, delete it/i).click();
+    await wait(300);
+    expect(d.querySelector(".toast")).not.toBeNull();
+
+    btn(d, /Undo/i).click();
+    await wait(300);
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks).toHaveLength(2);
+    expect(saved.sessions.find((s) => s.id === "s1").taskId).toBe("t1");
+  }, 30_000);
+});

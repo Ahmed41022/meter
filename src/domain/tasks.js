@@ -44,6 +44,52 @@ export const addTask = (state, projectId, { id, label }, now) => {
   };
 };
 
+/**
+ * The rate a session is actually valued at.
+ *
+ * A session snapshots the project rate when it starts, which is the right
+ * default. But that snapshot is a projection of what you'll be paid, and the
+ * real figure is fixed later — at submission, or whenever the client says so.
+ * A rate on the task overrides the snapshot for every session filed under it,
+ * so a whole task can be repriced after the fact without touching the one
+ * thing that is a measurement: the hours.
+ */
+export const rateFor = (project, session) =>
+  findTask(project, session.taskId)?.rate ?? session.rate;
+
+/** Pass null to drop the override and fall back to each session's snapshot. */
+export const setTaskRate = (state, projectId, taskId, rate) => {
+  const parsed = rate === null || rate === "" ? null : Number(rate);
+  const value = parsed !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return {
+    ...state,
+    projects: state.projects.map((p) =>
+      p.id === projectId
+        ? { ...p, tasks: tasksFor(p).map((t) => (t.id === taskId ? { ...t, rate: value } : t)) }
+        : p
+    ),
+  };
+};
+
+/** How many sessions would be unfiled if this task went away. */
+export const sessionsUnderTask = (sessions, taskId) =>
+  sessions.filter((s) => s.taskId === taskId && !s.deletedAt).length;
+
+/**
+ * Removes a task and unfiles its sessions rather than orphaning them — their
+ * hours stay recorded and reappear under "No task". Callers keep the prior
+ * state so this can be undone.
+ */
+export const removeTask = (state, projectId, taskId) => ({
+  ...state,
+  projects: state.projects.map((p) =>
+    p.id === projectId ? { ...p, tasks: tasksFor(p).filter((t) => t.id !== taskId) } : p
+  ),
+  sessions: state.sessions.map((s) =>
+    s.projectId === projectId && s.taskId === taskId ? { ...s, taskId: null } : s
+  ),
+});
+
 export const renameTask = (state, projectId, taskId, label) => {
   const clean = normaliseLabel(label);
   if (!clean) return state;
@@ -74,6 +120,7 @@ export const taskTotals = (project, sessions, now) => {
       buckets.set(id, {
         taskId: taskId ?? null,
         label: taskId ? taskLabel(project, taskId) : "No task",
+        rate: taskId ? findTask(project, taskId)?.rate ?? null : null,
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }
@@ -86,10 +133,10 @@ export const taskTotals = (project, sessions, now) => {
     b.sessions += 1;
     if (isBilled(s)) {
       b.billedMs += ms;
-      b.billedCents += earningsCents(s, ms);
+      b.billedCents += earningsCents(rateFor(project, s), ms);
     } else if (isIdle(s)) {
       b.idleMs += ms;
-      b.idleCents += earningsCents(s, ms);
+      b.idleCents += earningsCents(rateFor(project, s), ms);
     }
   }
 

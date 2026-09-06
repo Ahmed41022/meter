@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import { validateProject } from "../domain/projects.js";
+import { rateFor } from "../domain/tasks.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
@@ -13,12 +14,14 @@ export default function ProjectsView({ projects, sessions, now, onOpen, onAdd, o
 
   // Totals are summed per currency — adding EGP to USD would be a lie.
   const totals = useMemo(() => {
+    const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
     const acc = {};
     sessions.forEach((s) => {
-      acc[s.currency] = (acc[s.currency] || 0) + earningsCents(s, elapsedMs(s, now));
+      const cents = earningsCents(rateFor(byId[s.projectId], s), elapsedMs(s, now));
+      acc[s.currency] = (acc[s.currency] || 0) + cents;
     });
     return Object.entries(acc);
-  }, [sessions, now]);
+  }, [projects, sessions, now]);
 
   const submit = () => {
     const problem = validateProject(form);
@@ -51,7 +54,7 @@ export default function ProjectsView({ projects, sessions, now, onOpen, onAdd, o
 
         {projects.map((p) => {
           const mine = sessions.filter((s) => s.projectId === p.id);
-          const cents = mine.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
+          const cents = mine.reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0);
           const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
           return (
             <button className="card" key={p.id} onClick={() => onOpen(p.id)}>

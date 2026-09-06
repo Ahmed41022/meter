@@ -7,7 +7,7 @@ import {
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject } from "../domain/projects.js";
-import { addTask, resolveTaskId } from "../domain/tasks.js";
+import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { CSS } from "./styles.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
@@ -215,6 +215,14 @@ export default function App({ store: injectedStore }) {
               const chosen = resolveTaskPick(project, pick, (st, id, label) =>
                 addTask(st, project.id, { id, label }, Date.now()));
               commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
+            }}
+            onSaveTask={(taskId, { label, rate }) =>
+              commit((s) => setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate))}
+            onDeleteTask={(taskId) => {
+              const snapshot = stateRef.current;
+              commit((s) => removeTask(s, project.id, taskId));
+              flash("Task deleted. Its sessions moved to “No task”.", "Undo",
+                    () => commit(() => snapshot));
             }}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onDeleteProject={() => {

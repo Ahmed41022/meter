@@ -6,12 +6,18 @@
 
 const MS_PER_HOUR = 3_600_000;
 
-/** Earnings for a session in minor units. Rounded once, at the boundary. */
-export const earningsCents = (session, elapsedMs) =>
-  Math.round((elapsedMs / MS_PER_HOUR) * session.rate * 100);
+/**
+ * Earnings in minor units, rounded once at the boundary.
+ *
+ * Takes a rate rather than a session on purpose: which rate applies to a given
+ * session is a question for the caller. Usually it's the rate snapshotted when
+ * the session started, but a task carrying a rate override answers differently.
+ */
+export const earningsCents = (rate, elapsedMs) =>
+  Math.round((elapsedMs / MS_PER_HOUR) * rate * 100);
 
-export const sumCents = (sessions, elapsedFor) =>
-  sessions.reduce((total, s) => total + earningsCents(s, elapsedFor(s)), 0);
+export const sumCents = (sessions, elapsedFor, rateFor = (s) => s.rate) =>
+  sessions.reduce((total, s) => total + earningsCents(rateFor(s), elapsedFor(s)), 0);
 
 const formatters = new Map();
 const formatter = (currency) => {

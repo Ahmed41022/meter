@@ -90,6 +90,9 @@ export const CSS = `
 .row.sel{background:var(--jade-soft);}
 .row-check{width:18px;height:18px;accent-color:var(--jade);cursor:pointer;flex:none;}
 .row.pick{grid-template-columns:auto 1fr auto auto;}
+.linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
+  cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+.linkish:hover{color:var(--jade-hi);}
 .trow.clickable{cursor:pointer;}
 .trow.clickable:hover .trow-label{color:var(--jade);}
 .trow.on .trow-label{color:var(--jade);}

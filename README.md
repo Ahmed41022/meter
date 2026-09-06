@@ -14,7 +14,9 @@ Most of the design here exists to avoid a specific way of getting the numbers wr
 
 **Money is derived from time, and summed as integers.** Earnings are `elapsedMs / 3600000 * rate`, computed fresh, rounded once to minor units at the boundary. Nothing accumulates a running float, and no total is ever cached — deleting a session would immediately make a cached total lie.
 
-**Rates are snapshotted onto sessions.** `project.currentRate` is the default for the *next* session. `session.rate` is what *that* session was worth. Changing your rate can't reach back into recorded work, including a session running right now. Using one field for both jobs is the bug this split prevents.
+**Rates are snapshotted onto sessions, and a task can override them.** `project.currentRate` is the default for the *next* session; `session.rate` is what that session recorded. Changing your project rate can't reach back into recorded work. But that snapshot is a *projection* of what you'll be paid, and the real figure is often settled later — at submission, or when the client says so. So a task can carry a rate, and every session filed under it is valued at that rate instead.
+
+The split that makes this safe: **hours are a measurement, rate is a parameter.** `segments` record what you actually worked and stay immutable. The task rate lives on the task, never overwriting `session.rate`, so the original snapshot survives as an audit trail and clearing the override restores it.
 
 **A session is a list of segments, not a start/end pair.** Pause and resume append a new `{startedAt, endedAt}` interval, so the gap between them is never billed. Modelling this up front avoids migrating every record later.
 
@@ -26,7 +28,9 @@ Most of the design here exists to avoid a specific way of getting the numbers wr
 
 **Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id, matched trimmed and case-insensitively. Starting the meter asks which task first, as an explicit existing-or-new choice, because that is the moment a duplicate would be created.
 
-**`taskId` is the one field a finished session will let you change.** `segments` and `rate` are the audit trail: editing them would falsify what you actually worked and earned. `taskId` is a label on that record — moving it changes which bucket the same hours report under, not the hours themselves. Immutability protects the measurement, not the filing. So sessions can be re-filed individually or in batches, and there are tests asserting a re-file leaves segments, rate, kind and closedAt untouched.
+**`taskId` is the one field a finished session will let you change.** `segments` are the audit trail: editing them would falsify what you actually worked. `taskId` is a label on that record — moving it changes which bucket the same hours report under, not the hours themselves. Immutability protects the measurement, not the filing. So sessions can be re-filed individually or in batches, and there are tests asserting a re-file leaves segments, rate, kind and closedAt untouched.
+
+**Deleting a task unfiles its sessions rather than orphaning them.** The hours stay recorded and reappear under "No task", and the delete is undoable.
 
 **Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
 
@@ -86,6 +90,8 @@ The **By task** panel on a project lists every task with hours and earnings, ord
 
 To correct filing: open the ledger, tick the sessions, then **Assign to task**. One session or twenty, onto an existing task or a new one. The running session's task can be changed from the chip on the meter face.
 
+**edit** on a task row renames it, sets its rate, or deletes it. Setting a rate reprices every session under that task, finished ones included — for when the rate you're actually paid is settled after the work is done. Leave it empty to value each session at the rate it recorded. Deleting warns how many sessions will move to "No task" and can be undone.
+
 ## Running it
 
 **Just open it.** `dist/meter.html` works by double-clicking. Everything is inlined — React, styles, icons.
@@ -124,6 +130,9 @@ Cases worth knowing about:
 - A task's idle hours never land in its earned column.
 - Re-filing a session moves its totals between tasks and leaves its hours and rate alone.
 - A batch re-file skips deleted sessions.
+- A task rate reprices finished sessions without touching their hours or their original snapshot.
+- Clearing a task rate restores the recorded rate.
+- Deleting a task keeps its hours and moves them to "No task".
 - A long ledger starts collapsed, and its totals stay visible while collapsed.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
@@ -138,12 +147,12 @@ Everything lives in browser storage under `meter:v1`, as:
 
 ```js
 Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal }
-Project  { ..., tasks: [{ id, label, createdAt }] }
+Project  { ..., tasks: [{ id, label, createdAt, rate }] }
 Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
@@ -152,8 +161,8 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 ## Known gaps
 
 - **No time editing.** A session's start, end and rate can't be corrected after the fact. Only its task can. Decide whether a time edit is a mutation or an append-only correction before adding it — it changes the schema.
-- **No re-filing history.** A session doesn't record that it was moved between tasks, or when. Fine for your own reporting; not enough if someone else has to audit it.
-- **No task management screen.** Tasks are created through the start prompt. `renameTask` exists in the domain and is tested, but nothing in the UI calls it, and there's no way to delete or archive a task.
+- **No re-filing or repricing history.** A session doesn't record that it was moved between tasks, and a task doesn't record that its rate changed or when. Fine for your own reporting; not enough if someone else has to audit it.
+- **No archiving.** A task you've finished with stays in the start prompt's dropdown forever. Delete is the only way out, and that unfiles its sessions.
 - **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.

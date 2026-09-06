@@ -5,9 +5,12 @@ import {
 } from "../domain/money.js";
 import { periodStart } from "../domain/goals.js";
 import { isIdle, KIND, utilisation } from "../domain/sessions.js";
-import { taskLabel, taskTotals, UNASSIGNED } from "../domain/tasks.js";
+import {
+  findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
+} from "../domain/tasks.js";
 import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
+import TaskEditor from "./TaskEditor.jsx";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
  *  the per-task figures stay reachable without a long scroll. */
@@ -22,7 +25,7 @@ const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
-  onAssign,
+  onAssign, onSaveTask, onDeleteTask,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
@@ -30,28 +33,29 @@ export default function ProjectView({
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
   const [bulkPrompt, setBulkPrompt] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
   const shownMs = current ? elapsedMs(current, now) : 0;
   const currency = current?.currency ?? project.currency;
-  const { head, tail } = moneyParts(current ? earningsCents(current, shownMs) : 0, currency);
+  const { head, tail } = moneyParts(current ? earningsCents(rateFor(project, current), shownMs) : 0, currency);
 
   const minuteInHour = Math.floor((shownMs % MS_PER_HOUR) / 60_000);
   const hoursBilled = Math.floor(shownMs / MS_PER_HOUR);
 
-  const totalCents = sessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
+  const totalCents = sessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
   const totalMs = sessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
   const idleMs = idleSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
-  const idleCents = idleSessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
+  const idleCents = idleSessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
   const share = utilisation(totalMs, idleMs);
 
   const { sessionGoal, overallGoal } = project;
   const periodSessions = overallGoal
     ? sessions.filter((s) => startedAt(s) >= periodStart(overallGoal.period, now))
     : [];
-  const periodCents = periodSessions.reduce((a, s) => a + earningsCents(s, elapsedMs(s, now)), 0);
+  const periodCents = periodSessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
   const periodMs = periodSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
   // The ledger shows both kinds; the totals above keep them apart.
@@ -75,8 +79,10 @@ export default function ProjectView({
           <div>
             <div className="plate-name">{project.name}</div>
             <div className="plate-rate">
-              {formatMoney(Math.round((current?.rate ?? project.currentRate) * 100), currency)} per hour
-              {current && current.rate !== project.currentRate && " · rate locked for this session"}
+              {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
+              {current && rateFor(project, current) !== current.rate && " · task rate"}
+              {current && rateFor(project, current) === current.rate
+                && current.rate !== project.currentRate && " · rate locked for this session"}
             </div>
           </div>
           <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
@@ -190,7 +196,7 @@ export default function ProjectView({
               <GoalBar label="This session" type={sessionGoal.type} target={sessionGoal.target}
                        currency={currency}
                        value={sessionGoal.type === "money"
-                         ? (current ? earningsCents(current, shownMs) : 0) / 100
+                         ? (current ? earningsCents(rateFor(project, current), shownMs) : 0) / 100
                          : shownMs / 60000} />
             )}
             {overallGoal && (
@@ -210,7 +216,25 @@ export default function ProjectView({
             <span className="eyebrow">By task</span>
             <span className="eyebrow">{taskRows.length} row{taskRows.length === 1 ? "" : "s"}</span>
           </div>
+          {editingTask && (
+            <div style={{ marginBottom: 12 }}>
+              <TaskEditor
+                task={findTask(project, editingTask)}
+                currency={project.currency}
+                projectRate={project.currentRate}
+                sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
+                onCancel={() => setEditingTask(null)}
+                onSave={(patch) => { onSaveTask(editingTask, patch); setEditingTask(null); }}
+                onDelete={() => {
+                  onDeleteTask(editingTask);
+                  if (filterTask === editingTask) setFilterTask(null);
+                  setEditingTask(null);
+                }}
+              />
+            </div>
+          )}
           <TaskBreakdown rows={taskRows} currency={project.currency} active={filterTask}
+                         onEdit={(id) => setEditingTask(id)}
                          onPick={(key) => {
                            setFilterTask(key === filterTask ? null : key);
                            setLedgerOpen(true);
@@ -321,11 +345,12 @@ export default function ProjectView({
                 <div className="row-meta">
                   {s.taskId ? `${taskLabel(project, s.taskId)} · ` : "No task · "}
                   {formatDuration(elapsedMs(s, now))} at{" "}
-                  {formatMoney(Math.round(s.rate * 100), s.currency)}/hr
+                  {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
+                  {rateFor(project, s) !== s.rate && " (task rate)"}
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
                 </div>
               </div>
-              <span className="row-amt">{formatMoney(earningsCents(s, elapsedMs(s, now)), s.currency)}</span>
+              <span className="row-amt">{formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}</span>
               <button className="x" aria-label="Remove session" onClick={() => onDeleteSession(s.id)}>×</button>
             </div>
           ))}
