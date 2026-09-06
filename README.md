@@ -28,7 +28,11 @@ The split that makes this safe: **hours are a measurement, rate is a parameter.*
 
 **Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id, matched trimmed and case-insensitively. Starting the meter asks which task first, as an explicit existing-or-new choice, because that is the moment a duplicate would be created.
 
-**`taskId` is the one field a finished session will let you change.** `segments` are the audit trail: editing them would falsify what you actually worked. `taskId` is a label on that record — moving it changes which bucket the same hours report under, not the hours themselves. Immutability protects the measurement, not the filing. So sessions can be re-filed individually or in batches, and there are tests asserting a re-file leaves segments, rate, kind and closedAt untouched.
+**A finished session can be corrected, and the original is kept.** Immutability was there to stop records drifting by accident. But a session you forgot to stop is already wrong, and a wrong figure you can't fix is worse than one you can. What deserves protecting isn't that the number never moves — it's that you can always see what the meter actually recorded. So a correction writes the new window into `segments` and stashes the as-recorded ones under `original`, which only the *first* correction fills: edit twice and `original` still holds the measurement, not your previous guess. Reverting restores it exactly.
+
+Corrections preserve pause structure rather than collapsing a session into one start→end block. Collapsing a session with a four-hour break would silently bill the break — so the editor previews the resulting duration, which is rarely just end minus start.
+
+**Re-filing is separate from correcting.** `taskId` is a label on the record rather than part of it, so moving a session between tasks changes which bucket the same hours report under. That needs no `original` and leaves segments, rate, kind and closedAt untouched — there are tests asserting exactly that.
 
 **Deleting a task unfiles its sessions rather than orphaning them.** The hours stay recorded and reappear under "No task", and the delete is undoable.
 
@@ -90,6 +94,8 @@ The **By task** panel on a project lists every task with hours and earnings, ord
 
 To correct filing: open the ledger, tick the sessions, then **Assign to task**. One session or twenty, onto an existing task or a new one. The running session's task can be changed from the chip on the meter face.
 
+**edit** on a ledger row corrects a finished session's start and end — for the times you leave the meter running. It previews the resulting duration and earnings before you commit, keeps what the meter originally recorded, and marks the row "Edited". Undo is available immediately, and "Undo correction" restores the recorded times at any point later.
+
 **edit** on a task row renames it, sets its rate, or deletes it. Setting a rate reprices every session under that task, finished ones included — for when the rate you're actually paid is settled after the work is done. Leave it empty to value each session at the rate it recorded. Deleting warns how many sessions will move to "No task" and can be undone.
 
 ## Running it
@@ -115,7 +121,7 @@ tests/goals.test.js        period boundaries including DST
 tests/app.integration.test.js   the built HTML, driven in jsdom
 ```
 
-The unit tests are fast because the domain layer is pure. The integration tests are slower but catch what unit tests structurally can't: bundling mistakes, event wiring, and CSS that fails silently. One of them is a regression test for exactly that — project card text was rendering inline because the elements were `<span>`s, so `margin-top` was dropped without any error anywhere.
+The unit tests are fast because the domain layer is pure. The integration tests are slower but catch what unit tests structurally can't: bundling mistakes, event wiring, and CSS that fails silently. They refuse to run against a `dist/` older than `src/` — a failed build leaves the previous bundle in place, and without that check they pass happily against code that doesn't compile. One of them is a regression test for exactly that — project card text was rendering inline because the elements were `<span>`s, so `margin-top` was dropped without any error anywhere.
 
 Cases worth knowing about:
 
@@ -133,6 +139,9 @@ Cases worth knowing about:
 - A task rate reprices finished sessions without touching their hours or their original snapshot.
 - Clearing a task rate restores the recorded rate.
 - Deleting a task keeps its hours and moves them to "No task".
+- Correcting a session with a four-hour break bills 45m, not 5h45m.
+- A second correction still preserves what the meter first recorded.
+- A running session offers no edit link — stop it first.
 - A long ledger starts collapsed, and its totals stay visible while collapsed.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
@@ -148,11 +157,11 @@ Everything lives in browser storage under `meter:v1`, as:
 ```js
 Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
-Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt }
+Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
@@ -160,8 +169,9 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 
 ## Known gaps
 
-- **No time editing.** A session's start, end and rate can't be corrected after the fact. Only its task can. Decide whether a time edit is a mutation or an append-only correction before adding it — it changes the schema.
-- **No re-filing or repricing history.** A session doesn't record that it was moved between tasks, and a task doesn't record that its rate changed or when. Fine for your own reporting; not enough if someone else has to audit it.
+- **Corrections replace, they don't accumulate.** `original` holds what the meter recorded, and that's it — there's no log of each successive edit or when. Enough to prove a figure was adjusted; not a full audit trail.
+- **No re-filing or repricing history.** A session doesn't record that it was moved between tasks, and a task doesn't record that its rate changed or when.
+- **No manual sessions.** Every session has to start from the timer. If you worked without starting it, there's nothing to correct — you'd have to run the meter briefly and then edit its times.
 - **No archiving.** A task you've finished with stays in the start prompt's dropdown forever. Delete is the only way out, and that unfiles its sessions.
 - **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.

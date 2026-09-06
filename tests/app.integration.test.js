@@ -5,7 +5,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 
 const DIST = new URL("../dist/meter.html", import.meta.url);
@@ -84,8 +84,32 @@ const startMeter = async (dom, { idle = false, task = null, existing = null } = 
   await wait(300);
 };
 
+/** Walks a directory for the newest mtime. */
+const newestMtime = (dir) => {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dir);
+    newest = Math.max(newest, entry.isDirectory() ? newestMtime(full) : statSync(full).mtimeMs);
+  }
+  return newest;
+};
+
 beforeAll(() => {
   if (!existsSync(DIST)) throw new Error("dist/meter.html missing — run `npm run build` first");
+
+  // These tests drive the built file. A build that failed leaves the previous
+  // bundle in place, so without this check they would quietly keep passing
+  // against stale output and report green on code that doesn't even compile.
+  const built = statSync(DIST).mtimeMs;
+  const sources = Math.max(
+    newestMtime(new URL("../src/", import.meta.url)),
+    newestMtime(new URL("../scripts/", import.meta.url))
+  );
+  if (sources > built) {
+    throw new Error(
+      "dist/meter.html is older than src/ — the last build failed or was skipped. Run `npm run build`."
+    );
+  }
 });
 
 describe("the built file", () => {
@@ -945,5 +969,135 @@ describe("managing tasks", () => {
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks).toHaveLength(2);
     expect(saved.sessions.find((s) => s.id === "s1").taskId).toBe("t1");
+  }, 30_000);
+});
+
+describe("correcting a forgotten timer", () => {
+  const HOUR = 3_600_000;
+  // A session started at 09:00 that should have ended at 11:00 but ran to 18:00.
+  const seed = () => {
+    const day = new Date();
+    day.setHours(9, 0, 0, 0);
+    const start = day.getTime();
+    return {
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP", createdAt: start,
+                   sessionGoal: null, overallGoal: null, tasks: [] }],
+      sessions: [{ id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 450,
+                   currency: "EGP", createdAt: start,
+                   segments: [{ startedAt: start, endedAt: start + 9 * HOUR }],
+                   closedAt: start + 9 * HOUR, deletedAt: null }],
+      __start: start,
+    };
+  };
+  const open = async (dom) => {
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    return d;
+  };
+  const stamp = (epoch) => {
+    const p = (n) => String(n).padStart(2, "0");
+    const x = new Date(epoch);
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+  };
+
+  it("trims the session and drops the earnings to match", async () => {
+    const data = seed();
+    const dom = await boot(data);
+    const { window } = dom;
+    const d = await open(dom);
+    expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/); // 9h
+
+    btn(d, /^edit$/i).click();
+    await wait(200);
+    setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
+    await wait(150);
+    // The preview shows the new figure before anything is committed.
+    expect(d.querySelector(".preview-now").textContent).toContain("2h 00m");
+    expect(d.querySelector(".preview-was").textContent).toContain("9h 00m");
+
+    btn(d, /Save correction/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".row-amt").textContent).toMatch(/900\.00/); // 2h at 450
+    expect(d.querySelector(".row-when").textContent).toContain("Edited");
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].original.closedAt).toBe(data.__start + 9 * HOUR);
+  }, 30_000);
+
+  it("keeps what the meter recorded, so it can be put back", async () => {
+    const data = seed();
+    const dom = await boot(data);
+    const { window } = dom;
+    const d = await open(dom);
+
+    btn(d, /^edit$/i).click();
+    await wait(200);
+    setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
+    btn(d, /Save correction/i).click();
+    await wait(300);
+    expect(d.querySelector(".row-amt").textContent).toMatch(/900\.00/);
+
+    btn(d, /^edit$/i).click();
+    await wait(200);
+    btn(d, /Undo correction/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/);
+    expect(d.querySelector(".row-when").textContent).not.toContain("Edited");
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].original).toBeUndefined();
+  }, 30_000);
+
+  it("offers an undo straight after the correction", async () => {
+    const data = seed();
+    const dom = await boot(data);
+    const { window } = dom;
+    const d = await open(dom);
+    btn(d, /^edit$/i).click();
+    await wait(200);
+    setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
+    btn(d, /Save correction/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".toast")).not.toBeNull();
+    btn(d, /Undo/i).click();
+    await wait(300);
+    expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/);
+  }, 30_000);
+
+  it("feeds the corrected hours into the project total", async () => {
+    const data = seed();
+    const dom = await boot(data);
+    const { window } = dom;
+    const d = await open(dom);
+    btn(d, /^edit$/i).click();
+    await wait(200);
+    setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
+    btn(d, /Save correction/i).click();
+    await wait(300);
+
+    btn(d, /All projects/i).click();
+    await wait(250);
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/900\.00/);
+  }, 30_000);
+
+  it("offers no edit link on a session that is still running", async () => {
+    const now = Date.now();
+    const dom = await boot({
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP", createdAt: now - HOUR,
+                   sessionGoal: null, overallGoal: null, tasks: [] }],
+      sessions: [{ id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 450,
+                   currency: "EGP", createdAt: now - HOUR,
+                   segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now - 5000 }],
+                   closedAt: null, deletedAt: null }],
+    });
+    const { document: d } = dom.window;
+    btn(d, /This tab only/i).click();
+    await wait(200);
+    d.querySelector(".card").click();
+    await wait(250);
+    expect(btn(d, /^edit$/i)).toBeUndefined(); // stop it first
   }, 30_000);
 });

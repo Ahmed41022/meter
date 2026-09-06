@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isRunning, isStale } from "../domain/time.js";
 import {
-  assignTaskToMany, currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled,
+  assignTaskToMany, correctSession, currentSession, deleteSession, revertCorrection, heartbeat, idleSessionsFor, isBilled,
   liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
@@ -216,6 +216,13 @@ export default function App({ store: injectedStore }) {
                 addTask(st, project.id, { id, label }, Date.now()));
               commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
             }}
+            onCorrect={(sessionId, window_) => {
+              const snapshot = stateRef.current;
+              commit((s) => correctSession(s, sessionId, window_, Date.now()));
+              flash("Session corrected.", "Undo", () => commit(() => snapshot));
+            }}
+            onRevertCorrection={(sessionId) =>
+              commit((s) => revertCorrection(s, sessionId))}
             onSaveTask={(taskId, { label, rate }) =>
               commit((s) => setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate))}
             onDeleteTask={(taskId) => {
