@@ -1,0 +1,189 @@
+import { describe, it, expect } from "vitest";
+import {
+  addTask, findTask, findTaskByLabel, normaliseLabel, renameTask, resolveTaskId,
+  taskLabel, taskTotals, tasksFor, UNASSIGNED,
+} from "../src/domain/tasks.js";
+import { startSession, stopSession, assignTask, KIND, allSessionsFor } from "../src/domain/sessions.js";
+import { removeProject } from "../src/domain/projects.js";
+
+const T = 1_700_000_000_000;
+const HOUR = 3_600_000;
+const project = { id: "p1", name: "Acme", currentRate: 450, currency: "EGP", tasks: [] };
+const base = { projects: [project], sessions: [] };
+const proj = (s) => s.projects[0];
+
+describe("creating tasks", () => {
+  it("stores a trimmed label", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "  1234  " }, T);
+    expect(tasksFor(proj(s))[0].label).toBe("1234");
+  });
+
+  it("ignores a blank label", () => {
+    expect(tasksFor(proj(addTask(base, "p1", { id: "t1", label: "   " }, T)))).toHaveLength(0);
+  });
+
+  it("will not create a second task that reads as the same one", () => {
+    // The whole reason tasks are records: "1234 " and "1234" must not become
+    // two rows with the earnings split between them.
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: " 1234 " }, T);
+    s = addTask(s, "p1", { id: "t3", label: "Task-A" }, T);
+    s = addTask(s, "p1", { id: "t4", label: "task-a" }, T);
+    expect(tasksFor(proj(s)).map((t) => t.label)).toEqual(["1234", "Task-A"]);
+  });
+
+  it("does not touch other projects", () => {
+    const two = { projects: [project, { ...project, id: "p2", tasks: [] }], sessions: [] };
+    const s = addTask(two, "p1", { id: "t1", label: "1234" }, T);
+    expect(tasksFor(s.projects[1])).toHaveLength(0);
+  });
+});
+
+describe("resolving a label to an id", () => {
+  it("reuses the existing task's id rather than making a duplicate", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    expect(resolveTaskId(proj(s), " 1234 ", "fresh")).toBe("t1");
+  });
+
+  it("uses the fresh id for a label never seen before", () => {
+    expect(resolveTaskId(project, "9999", "fresh")).toBe("fresh");
+  });
+});
+
+describe("lookups", () => {
+  it("reads back a task by id and by label", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    expect(findTask(proj(s), "t1").label).toBe("1234");
+    expect(findTaskByLabel(proj(s), "1234").id).toBe("t1");
+  });
+
+  it("labels an unknown or absent task rather than rendering undefined", () => {
+    expect(taskLabel(project, null)).toBe("No task");
+    expect(taskLabel(project, "gone")).toBe("No task");
+  });
+
+  it("treats a project saved before tasks existed as having none", () => {
+    const legacy = { id: "p1", name: "Old", currentRate: 450, currency: "EGP" };
+    expect(tasksFor(legacy)).toEqual([]);
+    expect(normaliseLabel(undefined)).toBe("");
+  });
+});
+
+describe("renaming", () => {
+  it("updates every session pointing at the task, because they hold a reference", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    s = renameTask(s, "p1", "t1", "PR review");
+    expect(s.sessions[0].taskId).toBe("t1"); // session untouched
+    expect(taskTotals(proj(s), allSessionsFor(s, "p1"), T + HOUR)[0].label).toBe("PR review");
+  });
+
+  it("ignores a blank rename", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = renameTask(s, "p1", "t1", "  ");
+    expect(taskLabel(proj(s), "t1")).toBe("1234");
+  });
+});
+
+describe("assigning a task to a session", () => {
+  it("can be changed while the session is still open", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1" });
+    expect(s.sessions[0].taskId).toBeNull();
+    s = assignTask(s, "s1", "t1");
+    expect(s.sessions[0].taskId).toBe("t1");
+  });
+
+  it("cannot be changed once the session is stopped", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    s = assignTask(s, "s1", null);
+    expect(s.sessions[0].taskId).toBe("t1"); // closed records are immutable
+  });
+});
+
+describe("per-task totals", () => {
+  const build = () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "5678" }, T);
+    // t1: 2h billed
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + 2 * HOUR);
+    // t2: 1h billed
+    s = startSession(s, proj(s), { now: T + 2 * HOUR, id: "s2", taskId: "t2" });
+    s = stopSession(s, "s2", T + 3 * HOUR);
+    // t1: 1h idle
+    s = startSession(s, proj(s), { now: T + 3 * HOUR, id: "i1", kind: KIND.IDLE, taskId: "t1" });
+    s = stopSession(s, "i1", T + 4 * HOUR);
+    // no task: 30m billed
+    s = startSession(s, proj(s), { now: T + 4 * HOUR, id: "s3" });
+    s = stopSession(s, "s3", T + 4.5 * HOUR);
+    return s;
+  };
+
+  it("groups time and earnings by task", () => {
+    const s = build();
+    const rows = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 5 * HOUR);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r]));
+    expect(byLabel["1234"].billedMs).toBe(2 * HOUR);
+    expect(byLabel["1234"].billedCents).toBe(90_000);
+    expect(byLabel["5678"].billedCents).toBe(45_000);
+  });
+
+  it("keeps idle time out of the earned column", () => {
+    const s = build();
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 5 * HOUR)
+      .find((r) => r.label === "1234");
+    expect(row.billedCents).toBe(90_000); // 2h, not 3h
+    expect(row.idleMs).toBe(HOUR);
+    expect(row.idleCents).toBe(45_000);
+  });
+
+  it("buckets sessions with no task under their own row", () => {
+    const s = build();
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 5 * HOUR)
+      .find((r) => r.taskId === null);
+    expect(row.label).toBe("No task");
+    expect(row.billedMs).toBe(0.5 * HOUR);
+  });
+
+  it("orders by earnings so the biggest task is first", () => {
+    const s = build();
+    const rows = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 5 * HOUR);
+    expect(rows.map((r) => r.label)).toEqual(["1234", "5678", "No task"]);
+  });
+
+  it("counts sessions per task", () => {
+    const s = build();
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 5 * HOUR)
+      .find((r) => r.label === "1234");
+    expect(row.sessions).toBe(2); // one billed, one idle
+  });
+
+  it("is empty when nothing has been recorded", () => {
+    expect(taskTotals(project, [], T)).toEqual([]);
+  });
+
+  it("still totals a running session against its task", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + HOUR)[0];
+    expect(row.billedMs).toBe(HOUR);
+  });
+
+  it("exports a stable key for the unassigned bucket", () => {
+    expect(UNASSIGNED).toBe("__unassigned__");
+  });
+});
+
+describe("project removal", () => {
+  it("takes the project's tasks with it", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    const after = removeProject(s, "p1");
+    expect(after.projects).toHaveLength(0);
+    expect(after.sessions).toHaveLength(0);
+  });
+});

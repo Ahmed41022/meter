@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isRunning, isStale } from "../domain/time.js";
 import {
-  currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled, liveSessions,
-  pauseSession, recoverSession, restoreSession, resumeSession, sessionsFor,
-  startSession, stopSession,
+  assignTask, currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled,
+  liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
+  sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject } from "../domain/projects.js";
+import { addTask, resolveTaskId } from "../domain/tasks.js";
 import { CSS } from "./styles.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
@@ -186,13 +187,25 @@ export default function App({ store: injectedStore }) {
             project={project} current={current} now={now}
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
-            onStart={(kind) => commit((s) => startSession(s, project, Date.now(), uid(), kind))}
+            onStart={(kind, taskId) => commit((s) => startSession(s, project, { now: Date.now(), id: uid(), kind, taskId }))}
             onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
             onResume={() => commit((s) => resumeSession(s, current.id, Date.now()))}
             onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
             onDeleteSession={(id) => {
               commit((s) => deleteSession(s, id, Date.now()));
               flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
+            }}
+            onPickTask={(sessionId, pick, onResolved) => {
+              // A brand new label creates the task first, reusing an existing
+              // task's id if the label already matches — so the picker can
+              // never mint a duplicate the user would read as the same task.
+              let taskId = pick.taskId ?? null;
+              if (pick.label !== undefined) {
+                taskId = resolveTaskId(project, pick.label, uid());
+                commit((s) => addTask(s, project.id, { id: taskId, label: pick.label }, Date.now()));
+              }
+              if (sessionId) commit((s) => assignTask(s, sessionId, taskId));
+              onResolved?.(taskId);
             }}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onDeleteProject={() => {

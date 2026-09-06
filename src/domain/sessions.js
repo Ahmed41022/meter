@@ -66,9 +66,10 @@ export const utilisation = (billedMs, idleMs) => {
  *
  * The rate is SNAPSHOT here. Later edits to the project rate must never reach
  * a session already recorded, and idle time is valued at the rate that was
- * current when it happened.
+ * current when it happened. The task is a reference, not a copy, so renaming
+ * a task updates every session that points at it.
  */
-export const startSession = (state, project, now, id, kind = KIND.BILLED) => {
+export const startSession = (state, project, { now, id, kind = KIND.BILLED, taskId = null }) => {
   const closed = state.sessions.map((s) =>
     !s.deletedAt && isOpen(s) ? { ...closeOpenSegments(s, now), closedAt: now } : s
   );
@@ -80,6 +81,7 @@ export const startSession = (state, project, now, id, kind = KIND.BILLED) => {
         id,
         projectId: project.id,
         kind,
+        taskId,
         rate: project.currentRate,
         currency: project.currency,
         createdAt: now,
@@ -132,3 +134,9 @@ export const heartbeat = (state, now) =>
       ? { ...s, segments: s.segments.map((g) => (g.endedAt == null ? { ...g, lastTick: now } : g)) }
       : s
   );
+
+/** Re-point an OPEN session at a different task. Closed sessions are immutable
+ *  — correcting a finished record is session editing, which this app doesn't
+ *  do yet, and doing it here by accident would be worse than not doing it. */
+export const assignTask = (state, sessionId, taskId) =>
+  mapSessions(state, (s) => (s.id === sessionId && isOpen(s) ? { ...s, taskId } : s));

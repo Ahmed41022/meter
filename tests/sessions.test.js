@@ -14,15 +14,15 @@ const empty = { projects: [project], sessions: [] };
 
 describe("starting", () => {
   it("snapshots the project rate onto the session", () => {
-    const s = startSession(empty, project, T, "s1");
+    const s = startSession(empty, project, { now: T, id: "s1" });
     expect(s.sessions[0].rate).toBe(450);
   });
 
   it("closes anything still open on the project", () => {
     // Two open sessions on one project means the UI picks one and silently
     // under-bills the other. This is the guard against that.
-    let s = startSession(empty, project, T, "s1");
-    s = startSession(s, project, T + HOUR, "s2");
+    let s = startSession(empty, project, { now: T, id: "s1" });
+    s = startSession(s, project, { now: T + HOUR, id: "s2" });
     const open = sessionsFor(s, "p1").filter(isOpen);
     expect(open).toHaveLength(1);
     expect(open[0].id).toBe("s2");
@@ -33,8 +33,8 @@ describe("starting", () => {
     // One person cannot bill two projects at the same time. Two live meters
     // would double-count the same wall-clock hour.
     const other = { id: "p2", currentRate: 900, currency: "EGP" };
-    let s = startSession({ projects: [project, other], sessions: [] }, project, T, "s1");
-    s = startSession(s, other, T + HOUR, "s2");
+    let s = startSession({ projects: [project, other], sessions: [] }, project, { now: T, id: "s1" });
+    s = startSession(s, other, { now: T + HOUR, id: "s2" });
     expect(s.sessions.find((x) => x.id === "s1").closedAt).toBe(T + HOUR);
     expect(s.sessions.filter(isOpen)).toHaveLength(1);
   });
@@ -43,7 +43,7 @@ describe("starting", () => {
 describe("rate changes", () => {
   it("leaves a recorded session untouched when the project rate moves", () => {
     // The requirement: a new rate applies to new sessions only.
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T + HOUR);
     s = { ...s, projects: [{ ...project, currentRate: 900 }] };
     const session = s.sessions[0];
@@ -52,29 +52,29 @@ describe("rate changes", () => {
   });
 
   it("leaves a RUNNING session untouched when the project rate moves", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = { ...s, projects: [{ ...project, currentRate: 900 }] };
     expect(s.sessions[0].rate).toBe(450);
   });
 
   it("applies the new rate to the next session started", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     const raised = { ...project, currentRate: 900 };
-    s = startSession({ ...s, projects: [raised] }, raised, T + HOUR, "s2");
+    s = startSession({ ...s, projects: [raised] }, raised, { now: T + HOUR, id: "s2" });
     expect(s.sessions.find((x) => x.id === "s2").rate).toBe(900);
   });
 });
 
 describe("pause and resume", () => {
   it("appends a segment instead of reopening the old one", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = pauseSession(s, "s1", T + 1800_000);
     s = resumeSession(s, "s1", T + 5 * HOUR);
     expect(s.sessions[0].segments).toHaveLength(2);
   });
 
   it("excludes the paused gap from billable time", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = pauseSession(s, "s1", T + 1800_000);        // worked 30 min
     s = resumeSession(s, "s1", T + 5 * HOUR);       // 4.5h break
     s = stopSession(s, "s1", T + 5 * HOUR + 900_000); // worked 15 more
@@ -82,7 +82,7 @@ describe("pause and resume", () => {
   });
 
   it("keeps a paused session as the current one", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = pauseSession(s, "s1", T + 60_000);
     const cur = currentSession(s, "p1");
     expect(cur.id).toBe("s1");
@@ -90,13 +90,13 @@ describe("pause and resume", () => {
   });
 
   it("ignores resume on a session that is already running", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = resumeSession(s, "s1", T + 60_000);
     expect(s.sessions[0].segments).toHaveLength(1);
   });
 
   it("ignores pause on a session that is not running", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = pauseSession(s, "s1", T + 60_000);
     const before = JSON.stringify(s);
     expect(JSON.stringify(pauseSession(s, "s1", T + 120_000))).toBe(before);
@@ -105,7 +105,7 @@ describe("pause and resume", () => {
 
 describe("stopping", () => {
   it("closes the segment and the session together", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T + HOUR);
     expect(s.sessions[0].closedAt).toBe(T + HOUR);
     expect(isRunning(s.sessions[0])).toBe(false);
@@ -113,7 +113,7 @@ describe("stopping", () => {
   });
 
   it("never ends a segment before it began", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T - HOUR); // clock jumped backwards
     expect(elapsedMs(s.sessions[0], T)).toBe(0);
   });
@@ -142,7 +142,7 @@ describe("crash recovery", () => {
   });
 
   it("advances the heartbeat only on running sessions", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = pauseSession(s, "s1", T + 60_000);
     const before = JSON.stringify(s);
     expect(JSON.stringify(heartbeat(s, T + 120_000))).toBe(before);
@@ -151,7 +151,7 @@ describe("crash recovery", () => {
 
 describe("deletion", () => {
   it("soft-deletes so the record can come back", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = deleteSession(s, "s1", T + HOUR);
     expect(liveSessions(s.sessions)).toHaveLength(0);
     expect(s.sessions).toHaveLength(1); // still on disk
@@ -160,7 +160,7 @@ describe("deletion", () => {
   });
 
   it("removes deleted sessions from project totals", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T + HOUR);
     s = deleteSession(s, "s1", T + HOUR);
     expect(sessionsFor(s, "p1")).toHaveLength(0);
@@ -168,7 +168,7 @@ describe("deletion", () => {
 });
 
 describe("idle time", () => {
-  const startIdle = (state, now, id) => startSession(state, project, now, id, KIND.IDLE);
+  const startIdle = (state, now, id) => startSession(state, project, { now, id, kind: KIND.IDLE });
 
   it("records idle sessions under their own kind", () => {
     const s = startIdle(empty, T, "i1");
@@ -179,7 +179,7 @@ describe("idle time", () => {
   it("keeps idle time out of the default accessor", () => {
     // The safety property: a caller that forgets about kind gets billed
     // sessions only, and can never accidentally inflate earnings.
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T + HOUR);
     s = startIdle(s, T + HOUR, "i1");
     s = stopSession(s, "i1", T + 2 * HOUR);
@@ -190,7 +190,7 @@ describe("idle time", () => {
   });
 
   it("never lets idle time reach an earnings total", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = stopSession(s, "s1", T + HOUR);
     s = startIdle(s, T + HOUR, "i1");
     s = stopSession(s, "i1", T + 4 * HOUR); // 3 idle hours
@@ -201,12 +201,12 @@ describe("idle time", () => {
   });
 
   it("stops a running billed session when idle starts, and vice versa", () => {
-    let s = startSession(empty, project, T, "s1");
+    let s = startSession(empty, project, { now: T, id: "s1" });
     s = startIdle(s, T + HOUR, "i1");
     expect(s.sessions.find((x) => x.id === "s1").closedAt).toBe(T + HOUR);
     expect(currentSession(s, "p1").id).toBe("i1");
 
-    s = startSession(s, project, T + 2 * HOUR, "s2");
+    s = startSession(s, project, { now: T + 2 * HOUR, id: "s2" });
     expect(s.sessions.find((x) => x.id === "i1").closedAt).toBe(T + 2 * HOUR);
     expect(currentSession(s, "p1").id).toBe("s2");
     expect(s.sessions.filter(isOpen)).toHaveLength(1);
