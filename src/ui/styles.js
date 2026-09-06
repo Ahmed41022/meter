@@ -61,6 +61,37 @@ export const CSS = `
 .legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
 .swatch{width:9px;height:9px;border-radius:3px;flex:none;}
 .row.is-idle .row-amt{color:var(--amber);}
+
+/* task picker */
+.picker{display:flex;gap:9px;align-items:flex-end;margin-top:20px;flex-wrap:wrap;}
+.picker > label{flex:1;min-width:170px;margin:0;}
+.picker .inp{margin:0;}
+.task-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);
+  font-size:11.5px;color:var(--muted);background:var(--line-2);border-radius:999px;
+  padding:3px 10px;margin-top:9px;}
+.face.idle .task-chip{background:var(--amber-soft);color:var(--amber);}
+
+/* per-task breakdown */
+.trow{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:baseline;
+  padding:13px 0;border-bottom:1px solid var(--line-2);}
+.trow:first-child{padding-top:0;}
+.trow:last-child{border-bottom:0;padding-bottom:0;}
+.trow-label{font-weight:600;font-size:14.5px;}
+.trow-sub{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
+.trow-sub.idle{color:var(--amber);}
+.trow-time{font-family:var(--mono);font-size:13px;color:var(--muted);
+  font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
+.trow-amt{font-family:var(--mono);font-size:15px;color:var(--ink);
+  font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
+.trow.none .trow-label{color:var(--muted);font-weight:500;}
+
+/* collapsible sections */
+.toggle{display:flex;align-items:center;gap:7px;background:none;border:0;padding:6px 4px;
+  cursor:pointer;color:var(--muted);font-family:inherit;font-weight:600;font-size:13px;
+  border-radius:6px;}
+.toggle:hover{color:var(--jade);}
+.chev{display:inline-block;transition:transform .18s ease;font-size:10px;}
+.chev.open{transform:rotate(90deg);}
 .tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--amber-soft);
   color:var(--amber);margin-left:8px;vertical-align:1px;}

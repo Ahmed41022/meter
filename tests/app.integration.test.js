@@ -417,3 +417,156 @@ describe("the tab-conflict notice", () => {
     expect(banner.textContent).toContain("Meter left running");
   }, 20_000);
 });
+
+describe("tasks", () => {
+  const makeProject = async (dom, rate = "450") => {
+    const { window } = dom, d = window.document;
+    btn(d, /New project/i).click();
+    await wait(120);
+    const [name, r] = d.querySelectorAll("input");
+    setValue(window, name, "Acme");
+    setValue(window, r, rate);
+    btn(d, /Add project/i).click();
+    await wait(180);
+    d.querySelector(".card").click();
+    await wait(150);
+  };
+
+  const pickNewTask = async (dom, label) => {
+    const { window } = dom, d = window.document;
+    setValue(window, d.querySelector(".picker select"), "__new__");
+    await wait(120);
+    setValue(window, d.querySelector(".picker input"), label);
+    btn(d, /^Add$/i).click();
+    await wait(180);
+  };
+
+  it("records the chosen task on the session and shows it on the face", async () => {
+    const dom = await boot();
+    const { window } = dom, d = window.document;
+    await makeProject(dom);
+    await pickNewTask(dom, "1234");
+
+    btn(d, /Start the meter/i).click();
+    await wait(1200);
+    expect(d.querySelector(".task-chip").textContent).toContain("1234");
+
+    btn(d, /Stop and save/i).click();
+    await wait(200);
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks).toHaveLength(1);
+    expect(saved.projects[0].tasks[0].label).toBe("1234");
+    expect(saved.sessions[0].taskId).toBe(saved.projects[0].tasks[0].id);
+  }, 25_000);
+
+  it("will not mint a second task for a label that only differs by whitespace or case", async () => {
+    const dom = await boot();
+    const { window } = dom;
+    await makeProject(dom);
+    await pickNewTask(dom, "Task-A");
+    await pickNewTask(dom, "  task-a  ");
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks).toHaveLength(1);
+  }, 25_000);
+
+  it("shows time and earnings per task in their own panel", async () => {
+    const now = Date.now(), HOUR = 3_600_000;
+    const base = { projectId: "p1", currency: "EGP", rate: 450, deletedAt: null };
+    const dom = await boot({
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP",
+                   createdAt: now - 9 * HOUR, sessionGoal: null, overallGoal: null,
+                   tasks: [{ id: "t1", label: "1234", createdAt: now - 9 * HOUR },
+                           { id: "t2", label: "5678", createdAt: now - 9 * HOUR }] }],
+      sessions: [
+        { ...base, id: "s1", kind: "billed", taskId: "t1", createdAt: now - 9 * HOUR,
+          segments: [{ startedAt: now - 9 * HOUR, endedAt: now - 7 * HOUR }], closedAt: now - 7 * HOUR },
+        { ...base, id: "s2", kind: "billed", taskId: "t2", createdAt: now - 7 * HOUR,
+          segments: [{ startedAt: now - 7 * HOUR, endedAt: now - 6 * HOUR }], closedAt: now - 6 * HOUR },
+        { ...base, id: "i1", kind: "idle", taskId: "t1", createdAt: now - 6 * HOUR,
+          segments: [{ startedAt: now - 6 * HOUR, endedAt: now - 5 * HOUR }], closedAt: now - 5 * HOUR },
+      ],
+    });
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+
+    const rows = [...d.querySelectorAll(".trow")];
+    expect(rows).toHaveLength(2);
+    // Ordered by earnings: 1234 (2h = 900) before 5678 (1h = 450).
+    expect(rows[0].querySelector(".trow-label").textContent).toBe("1234");
+    expect(rows[0].querySelector(".trow-amt").textContent).toMatch(/900\.00/);
+    expect(rows[1].querySelector(".trow-amt").textContent).toMatch(/450\.00/);
+
+    // The idle hour on 1234 must not be added into its earned figure.
+    expect(rows[0].textContent).toContain("1h 00m idle");
+    expect(rows[0].querySelector(".trow-amt").textContent).not.toMatch(/1,350/);
+  }, 25_000);
+
+  it("labels each ledger row with its task", async () => {
+    const dom = await boot();
+    const d = dom.window.document;
+    await makeProject(dom);
+    await pickNewTask(dom, "9001");
+    btn(d, /Start the meter/i).click();
+    await wait(1100);
+    btn(d, /Stop and save/i).click();
+    await wait(200);
+    expect(d.querySelector(".row-meta").textContent).toContain("9001");
+  }, 25_000);
+});
+
+describe("the ledger collapses", () => {
+  const ledgerSeed = (count) => {
+    const now = Date.now(), HOUR = 3_600_000;
+    return {
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP",
+                   createdAt: now - 40 * HOUR, sessionGoal: null, overallGoal: null, tasks: [] }],
+      sessions: Array.from({ length: count }, (_, i) => ({
+        id: `s${i}`, projectId: "p1", kind: "billed", taskId: null, rate: 450, currency: "EGP",
+        createdAt: now - (i + 2) * HOUR,
+        segments: [{ startedAt: now - (i + 2) * HOUR, endedAt: now - (i + 1) * HOUR }],
+        closedAt: now - (i + 1) * HOUR, deletedAt: null,
+      })),
+    };
+  };
+
+  it("stays open for a short ledger", async () => {
+    const dom = await boot(ledgerSeed(3));
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    expect(d.querySelectorAll(".row")).toHaveLength(3);
+  }, 25_000);
+
+  it("starts collapsed once the list gets long, so Settings stays reachable", async () => {
+    const dom = await boot(ledgerSeed(12));
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    expect(d.querySelectorAll(".row")).toHaveLength(0);
+    expect(btn(d, /Ledger/i).textContent).toContain("12 sessions");
+    // The point of collapsing: Settings is still on screen.
+    expect(btn(d, /^Open$/i)).toBeTruthy();
+  }, 25_000);
+
+  it("expands and collapses on demand, keeping the totals visible either way", async () => {
+    const dom = await boot(ledgerSeed(12));
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    const header = () => d.querySelectorAll(".sec-head")[
+      [...d.querySelectorAll(".sec-head")].findIndex((h) => /Ledger/.test(h.textContent))
+    ].textContent;
+    expect(header()).toMatch(/5,400\.00/); // 12h at 450
+
+    btn(d, /Ledger/i).click();
+    await wait(180);
+    expect(d.querySelectorAll(".row")).toHaveLength(12);
+
+    btn(d, /Ledger/i).click();
+    await wait(180);
+    expect(d.querySelectorAll(".row")).toHaveLength(0);
+    expect(header()).toMatch(/5,400\.00/);
+  }, 25_000);
+});

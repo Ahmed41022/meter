@@ -5,6 +5,13 @@ import {
 } from "../domain/money.js";
 import { periodStart } from "../domain/goals.js";
 import { isIdle, KIND, utilisation } from "../domain/sessions.js";
+import { taskLabel, taskTotals } from "../domain/tasks.js";
+import TaskPicker from "./TaskPicker.jsx";
+import TaskBreakdown from "./TaskBreakdown.jsx";
+
+/** Above this many rows the ledger is collapsed on arrival, so Settings and
+ *  the per-task figures stay reachable without a long scroll. */
+const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
 import Settings from "./Settings.jsx";
 
@@ -15,8 +22,11 @@ const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
+  onPickTask,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingTask, setPendingTask] = useState(null); // chosen before starting
+  const [ledgerOpen, setLedgerOpen] = useState(null);   // null = follow the default
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
@@ -43,6 +53,10 @@ export default function ProjectView({
 
   // The ledger shows both kinds; the totals above keep them apart.
   const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
+  const showLedger = ledgerOpen ?? ordered.length <= LEDGER_AUTO_COLLAPSE;
+
+  const taskRows = taskTotals(project, [...sessions, ...idleSessions], now);
+  const hasTasks = taskRows.some((r) => r.taskId);
 
   return (
     <>
@@ -66,6 +80,10 @@ export default function ProjectView({
         </div>
 
         {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
+
+        {current && current.taskId && (
+          <div className="task-chip">Task · {taskLabel(project, current.taskId)}</div>
+        )}
 
         <div className="clock">
           <span className="clock-main">{formatDuration(shownMs)}</span>
@@ -94,13 +112,26 @@ export default function ProjectView({
           <span className="eyebrow">{minuteInHour}/60</span>
         </div>
 
+        {/* Choose before starting; change it while the session is still open.
+            Once stopped, the record is immutable like every other field. */}
+        <TaskPicker
+          project={project}
+          value={current ? current.taskId : pendingTask}
+          label={current ? "Task for this session" : "Task"}
+          onPick={(pick) => {
+            if (current) return onPickTask(current.id, pick);
+            if (pick.taskId !== undefined) return setPendingTask(pick.taskId);
+            onPickTask(null, pick, (taskId) => setPendingTask(taskId));
+          }}
+        />
+
         <div className="controls">
           {!current && (
             <>
-              <button className="btn primary" onClick={() => onStart(KIND.BILLED)}>
+              <button className="btn primary" onClick={() => onStart(KIND.BILLED, pendingTask)}>
                 Start the meter
               </button>
-              <button className="btn ghost" onClick={() => onStart(KIND.IDLE)}>
+              <button className="btn ghost" onClick={() => onStart(KIND.IDLE, pendingTask)}>
                 Start idle
               </button>
             </>
@@ -116,7 +147,8 @@ export default function ProjectView({
           {current && !running && (
             <>
               <button className="btn primary" onClick={onResume}>Resume</button>
-              <button className="btn ghost" onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED)}>
+              <button className="btn ghost"
+                      onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, current.taskId)}>
                 New session
               </button>
             </>
@@ -128,7 +160,7 @@ export default function ProjectView({
         {running && (
           <div className="controls">
             <button className="btn ghost"
-                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE)}>
+                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE, current.taskId)}>
               {idling ? "Back to work" : "Switch to idle"}
             </button>
           </div>
@@ -154,6 +186,16 @@ export default function ProjectView({
                 value={overallGoal.type === "money" ? periodCents / 100 : periodMs / 60000} />
             )}
           </div>
+        </div>
+      )}
+
+      {hasTasks && (
+        <div className="sec">
+          <div className="sec-head">
+            <span className="eyebrow">By task</span>
+            <span className="eyebrow">{taskRows.length} row{taskRows.length === 1 ? "" : "s"}</span>
+          </div>
+          <TaskBreakdown rows={taskRows} currency={project.currency} />
         </div>
       )}
 
@@ -186,11 +228,18 @@ export default function ProjectView({
 
       <div className="sec">
         <div className="sec-head">
-          <span className="eyebrow">Ledger</span>
+          <button className="toggle" onClick={() => setLedgerOpen(!showLedger)}
+                  aria-expanded={showLedger}>
+            <span className={"chev" + (showLedger ? " open" : "")}>▶</span>
+            <span className="eyebrow">
+              Ledger · {ordered.length} session{ordered.length === 1 ? "" : "s"}
+            </span>
+          </button>
           <span className="eyebrow">
             {formatMoney(totalCents, project.currency)} · {totalMs ? formatShortDuration(totalMs) : "0m"}
           </span>
         </div>
+        {showLedger && (
         <div className="panel">
           {ordered.length === 0 ? (
             <div className="empty">No sessions yet. Start the meter and this fills in.</div>
@@ -202,6 +251,7 @@ export default function ProjectView({
                   {isIdle(s) && <span className="tag">Idle</span>}
                 </div>
                 <div className="row-meta">
+                  {s.taskId && `${taskLabel(project, s.taskId)} · `}
                   {formatDuration(elapsedMs(s, now))} at{" "}
                   {formatMoney(Math.round(s.rate * 100), s.currency)}/hr
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
@@ -212,6 +262,7 @@ export default function ProjectView({
             </div>
           ))}
         </div>
+        )}
       </div>
 
       <div className="sec">

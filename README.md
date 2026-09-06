@@ -24,6 +24,8 @@ Most of the design here exists to avoid a specific way of getting the numbers wr
 
 **Idle time shares the state machine but never the total.** Time at the desk that wasn't worked is a session with `kind: 'idle'` — same segments, same pause/resume, same crash recovery. What keeps it out of your earnings is the accessor shape: `sessionsFor()` returns billed sessions only, and idle time has to be asked for by name. A caller that forgets about kind under-reports idle time, which is harmless, rather than inflating income, which is not. Starting either timer stops the other one, on any project, because one person can't bill two things at once.
 
+**Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id. Picking from the list is the normal path; typing only creates a task when the label genuinely doesn't exist, matched trimmed and case-insensitively. Renaming is then one field rather than a rewrite of every session.
+
 **Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
 
 **Timestamps are UTC epoch integers; only display is localised.** Goal periods bucket in local time, because "this week" means the user's week — but the boundary is derived from a `Date` rather than wall-clock strings, so it stays correct across a DST transition.
@@ -40,6 +42,7 @@ src/
     sessions.js    start / pause / resume / stop / recover / delete, billed vs idle
     projects.js    create, edit, remove, validate
     goals.js       period boundaries, progress
+    tasks.js       task records, label matching, per-task totals
   storage/
     store.js       the only module that knows where data lives
   ui/              React components; all logic imported from domain/
@@ -109,6 +112,9 @@ Cases worth knowing about:
 - Changing a project's rate leaves recorded and running sessions alone.
 - An overnight crash bills 2 hours to the last heartbeat, not the 11-hour gap.
 - Startup reads storage exactly once, and rendering never reads or writes it.
+- Two labels differing only by case or whitespace resolve to one task.
+- A task's idle hours never land in its earned column.
+- A long ledger starts collapsed, and its totals stay visible while collapsed.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
 - Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
@@ -122,11 +128,12 @@ Everything lives in browser storage under `meter:v1`, as:
 
 ```js
 Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal }
-Session  { id, projectId, kind, rate, currency, createdAt, segments[], closedAt, deletedAt }
+Project  { ..., tasks: [{ id, label, createdAt }] }
+Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
@@ -134,7 +141,8 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 
 ## Known gaps
 
-- **No session editing.** You can't correct a session's times after the fact. Decide whether an edit is a mutation or an append-only correction before adding it — it changes the schema.
+- **No session editing.** You can't correct a session's times after the fact, and the same rule covers tasks: a session's task can be changed while it's still open, but not once stopped. Decide whether an edit is a mutation or an append-only correction before adding it — it changes the schema.
+- **No task management screen.** Tasks are created implicitly by the picker. `renameTask` exists in the domain and is tested, but nothing in the UI calls it yet, and there's no way to delete or archive a task.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.
 - **Idle time isn't in goals.** Deliberate — a money goal fed by unbilled time is meaningless. If it belongs in goals later, the right shape is a utilisation target, not a second money target.

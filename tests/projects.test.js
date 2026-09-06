@@ -38,8 +38,8 @@ describe("removal", () => {
   it("takes the project's sessions with it and leaves others alone", () => {
     let s = addProject(empty, { name: "A", rate: 450, currency: "EGP" }, T, "p1");
     s = addProject(s, { name: "B", rate: 900, currency: "EGP" }, T, "p2");
-    s = startSession(s, s.projects[0], T, "s1");
-    s = startSession(s, s.projects[1], T, "s2");
+    s = startSession(s, s.projects[0], { now: T, id: "s1" });
+    s = startSession(s, s.projects[1], { now: T, id: "s2" });
     const after = removeProject(s, "p1");
     expect(after.projects.map((p) => p.id)).toEqual(["p2"]);
     expect(after.sessions.map((x) => x.id)).toEqual(["s2"]);
@@ -47,7 +47,7 @@ describe("removal", () => {
 
   it("can be undone by restoring the prior state", () => {
     let s = addProject(empty, { name: "A", rate: 450, currency: "EGP" }, T, "p1");
-    s = startSession(s, s.projects[0], T, "s1");
+    s = startSession(s, s.projects[0], { now: T, id: "s1" });
     const snapshot = s;
     removeProject(s, "p1");
     expect(snapshot.projects).toHaveLength(1); // reducers never mutate
