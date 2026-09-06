@@ -62,6 +62,28 @@ const setValue = (win, el, value) => {
   el.dispatchEvent(new win.Event("change", { bubbles: true }));
 };
 
+/** Starting now asks for a task first: click Start, answer the prompt, and the
+ *  same button confirms. Pass `task` to create a new one on the way in. */
+const startMeter = async (dom, { idle = false, task = null, existing = null } = {}) => {
+  const { window } = dom, d = window.document;
+  const label = idle ? /Start idle/i : /Start the meter/i;
+  btn(d, label).click();
+  await wait(160);
+  if (task !== null) {
+    btn(d, /New task/i).click();
+    await wait(120);
+    setValue(window, d.querySelector(".prompt input"), task);
+  } else if (existing !== null) {
+    btn(d, /^Existing/i).click();
+    await wait(120);
+    const select = d.querySelector(".prompt select");
+    const option = [...select.options].find((o) => o.textContent === existing);
+    setValue(window, select, option.value);
+  }
+  btn(d, label).click();
+  await wait(300);
+};
+
 beforeAll(() => {
   if (!existsSync(DIST)) throw new Error("dist/meter.html missing — run `npm run build` first");
 });
@@ -109,7 +131,7 @@ describe("a full session, end to end", () => {
     await wait(150);
     expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
 
-    btn(d, /Start the meter/i).click();
+    await startMeter(dom);
     await wait(1300);
     expect(d.querySelector(".state").textContent.trim()).toBe("Running");
     expect(d.querySelector(".clock-main").textContent).toMatch(/00:00:0[12]/);
@@ -145,7 +167,7 @@ describe("a full session, end to end", () => {
     await wait(180);
     d.querySelector(".card").click();
     await wait(150);
-    btn(d, /Start the meter/i).click();
+    await startMeter(dom);
     await wait(1200);
 
     btn(d, /^Open$/i).click();
@@ -173,7 +195,7 @@ describe("a full session, end to end", () => {
     await wait(180);
     d.querySelector(".card").click();
     await wait(150);
-    btn(d, /Start the meter/i).click();
+    await startMeter(dom);
     await wait(1100);
     btn(d, /Stop and save/i).click();
     await wait(200);
@@ -237,7 +259,7 @@ describe("idle time in the real UI", () => {
     const d = dom.window.document;
     await makeProject(dom);
 
-    btn(d, /Start idle/i).click();
+    await startMeter(dom, { idle: true });
     await wait(1200);
     expect(d.querySelector(".face").className).toContain("idle");
     expect(d.querySelector(".state").textContent.trim()).toBe("Idling");
@@ -249,7 +271,7 @@ describe("idle time in the real UI", () => {
     const { window } = dom, d = window.document;
     await makeProject(dom);
 
-    btn(d, /Start idle/i).click();
+    await startMeter(dom, { idle: true });
     await wait(1300);
     btn(d, /Stop idling/i).click();
     await wait(200);
@@ -267,7 +289,7 @@ describe("idle time in the real UI", () => {
     const dom = await boot();
     const d = dom.window.document;
     await makeProject(dom);
-    btn(d, /Start idle/i).click();
+    await startMeter(dom, { idle: true });
     await wait(1200);
     btn(d, /Stop idling/i).click();
     await wait(200);
@@ -280,7 +302,7 @@ describe("idle time in the real UI", () => {
     const { window } = dom, d = window.document;
     await makeProject(dom);
 
-    btn(d, /Start the meter/i).click();
+    await startMeter(dom);
     await wait(1200);
     btn(d, /Switch to idle/i).click();
     await wait(300);
@@ -432,43 +454,69 @@ describe("tasks", () => {
     await wait(150);
   };
 
-  const pickNewTask = async (dom, label) => {
-    const { window } = dom, d = window.document;
-    setValue(window, d.querySelector(".picker select"), "__new__");
-    await wait(120);
-    setValue(window, d.querySelector(".picker input"), label);
-    btn(d, /^Add$/i).click();
-    await wait(180);
-  };
+  it("asks which task before it starts counting", async () => {
+    const dom = await boot();
+    const d = dom.window.document;
+    await makeProject(dom);
 
-  it("records the chosen task on the session and shows it on the face", async () => {
+    btn(d, /Start the meter/i).click();
+    await wait(180);
+    // The prompt is up and nothing is running yet.
+    expect(d.querySelector(".prompt")).not.toBeNull();
+    expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
+    expect(d.querySelector(".prompt").textContent).toContain("New task");
+  }, 25_000);
+
+  it("records the chosen task and shows it on the face", async () => {
     const dom = await boot();
     const { window } = dom, d = window.document;
     await makeProject(dom);
-    await pickNewTask(dom, "1234");
+    await startMeter(dom, { task: "1234" });
+    await wait(900);
 
-    btn(d, /Start the meter/i).click();
-    await wait(1200);
+    expect(d.querySelector(".state").textContent.trim()).toBe("Running");
     expect(d.querySelector(".task-chip").textContent).toContain("1234");
 
     btn(d, /Stop and save/i).click();
     await wait(200);
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
-    expect(saved.projects[0].tasks).toHaveLength(1);
     expect(saved.projects[0].tasks[0].label).toBe("1234");
     expect(saved.sessions[0].taskId).toBe(saved.projects[0].tasks[0].id);
   }, 25_000);
 
-  it("will not mint a second task for a label that only differs by whitespace or case", async () => {
+  it("reuses a task when the new name only differs by case or whitespace", async () => {
     const dom = await boot();
-    const { window } = dom;
+    const { window } = dom, d = window.document;
     await makeProject(dom);
-    await pickNewTask(dom, "Task-A");
-    await pickNewTask(dom, "  task-a  ");
+    await startMeter(dom, { task: "Task-A" });
+    await wait(400);
+    btn(d, /Stop and save/i).click();
+    await wait(200);
+    await startMeter(dom, { task: "  task-a  " });
+    await wait(400);
+    btn(d, /Stop and save/i).click();
+    await wait(200);
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks).toHaveLength(1);
-  }, 25_000);
+    expect(new Set(saved.sessions.map((x) => x.taskId)).size).toBe(1);
+  }, 30_000);
+
+  it("offers tasks already created as existing choices", async () => {
+    const dom = await boot();
+    const d = dom.window.document;
+    await makeProject(dom);
+    await startMeter(dom, { task: "1234" });
+    await wait(400);
+    btn(d, /Stop and save/i).click();
+    await wait(200);
+
+    btn(d, /Start the meter/i).click();
+    await wait(180);
+    expect(btn(d, /^Existing/i).textContent).toContain("(1)");
+    expect([...d.querySelector(".prompt select").options].map((o) => o.textContent))
+      .toEqual(["No task", "1234"]);
+  }, 30_000);
 
   it("shows time and earnings per task in their own panel", async () => {
     const now = Date.now(), HOUR = 3_600_000;
@@ -493,12 +541,9 @@ describe("tasks", () => {
 
     const rows = [...d.querySelectorAll(".trow")];
     expect(rows).toHaveLength(2);
-    // Ordered by earnings: 1234 (2h = 900) before 5678 (1h = 450).
     expect(rows[0].querySelector(".trow-label").textContent).toBe("1234");
     expect(rows[0].querySelector(".trow-amt").textContent).toMatch(/900\.00/);
     expect(rows[1].querySelector(".trow-amt").textContent).toMatch(/450\.00/);
-
-    // The idle hour on 1234 must not be added into its earned figure.
     expect(rows[0].textContent).toContain("1h 00m idle");
     expect(rows[0].querySelector(".trow-amt").textContent).not.toMatch(/1,350/);
   }, 25_000);
@@ -507,9 +552,8 @@ describe("tasks", () => {
     const dom = await boot();
     const d = dom.window.document;
     await makeProject(dom);
-    await pickNewTask(dom, "9001");
-    btn(d, /Start the meter/i).click();
-    await wait(1100);
+    await startMeter(dom, { task: "9001" });
+    await wait(700);
     btn(d, /Stop and save/i).click();
     await wait(200);
     expect(d.querySelector(".row-meta").textContent).toContain("9001");
@@ -569,4 +613,186 @@ describe("the ledger collapses", () => {
     expect(d.querySelectorAll(".row")).toHaveLength(0);
     expect(header()).toMatch(/5,400\.00/);
   }, 25_000);
+});
+
+describe("re-filing old sessions", () => {
+  const HOUR = 3_600_000;
+  const seed = ({ tasks = [], assign = [] } = {}) => {
+    const now = Date.now();
+    return {
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP",
+                   createdAt: now - 40 * HOUR, sessionGoal: null, overallGoal: null, tasks }],
+      sessions: Array.from({ length: 4 }, (_, i) => ({
+        id: `s${i}`, projectId: "p1", kind: "billed", taskId: assign[i] ?? null,
+        rate: 450, currency: "EGP", createdAt: now - (i + 2) * HOUR,
+        segments: [{ startedAt: now - (i + 2) * HOUR, endedAt: now - (i + 1) * HOUR }],
+        closedAt: now - (i + 1) * HOUR, deletedAt: null,
+      })),
+    };
+  };
+  const open = async (dom) => {
+    const d = dom.window.document;
+    d.querySelector(".card").click();
+    await wait(250);
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    return d;
+  };
+
+  it("moves a batch of finished sessions onto a new task", async () => {
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+
+    const boxes = [...d.querySelectorAll(".row-check")];
+    boxes[0].click();
+    boxes[2].click();
+    await wait(180);
+    expect(d.querySelector(".selbar-count").textContent).toBe("2 selected");
+
+    btn(d, /Assign to task/i).click();
+    await wait(180);
+    setValue(window, d.querySelector(".prompt input"), "REPORT-7");
+    btn(d, /Move 2 sessions/i).click();
+    await wait(300);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    const task = saved.projects[0].tasks.find((t) => t.label === "REPORT-7");
+    expect(task).toBeTruthy();
+    const assigned = saved.sessions.filter((s) => s.taskId === task.id).map((s) => s.id);
+    expect(assigned.sort()).toEqual(["s0", "s2"]);
+    expect(saved.sessions.find((s) => s.id === "s1").taskId).toBeNull();
+  }, 30_000);
+
+  it("re-files without altering the recorded hours or rate", async () => {
+    // The reason closed sessions accept this edit at all: it changes the
+    // filing, never the measurement.
+    const dom = await boot(seed());
+    const { window } = dom;
+    const d = await open(dom);
+    const before = JSON.parse(window.localStorage.getItem("meter:v1")).sessions[0];
+
+    d.querySelectorAll(".row-check")[0].click();
+    await wait(150);
+    btn(d, /Assign to task/i).click();
+    await wait(180);
+    setValue(window, d.querySelector(".prompt input"), "X-1");
+    btn(d, /Move 1 session/i).click();
+    await wait(300);
+
+    const after = JSON.parse(window.localStorage.getItem("meter:v1")).sessions.find((s) => s.id === before.id);
+    expect(after.segments).toEqual(before.segments);
+    expect(after.rate).toBe(before.rate);
+    expect(after.closedAt).toBe(before.closedAt);
+    expect(after.taskId).not.toBeNull();
+  }, 30_000);
+
+  it("corrects a session filed under the wrong task", async () => {
+    const tasks = [{ id: "t1", label: "1234", createdAt: Date.now() },
+                   { id: "t2", label: "5678", createdAt: Date.now() }];
+    const dom = await boot(seed({ tasks, assign: ["t1", "t1", "t1", "t1"] }));
+    const { window } = dom;
+    const d = await open(dom);
+
+    d.querySelectorAll(".row-check")[1].click();
+    await wait(150);
+    btn(d, /Assign to task/i).click();
+    await wait(180);
+    btn(d, /^Existing/i).click();
+    await wait(150);
+    const select = d.querySelector(".prompt select");
+    setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
+    btn(d, /Move 1 session/i).click();
+    await wait(300);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions.filter((s) => s.taskId === "t2").map((s) => s.id)).toEqual(["s1"]);
+    expect(saved.sessions.filter((s) => s.taskId === "t1")).toHaveLength(3);
+  }, 30_000);
+
+  it("moves the totals across when a session is re-filed", async () => {
+    const tasks = [{ id: "t1", label: "1234", createdAt: Date.now() },
+                   { id: "t2", label: "5678", createdAt: Date.now() }];
+    const dom = await boot(seed({ tasks, assign: ["t1", "t1", "t2", "t2"] }));
+    const { window } = dom;
+    const d = await open(dom);
+
+    const amounts = () => Object.fromEntries([...d.querySelectorAll(".trow")]
+      .map((r) => [r.querySelector(".trow-label").textContent,
+                   r.querySelector(".trow-amt").textContent]));
+    expect(amounts()["1234"]).toMatch(/900\.00/); // 2h
+    expect(amounts()["5678"]).toMatch(/900\.00/);
+
+    d.querySelectorAll(".row-check")[0].click();
+    await wait(150);
+    btn(d, /Assign to task/i).click();
+    await wait(180);
+    btn(d, /^Existing/i).click();
+    await wait(150);
+    const select = d.querySelector(".prompt select");
+    setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
+    btn(d, /Move 1 session/i).click();
+    await wait(350);
+
+    expect(amounts()["1234"]).toMatch(/450\.00/);   // 1h
+    expect(amounts()["5678"]).toMatch(/1,350\.00/); // 3h
+  }, 30_000);
+
+  it("filters the ledger to one task so a whole group can be checked", async () => {
+    const tasks = [{ id: "t1", label: "1234", createdAt: Date.now() },
+                   { id: "t2", label: "5678", createdAt: Date.now() }];
+    const dom = await boot(seed({ tasks, assign: ["t1", "t2", "t1", null] }));
+    const d = await open(dom);
+
+    [...d.querySelectorAll(".trow")].find((r) => r.textContent.includes("5678")).click();
+    await wait(250);
+    expect(d.querySelectorAll(".row")).toHaveLength(1);
+    expect(d.querySelector(".chip").textContent).toContain("5678");
+
+    d.querySelector(".chip").click();
+    await wait(200);
+    expect(d.querySelectorAll(".row")).toHaveLength(4);
+  }, 30_000);
+
+  it("selects every visible row at once", async () => {
+    const dom = await boot(seed());
+    const d = await open(dom);
+    btn(d, /Select all 4/i).click();
+    await wait(180);
+    expect(d.querySelector(".selbar-count").textContent).toBe("4 selected");
+    btn(d, /Deselect all/i).click();
+    await wait(180);
+    expect(d.querySelector(".selbar")).toBeNull();
+  }, 30_000);
+
+  it("changes the task of the session that is still running", async () => {
+    const now = Date.now();
+    const dom = await boot({
+      projects: [{ id: "p1", name: "Acme", currentRate: 450, currency: "EGP", createdAt: now - HOUR,
+                   sessionGoal: null, overallGoal: null,
+                   tasks: [{ id: "t1", label: "1234", createdAt: now - HOUR },
+                           { id: "t2", label: "5678", createdAt: now - HOUR }] }],
+      sessions: [{ id: "s1", projectId: "p1", kind: "billed", taskId: "t1", rate: 450,
+                   currency: "EGP", createdAt: now - HOUR,
+                   segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now - 5000 }],
+                   closedAt: null, deletedAt: null }],
+    });
+    const { window } = dom, d = window.document;
+    btn(d, /This tab only/i).click();
+    await wait(200);
+    d.querySelector(".card").click();
+    await wait(250);
+
+    expect(d.querySelector(".task-chip").textContent).toContain("1234");
+    d.querySelector(".task-chip").click();
+    await wait(200);
+    const select = d.querySelector(".prompt select");
+    setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
+    btn(d, /^Save$/i).click();
+    await wait(300);
+
+    expect(d.querySelector(".task-chip").textContent).toContain("5678");
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].taskId).toBe("t2");
+    expect(saved.sessions[0].closedAt).toBeNull(); // still running
+  }, 30_000);
 });

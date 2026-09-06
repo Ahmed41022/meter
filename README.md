@@ -24,7 +24,9 @@ Most of the design here exists to avoid a specific way of getting the numbers wr
 
 **Idle time shares the state machine but never the total.** Time at the desk that wasn't worked is a session with `kind: 'idle'` — same segments, same pause/resume, same crash recovery. What keeps it out of your earnings is the accessor shape: `sessionsFor()` returns billed sessions only, and idle time has to be asked for by name. A caller that forgets about kind under-reports idle time, which is harmless, rather than inflating income, which is not. Starting either timer stops the other one, on any project, because one person can't bill two things at once.
 
-**Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id. Picking from the list is the normal path; typing only creates a task when the label genuinely doesn't exist, matched trimmed and case-insensitively. Renaming is then one field rather than a rewrite of every session.
+**Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id, matched trimmed and case-insensitively. Starting the meter asks which task first, as an explicit existing-or-new choice, because that is the moment a duplicate would be created.
+
+**`taskId` is the one field a finished session will let you change.** `segments` and `rate` are the audit trail: editing them would falsify what you actually worked and earned. `taskId` is a label on that record — moving it changes which bucket the same hours report under, not the hours themselves. Immutability protects the measurement, not the filing. So sessions can be re-filed individually or in batches, and there are tests asserting a re-file leaves segments, rate, kind and closedAt untouched.
 
 **Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
 
@@ -42,7 +44,7 @@ src/
     sessions.js    start / pause / resume / stop / recover / delete, billed vs idle
     projects.js    create, edit, remove, validate
     goals.js       period boundaries, progress
-    tasks.js       task records, label matching, per-task totals
+    tasks.js       task records, label matching, per-task totals, re-filing
   storage/
     store.js       the only module that knows where data lives
   ui/              React components; all logic imported from domain/
@@ -77,6 +79,12 @@ npm test
 `npm run build` must run before `npm test`, because the integration suite drives the built file rather than the source.
 
 ---
+
+## Reporting time per task
+
+The **By task** panel on a project lists every task with hours and earnings, ordered by earnings, with idle time on its own line. Clicking a row filters the ledger to that task so you can check what's actually in it.
+
+To correct filing: open the ledger, tick the sessions, then **Assign to task**. One session or twenty, onto an existing task or a new one. The running session's task can be changed from the chip on the meter face.
 
 ## Running it
 
@@ -114,6 +122,8 @@ Cases worth knowing about:
 - Startup reads storage exactly once, and rendering never reads or writes it.
 - Two labels differing only by case or whitespace resolve to one task.
 - A task's idle hours never land in its earned column.
+- Re-filing a session moves its totals between tasks and leaves its hours and rate alone.
+- A batch re-file skips deleted sessions.
 - A long ledger starts collapsed, and its totals stay visible while collapsed.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
@@ -141,8 +151,10 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 
 ## Known gaps
 
-- **No session editing.** You can't correct a session's times after the fact, and the same rule covers tasks: a session's task can be changed while it's still open, but not once stopped. Decide whether an edit is a mutation or an append-only correction before adding it — it changes the schema.
-- **No task management screen.** Tasks are created implicitly by the picker. `renameTask` exists in the domain and is tested, but nothing in the UI calls it yet, and there's no way to delete or archive a task.
+- **No time editing.** A session's start, end and rate can't be corrected after the fact. Only its task can. Decide whether a time edit is a mutation or an append-only correction before adding it — it changes the schema.
+- **No re-filing history.** A session doesn't record that it was moved between tasks, or when. Fine for your own reporting; not enough if someone else has to audit it.
+- **No task management screen.** Tasks are created through the start prompt. `renameTask` exists in the domain and is tested, but nothing in the UI calls it, and there's no way to delete or archive a task.
+- **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.
 - **Idle time isn't in goals.** Deliberate — a money goal fed by unbilled time is meaningless. If it belongs in goals later, the right shape is a utilisation target, not a second money target.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isRunning, isStale } from "../domain/time.js";
 import {
-  assignTask, currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled,
+  assignTaskToMany, currentSession, deleteSession, heartbeat, idleSessionsFor, isBilled,
   liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
@@ -19,6 +19,17 @@ const STALE_MS = 150_000;
 const TOAST_MS = 7_000;
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/**
+ * Turns a prompt answer into a task id plus the state change that must land
+ * first. A new label reuses an existing task's id when it already matches, so
+ * the prompt can never mint a duplicate the user would read as the same task.
+ */
+const resolveTaskPick = (project, pick, createTask) => {
+  if (pick?.label === undefined) return { id: pick?.taskId ?? null, prepare: (s) => s };
+  const id = resolveTaskId(project, pick.label, uid());
+  return { id, prepare: (s) => createTask(s, id, pick.label) };
+};
 const EMPTY = { projects: [], sessions: [] };
 
 export default function App({ store: injectedStore }) {
@@ -187,7 +198,12 @@ export default function App({ store: injectedStore }) {
             project={project} current={current} now={now}
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
-            onStart={(kind, taskId) => commit((s) => startSession(s, project, { now: Date.now(), id: uid(), kind, taskId }))}
+            onStart={(kind, pick) => {
+              const taskId = resolveTaskPick(project, pick, (st, id, label) =>
+                addTask(st, project.id, { id, label }, Date.now()));
+              commit((s) => startSession(
+                taskId.prepare(s), project, { now: Date.now(), id: uid(), kind, taskId: taskId.id }));
+            }}
             onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
             onResume={() => commit((s) => resumeSession(s, current.id, Date.now()))}
             onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
@@ -195,17 +211,10 @@ export default function App({ store: injectedStore }) {
               commit((s) => deleteSession(s, id, Date.now()));
               flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
             }}
-            onPickTask={(sessionId, pick, onResolved) => {
-              // A brand new label creates the task first, reusing an existing
-              // task's id if the label already matches — so the picker can
-              // never mint a duplicate the user would read as the same task.
-              let taskId = pick.taskId ?? null;
-              if (pick.label !== undefined) {
-                taskId = resolveTaskId(project, pick.label, uid());
-                commit((s) => addTask(s, project.id, { id: taskId, label: pick.label }, Date.now()));
-              }
-              if (sessionId) commit((s) => assignTask(s, sessionId, taskId));
-              onResolved?.(taskId);
+            onAssign={(sessionIds, pick) => {
+              const chosen = resolveTaskPick(project, pick, (st, id, label) =>
+                addTask(st, project.id, { id, label }, Date.now()));
+              commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
             }}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onDeleteProject={() => {
