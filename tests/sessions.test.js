@@ -48,7 +48,7 @@ describe("rate changes", () => {
     s = { ...s, projects: [{ ...project, currentRate: 900 }] };
     const session = s.sessions[0];
     expect(session.rate).toBe(450);
-    expect(earningsCents(session, elapsedMs(session, T + HOUR))).toBe(45_000);
+    expect(earningsCents(session.rate, elapsedMs(session, T + HOUR))).toBe(45_000);
   });
 
   it("leaves a RUNNING session untouched when the project rate moves", () => {
@@ -133,7 +133,7 @@ describe("crash recovery", () => {
     const recovered = recoverSession(s, "s1");
     const session = recovered.sessions[0];
     expect(elapsedMs(session, T + 11 * HOUR)).toBe(2 * HOUR);
-    expect(earningsCents(session, elapsedMs(session, T + 11 * HOUR))).toBe(90_000);
+    expect(earningsCents(session.rate, elapsedMs(session, T + 11 * HOUR))).toBe(90_000);
     expect(session.closedAt).toBe(T + 2 * HOUR);
   });
 
@@ -196,7 +196,7 @@ describe("idle time", () => {
     s = stopSession(s, "i1", T + 4 * HOUR); // 3 idle hours
 
     const billed = sessionsFor(s, "p1")
-      .reduce((a, x) => a + earningsCents(x, elapsedMs(x, T + 4 * HOUR)), 0);
+      .reduce((a, x) => a + earningsCents(x.rate, elapsedMs(x, T + 4 * HOUR)), 0);
     expect(billed).toBe(45_000); // one hour, not four
   });
 

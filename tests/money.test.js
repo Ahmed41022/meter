@@ -7,17 +7,17 @@ const HOUR = 3_600_000;
 
 describe("earnings", () => {
   it("bills a whole hour exactly", () => {
-    expect(earningsCents({ rate: 450 }, HOUR)).toBe(45_000);
+    expect(earningsCents(450, HOUR)).toBe(45_000);
   });
 
   it("bills partial hours proportionally", () => {
-    expect(earningsCents({ rate: 450 }, HOUR / 4)).toBe(11_250);
+    expect(earningsCents(450, HOUR / 4)).toBe(11_250);
   });
 
   it("does not drift the way an accumulating counter would", () => {
     // A ticker adding (rate/3600) once per second for 10k seconds accumulates
     // float error. Deriving once from elapsed time cannot.
-    const derived = earningsCents({ rate: 450 }, 10_000 * 1000);
+    const derived = earningsCents(450, 10_000 * 1000);
     let accumulated = 0;
     for (let i = 0; i < 10_000; i++) accumulated += (1 / 3600) * 450;
     expect(derived).toBe(125_000);
@@ -25,7 +25,7 @@ describe("earnings", () => {
   });
 
   it("rounds to the minor unit rather than carrying fractions of a cent", () => {
-    const cents = earningsCents({ rate: 100 }, 1000); // one second at 100/hr
+    const cents = earningsCents(100, 1000); // one second at 100/hr
     expect(Number.isInteger(cents)).toBe(true);
     expect(cents).toBe(3); // 2.777... rounds to 3
   });
@@ -37,7 +37,7 @@ describe("earnings", () => {
   });
 
   it("returns zero for a session with no elapsed time", () => {
-    expect(earningsCents({ rate: 450 }, 0)).toBe(0);
+    expect(earningsCents(450, 0)).toBe(0);
   });
 });
 

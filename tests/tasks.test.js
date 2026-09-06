@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  addTask, findTask, findTaskByLabel, normaliseLabel, renameTask, resolveTaskId,
-  taskLabel, taskTotals, tasksFor, UNASSIGNED,
+  addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
+  resolveTaskId, sessionsUnderTask, setTaskRate, taskLabel, taskTotals, tasksFor, UNASSIGNED,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -229,5 +229,122 @@ describe("project removal", () => {
     const after = removeProject(s, "p1");
     expect(after.projects).toHaveLength(0);
     expect(after.sessions).toHaveLength(0);
+  });
+});
+
+describe("task rate override", () => {
+  const build = (rate) => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" }); // snapshots 450
+    s = stopSession(s, "s1", T + 2 * HOUR);
+    return rate === undefined ? s : setTaskRate(s, "p1", "t1", rate);
+  };
+
+  it("falls back to the session's own snapshot when no override is set", () => {
+    const s = build();
+    expect(rateFor(proj(s), s.sessions[0])).toBe(450);
+  });
+
+  it("reprices sessions already finished", () => {
+    // The case this exists for: you're told after the fact what you're paid.
+    const s = build(90);
+    expect(rateFor(proj(s), s.sessions[0])).toBe(90);
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 3 * HOUR)[0];
+    expect(row.billedCents).toBe(18_000); // 2h at 90, not at 450
+  });
+
+  it("leaves the recorded hours and the session snapshot alone", () => {
+    // Repricing must not touch the audit trail.
+    const before = build().sessions[0];
+    const after = build(90).sessions[0];
+    expect(after.segments).toEqual(before.segments);
+    expect(after.rate).toBe(450); // snapshot preserved, override lives on the task
+    expect(after.closedAt).toBe(before.closedAt);
+  });
+
+  it("drops the override when cleared, restoring the snapshot", () => {
+    let s = build(90);
+    s = setTaskRate(s, "p1", "t1", null);
+    expect(rateFor(proj(s), s.sessions[0])).toBe(450);
+  });
+
+  it("ignores a zero, negative or non-numeric rate", () => {
+    for (const bad of [0, -5, "abc", ""]) {
+      const s = setTaskRate(build(), "p1", "t1", bad);
+      expect(findTask(proj(s), "t1").rate ?? null).toBeNull();
+    }
+  });
+
+  it("coerces the numeric string an input field produces", () => {
+    const s = setTaskRate(build(), "p1", "t1", "62.5");
+    expect(findTask(proj(s), "t1").rate).toBe(62.5);
+  });
+
+  it("only applies to sessions filed under that task", () => {
+    let s = build(90);
+    s = startSession(s, proj(s), { now: T + 3 * HOUR, id: "s2" }); // no task
+    s = stopSession(s, "s2", T + 4 * HOUR);
+    expect(rateFor(proj(s), s.sessions.find((x) => x.id === "s2"))).toBe(450);
+  });
+
+  it("reports the override on the breakdown row", () => {
+    const s = build(90);
+    expect(taskTotals(proj(s), allSessionsFor(s, "p1"), T + 3 * HOUR)[0].rate).toBe(90);
+    expect(taskTotals(proj(build()), allSessionsFor(build(), "p1"), T + 3 * HOUR)[0].rate).toBeNull();
+  });
+
+  it("prices idle time at the override too", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "i1", kind: KIND.IDLE, taskId: "t1" });
+    s = stopSession(s, "i1", T + HOUR);
+    s = setTaskRate(s, "p1", "t1", 90);
+    expect(taskTotals(proj(s), allSessionsFor(s, "p1"), T + HOUR)[0].idleCents).toBe(9_000);
+  });
+});
+
+describe("deleting a task", () => {
+  const withSessions = () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "5678" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    s = startSession(s, proj(s), { now: T + HOUR, id: "s2", taskId: "t2" });
+    s = stopSession(s, "s2", T + 2 * HOUR);
+    return s;
+  };
+
+  it("unfiles its sessions rather than orphaning them", () => {
+    // The hours must survive; only the filing goes.
+    const s = removeTask(withSessions(), "p1", "t1");
+    expect(findTask(proj(s), "t1")).toBeNull();
+    const moved = s.sessions.find((x) => x.id === "s1");
+    expect(moved.taskId).toBeNull();
+    expect(moved.segments).toEqual(withSessions().sessions[0].segments);
+  });
+
+  it("leaves other tasks and their sessions alone", () => {
+    const s = removeTask(withSessions(), "p1", "t1");
+    expect(findTask(proj(s), "t2").label).toBe("5678");
+    expect(s.sessions.find((x) => x.id === "s2").taskId).toBe("t2");
+  });
+
+  it("moves the unfiled hours into the No task row", () => {
+    const s = removeTask(withSessions(), "p1", "t1");
+    const rows = taskTotals(proj(s), allSessionsFor(s, "p1"), T + 3 * HOUR);
+    expect(rows.find((r) => r.taskId === null).billedMs).toBe(HOUR);
+  });
+
+  it("counts what would be unfiled before you confirm", () => {
+    const s = withSessions();
+    expect(sessionsUnderTask(allSessionsFor(s, "p1"), "t1")).toBe(1);
+    expect(sessionsUnderTask(allSessionsFor(s, "p1"), "nope")).toBe(0);
+  });
+
+  it("does not reach into another project", () => {
+    const two = { ...withSessions() };
+    two.projects = [...two.projects, { id: "p2", name: "B", currentRate: 900, currency: "EGP",
+                                       tasks: [{ id: "t1", label: "same id", createdAt: T }] }];
+    const s = removeTask(two, "p1", "t1");
+    expect(findTask(s.projects[1], "t1")).not.toBeNull();
   });
 });
