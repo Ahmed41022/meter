@@ -135,8 +135,20 @@ export const heartbeat = (state, now) =>
       : s
   );
 
-/** Re-point an OPEN session at a different task. Closed sessions are immutable
- *  — correcting a finished record is session editing, which this app doesn't
- *  do yet, and doing it here by accident would be worse than not doing it. */
+/**
+ * Re-file sessions under a different task — open or closed, one or many.
+ *
+ * This is the one field a finished session will let you change, and the
+ * distinction is deliberate: `segments` and `rate` are the audit trail, so
+ * editing them would falsify what you actually worked and earned. `taskId` is
+ * a label on that record. Moving it changes which bucket the same hours report
+ * under, not the hours themselves. Immutability protects the measurement, not
+ * the filing.
+ */
+export const assignTaskToMany = (state, sessionIds, taskId) => {
+  const ids = new Set(sessionIds);
+  return mapSessions(state, (s) => (ids.has(s.id) && !s.deletedAt ? { ...s, taskId } : s));
+};
+
 export const assignTask = (state, sessionId, taskId) =>
-  mapSessions(state, (s) => (s.id === sessionId && isOpen(s) ? { ...s, taskId } : s));
+  assignTaskToMany(state, [sessionId], taskId);

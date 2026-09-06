@@ -1,12 +1,17 @@
 import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { UNASSIGNED } from "../domain/tasks.js";
 
 /** Time and money per task. Idle sits on its own line, never added into the
  *  earned column. */
-export default function TaskBreakdown({ rows, currency }) {
+export default function TaskBreakdown({ rows, currency, active, onPick }) {
   return (
     <div className="panel">
       {rows.map((r) => (
-        <div className={"trow" + (r.taskId ? "" : " none")} key={r.taskId ?? "none"}>
+        <div key={r.taskId ?? UNASSIGNED}
+             className={"trow" + (r.taskId ? "" : " none")
+               + (onPick ? " clickable" : "")
+               + ((active && active === (r.taskId ?? UNASSIGNED)) ? " on" : "")}
+             onClick={() => onPick?.(r.taskId ?? UNASSIGNED)}>
           <div>
             <div className="trow-label">{r.label}</div>
             <div className="trow-sub">

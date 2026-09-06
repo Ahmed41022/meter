@@ -3,7 +3,9 @@ import {
   addTask, findTask, findTaskByLabel, normaliseLabel, renameTask, resolveTaskId,
   taskLabel, taskTotals, tasksFor, UNASSIGNED,
 } from "../src/domain/tasks.js";
-import { startSession, stopSession, assignTask, KIND, allSessionsFor } from "../src/domain/sessions.js";
+import {
+  startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
+} from "../src/domain/sessions.js";
 import { removeProject } from "../src/domain/projects.js";
 
 const T = 1_700_000_000_000;
@@ -95,12 +97,54 @@ describe("assigning a task to a session", () => {
     expect(s.sessions[0].taskId).toBe("t1");
   });
 
-  it("cannot be changed once the session is stopped", () => {
+  it("can be corrected after the session is stopped", () => {
+    // Filed under the wrong task is a normal mistake and has to be fixable.
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "5678" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    s = assignTask(s, "s1", "t2");
+    expect(s.sessions[0].taskId).toBe("t2");
+  });
+
+  it("re-files without touching the hours or the rate", () => {
+    // taskId is a label on the record; segments and rate are the record.
     let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
     s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
     s = stopSession(s, "s1", T + HOUR);
-    s = assignTask(s, "s1", null);
-    expect(s.sessions[0].taskId).toBe("t1"); // closed records are immutable
+    const before = s.sessions[0];
+    const after = assignTask(s, "s1", null).sessions[0];
+    expect(after.segments).toEqual(before.segments);
+    expect(after.rate).toBe(before.rate);
+    expect(after.closedAt).toBe(before.closedAt);
+    expect(after.kind).toBe(before.kind);
+  });
+
+  it("moves a batch of sessions in one go", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "5678" }, T);
+    for (const [i, id] of ["a", "b", "c"].entries()) {
+      s = startSession(s, proj(s), { now: T + i * HOUR, id });
+      s = stopSession(s, id, T + (i + 1) * HOUR);
+    }
+    s = assignTaskToMany(s, ["a", "c"], "t2");
+    expect(s.sessions.map((x) => x.taskId)).toEqual(["t2", null, "t2"]);
+  });
+
+  it("leaves deleted sessions out of a batch assignment", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1" });
+    s = stopSession(s, "s1", T + HOUR);
+    s = deleteSession(s, "s1", T + HOUR);
+    s = assignTaskToMany(s, ["s1"], "t1");
+    expect(s.sessions[0].taskId).toBeNull();
+  });
+
+  it("clears a task by assigning null", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    expect(assignTask(s, "s1", null).sessions[0].taskId).toBeNull();
   });
 });
 

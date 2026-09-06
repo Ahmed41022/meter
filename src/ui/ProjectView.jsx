@@ -5,8 +5,8 @@ import {
 } from "../domain/money.js";
 import { periodStart } from "../domain/goals.js";
 import { isIdle, KIND, utilisation } from "../domain/sessions.js";
-import { taskLabel, taskTotals } from "../domain/tasks.js";
-import TaskPicker from "./TaskPicker.jsx";
+import { taskLabel, taskTotals, UNASSIGNED } from "../domain/tasks.js";
+import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
@@ -22,11 +22,14 @@ const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
-  onPickTask,
+  onAssign,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pendingTask, setPendingTask] = useState(null); // chosen before starting
-  const [ledgerOpen, setLedgerOpen] = useState(null);   // null = follow the default
+  const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
+  const [ledgerOpen, setLedgerOpen] = useState(null); // null = follow the default
+  const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
+  const [selected, setSelected] = useState([]);       // session ids picked for re-filing
+  const [bulkPrompt, setBulkPrompt] = useState(false);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
@@ -53,7 +56,14 @@ export default function ProjectView({
 
   // The ledger shows both kinds; the totals above keep them apart.
   const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
-  const showLedger = ledgerOpen ?? ordered.length <= LEDGER_AUTO_COLLAPSE;
+  const visible = filterTask
+    ? ordered.filter((s) =>
+        filterTask === UNASSIGNED ? !s.taskId : s.taskId === filterTask)
+    : ordered;
+  const showLedger = ledgerOpen ?? (visible.length <= LEDGER_AUTO_COLLAPSE && !filterTask);
+  const selecting = selected.length > 0;
+  const toggleSelect = (id) =>
+    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   const taskRows = taskTotals(project, [...sessions, ...idleSessions], now);
   const hasTasks = taskRows.some((r) => r.taskId);
@@ -81,8 +91,10 @@ export default function ProjectView({
 
         {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
 
-        {current && current.taskId && (
-          <div className="task-chip">Task · {taskLabel(project, current.taskId)}</div>
+        {current && (
+          <button className="task-chip" onClick={() => setPrompt({ reassign: true })}>
+            Task · {current.taskId ? taskLabel(project, current.taskId) : "none"} · change
+          </button>
         )}
 
         <div className="clock">
@@ -112,26 +124,29 @@ export default function ProjectView({
           <span className="eyebrow">{minuteInHour}/60</span>
         </div>
 
-        {/* Choose before starting; change it while the session is still open.
-            Once stopped, the record is immutable like every other field. */}
-        <TaskPicker
-          project={project}
-          value={current ? current.taskId : pendingTask}
-          label={current ? "Task for this session" : "Task"}
-          onPick={(pick) => {
-            if (current) return onPickTask(current.id, pick);
-            if (pick.taskId !== undefined) return setPendingTask(pick.taskId);
-            onPickTask(null, pick, (taskId) => setPendingTask(taskId));
-          }}
-        />
+        {prompt && (
+          <TaskPrompt
+            project={project}
+            initialTaskId={prompt.reassign ? current?.taskId : null}
+            confirmLabel={
+              prompt.reassign ? "Save" : prompt.kind === KIND.IDLE ? "Start idle" : "Start the meter"
+            }
+            onCancel={() => setPrompt(null)}
+            onConfirm={(pick) => {
+              if (prompt.reassign) onAssign([current.id], pick);
+              else onStart(prompt.kind, pick);
+              setPrompt(null);
+            }}
+          />
+        )}
 
         <div className="controls">
-          {!current && (
+          {!current && !prompt && (
             <>
-              <button className="btn primary" onClick={() => onStart(KIND.BILLED, pendingTask)}>
+              <button className="btn primary" onClick={() => setPrompt({ kind: KIND.BILLED })}>
                 Start the meter
               </button>
-              <button className="btn ghost" onClick={() => onStart(KIND.IDLE, pendingTask)}>
+              <button className="btn ghost" onClick={() => setPrompt({ kind: KIND.IDLE })}>
                 Start idle
               </button>
             </>
@@ -148,7 +163,7 @@ export default function ProjectView({
             <>
               <button className="btn primary" onClick={onResume}>Resume</button>
               <button className="btn ghost"
-                      onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, current.taskId)}>
+                      onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, { taskId: current.taskId })}>
                 New session
               </button>
             </>
@@ -160,7 +175,7 @@ export default function ProjectView({
         {running && (
           <div className="controls">
             <button className="btn ghost"
-                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE, current.taskId)}>
+                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE, { taskId: current.taskId })}>
               {idling ? "Back to work" : "Switch to idle"}
             </button>
           </div>
@@ -195,7 +210,12 @@ export default function ProjectView({
             <span className="eyebrow">By task</span>
             <span className="eyebrow">{taskRows.length} row{taskRows.length === 1 ? "" : "s"}</span>
           </div>
-          <TaskBreakdown rows={taskRows} currency={project.currency} />
+          <TaskBreakdown rows={taskRows} currency={project.currency} active={filterTask}
+                         onPick={(key) => {
+                           setFilterTask(key === filterTask ? null : key);
+                           setLedgerOpen(true);
+                           setSelected([]);
+                         }} />
         </div>
       )}
 
@@ -239,19 +259,67 @@ export default function ProjectView({
             {formatMoney(totalCents, project.currency)} · {totalMs ? formatShortDuration(totalMs) : "0m"}
           </span>
         </div>
+
+        {filterTask && (
+          <button className="chip" style={{ marginBottom: 12 }} onClick={() => setFilterTask(null)}>
+            Showing {filterTask === UNASSIGNED ? "sessions with no task" : taskLabel(project, filterTask)} ✕
+          </button>
+        )}
+
+        {selecting && (
+          <div className="selbar">
+            <span className="selbar-count">{selected.length} selected</span>
+            <button className="btn primary" onClick={() => setBulkPrompt(true)}>
+              Assign to task
+            </button>
+            <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
+          </div>
+        )}
+
+        {bulkPrompt && (
+          <div style={{ marginBottom: 12 }}>
+            <TaskPrompt
+              project={project} confirmLabel={`Move ${selected.length} session${selected.length === 1 ? "" : "s"}`}
+              onCancel={() => setBulkPrompt(false)}
+              onConfirm={(pick) => {
+                onAssign(selected, pick);
+                setSelected([]);
+                setBulkPrompt(false);
+              }}
+            />
+          </div>
+        )}
+
+        {showLedger && visible.length > 1 && (
+          <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
+            <button className="btn ghost"
+                    onClick={() => setSelected(
+                      selected.length === visible.length ? [] : visible.map((x) => x.id)
+                    )}>
+              {selected.length === visible.length ? "Deselect all" : `Select all ${visible.length}`}
+            </button>
+          </div>
+        )}
+
         {showLedger && (
         <div className="panel">
-          {ordered.length === 0 ? (
-            <div className="empty">No sessions yet. Start the meter and this fills in.</div>
-          ) : ordered.map((s) => (
-            <div className={"row" + (isIdle(s) ? " is-idle" : "")} key={s.id}>
+          {visible.length === 0 ? (
+            <div className="empty">
+              {filterTask ? "No sessions filed under this task yet." : "No sessions yet. Start the meter and this fills in."}
+            </div>
+          ) : visible.map((s) => (
+            <div className={"row pick" + (isIdle(s) ? " is-idle" : "") + (selected.includes(s.id) ? " sel" : "")}
+                 key={s.id}>
+              <input type="checkbox" className="row-check" checked={selected.includes(s.id)}
+                     aria-label={`Select session from ${date(startedAt(s))}`}
+                     onChange={() => toggleSelect(s.id)} />
               <div>
                 <div className="row-when">
                   {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
                   {isIdle(s) && <span className="tag">Idle</span>}
                 </div>
                 <div className="row-meta">
-                  {s.taskId && `${taskLabel(project, s.taskId)} · `}
+                  {s.taskId ? `${taskLabel(project, s.taskId)} · ` : "No task · "}
                   {formatDuration(elapsedMs(s, now))} at{" "}
                   {formatMoney(Math.round(s.rate * 100), s.currency)}/hr
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
