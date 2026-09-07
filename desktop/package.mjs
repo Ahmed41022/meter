@@ -4,7 +4,7 @@
  * HTML file — only worth it if the target machine might not have a browser.
  * Prefer the shortcut in tools/ for everyday use.
  */
-import packager from "@electron/packager";
+import { packager } from "@electron/packager";
 import { copyFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -26,6 +26,7 @@ const [appPath] = await packager({
   overwrite: true,
   appVersion: "1.0.0",
   ignore: [/package\.mjs$/, /^\/out/],
+  prune: true,
   win32metadata: { FileDescription: "Meter", ProductName: "Meter" },
 });
 

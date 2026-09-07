@@ -104,7 +104,15 @@ To correct filing: open the ledger, tick the sessions, then **Assign to task**. 
 
 **As a desktop app.** Run `tools/Setup Meter.bat` from a folder containing `meter.html` and `meter.ico`. It creates a Desktop shortcut that launches Edge or Chrome in `--app` mode with its own `--user-data-dir`, so you get a separate process, its own taskbar entry, and no browser chrome.
 
-**As a real executable.** `npm run desktop` produces a standalone `Meter.exe` with no browser dependency. It also ships its own copy of Chromium — about 220 MB to run a 280 KB file. Worth it only if the target machine might not have a browser.
+**As a real executable.** `npm run desktop` packages a standalone `Meter.exe` — its own process, its own taskbar entry, no browser involved. The shell in `desktop/` is more than a wrapper:
+
+- it remembers window size and position between launches
+- a second launch focuses the existing window instead of starting a rival process that would fight over the same storage
+- closing with a meter still running asks first, since that is exactly how a session ends up billing overnight
+
+That guard reads persisted state directly, because the Electron main process can't import the app's ES modules. The duplicated rule lives in `desktop/running.js` with its own tests — nothing else would notice if it drifted from the domain. Any doubt (corrupt storage, a failed read) resolves to "not running", so a broken guard can never trap you inside the app.
+
+The cost is real: about 220 MB on disk to run a 300 KB file, because it ships its own copy of Chromium. That copy also stops receiving security patches when the pinned Electron does. The shortcut above gets you the same standalone window using the engine Windows already keeps updated, which is why it's listed first.
 
 Note that Edge and Chrome grey out "Install as an app" for `file://` pages, since installation requires a secure origin. That's why the shortcut route exists.
 
@@ -142,6 +150,7 @@ Cases worth knowing about:
 - Correcting a session with a four-hour break bills 45m, not 5h45m.
 - A second correction still preserves what the meter first recorded.
 - A running session offers no edit link — stop it first.
+- The desktop quit-guard treats a paused session as not running, and resolves any doubt as "safe to close".
 - A long ledger starts collapsed, and its totals stay visible while collapsed.
 - Weeks start Monday at local midnight, including across a DST shift.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
