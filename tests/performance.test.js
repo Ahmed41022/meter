@@ -3,7 +3,7 @@ import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
-  byCompany, effectiveRate, revenueShare, soleCurrency, streaks,
+  byCompany, effectiveRate, firstRecord, revenueShare, soleCurrency, streaks,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -90,8 +90,18 @@ describe("a session that crosses midnight", () => {
 describe("period windows", () => {
   const t = at(2026, 8, 24, 13, 45);
 
+  /**
+   * All time is exempt from the two invariants below, deliberately. It does not
+   * repeat, so it has no neighbour to abut and no offset to step. Its start is
+   * the first record rather than a calendar boundary, and `goals.js` still puts
+   * its boundaryless period at the epoch — right for a lifetime goal, wrong for
+   * a chart that would otherwise draw every empty month since 1970. It has its
+   * own tests at the foot of this file.
+   */
+  const REPEATING = PERIODS.filter((p) => p !== "all");
+
   it("agrees with the goal period boundary it shares", () => {
-    for (const period of PERIODS) {
+    for (const period of REPEATING) {
       expect(periodRange(period, t).from).toBe(periodStart(period, t));
     }
   });
@@ -106,7 +116,7 @@ describe("period windows", () => {
 
   it("abuts the periods either side, leaving no gap and no overlap", () => {
     // An overlap double-counts the shared time; a gap loses it.
-    for (const period of PERIODS) {
+    for (const period of REPEATING) {
       expect(periodRange(period, t, -1).to).toBe(periodRange(period, t).from);
       expect(periodRange(period, t).to).toBe(periodRange(period, t, 1).from);
     }
@@ -778,5 +788,75 @@ describe("looking further back than one calendar", () => {
     expect(heatDepth(at(2025, 0, 1), now)).toBe(1);
     expect(heatDepth(at(2024, 0, 1), now)).toBe(2);
     expect(heatDepth(Infinity, now)).toBe(0);            // nothing recorded at all
+  });
+});
+
+describe("all time", () => {
+  const seg = (s, e) => ({ startedAt: s, endedAt: e });
+  const now = at(2026, 8, 24, 15); // 24 Sep 2026, 15:00
+
+  it("offers itself last, after the periods that repeat", () => {
+    expect(PERIODS).toEqual(["day", "week", "month", "year", "all"]);
+  });
+
+  it("runs from the first thing ever recorded to the end of today", () => {
+    const { from, to } = periodRange("all", now, 0, at(2024, 5, 7, 11));
+    expect(from).toBe(at(2024, 5, 7)); // that DAY's start, not that instant
+    expect(to).toBe(at(2026, 8, 25)); // end of today, so today's work counts
+  });
+
+  it("collapses to today when nothing has been recorded at all", () => {
+    // An empty ledger must not open a window at the epoch: every month between
+    // 1970 and now would be charted as a month nothing was earned in.
+    expect(periodRange("all", now, 0, Infinity))
+      .toEqual({ from: at(2026, 8, 24), to: at(2026, 8, 25) });
+  });
+
+  it("cannot be stepped, because there is exactly one of it", () => {
+    const first = at(2024, 5, 7);
+    expect(periodRange("all", now, -3, first)).toEqual(periodRange("all", now, 0, first));
+    expect(periodRange("all", now, 2, first)).toEqual(periodRange("all", now, 0, first));
+  });
+
+  it("starts where the money starts, not only where the clock does", () => {
+    // A project paid per accepted item earns on days holding no session, so a
+    // window opened from sessions alone would cut off its earliest income.
+    const sessions = [{ segments: [seg(at(2025, 0, 10), at(2025, 0, 10, 2))] }];
+    expect(firstRecord(sessions, [{ at: at(2024, 5, 7, 12) }])).toBe(at(2024, 5, 7, 12));
+    expect(firstRecord(sessions)).toBe(at(2025, 0, 10));
+    expect(firstRecord([], [])).toBe(Infinity);
+  });
+
+  it("charts by calendar month, tiling the span exactly", () => {
+    const first = at(2026, 5, 15); // mid-June: the record starts mid-month
+    const buckets = bucketsFor("all", now, 0, first);
+    const { from, to } = periodRange("all", now, 0, first);
+    expect(buckets[0].from).toBe(from);
+    expect(buckets.at(-1).to).toBe(to);
+    for (let i = 1; i < buckets.length; i += 1) {
+      expect(buckets[i].from).toBe(buckets[i - 1].to); // no gap, no overlap
+    }
+    expect(buckets.map((b) => b.label)).toEqual(["Jun", "Jul", "Aug", "Sep"]);
+  });
+
+  it("marks the years instead of repeating month names it cannot place", () => {
+    // Twenty-eight bars reading Jan..Dec..Jan..Dec say nothing about WHICH
+    // January, so on a span of years each January carries its year instead.
+    const buckets = bucketsFor("all", now, 0, at(2024, 5, 7));
+    expect(buckets.filter((b) => b.major).map((b) => b.label))
+      .toEqual(["2024", "2025", "2026"]);
+    expect(buckets.find((b) => b.label === "Mar").major).toBe(false);
+  });
+
+  it("sums every year of work into one figure", () => {
+    const sessions = [
+      session(at(2024, 5, 7, 9), at(2024, 5, 7, 11)),
+      session(at(2025, 2, 3, 9), at(2025, 2, 3, 12)),
+      session(at(2026, 8, 1, 9), at(2026, 8, 1, 13)),
+    ];
+    const { from, to } = periodRange("all", now, 0, firstRecord(sessions));
+    const r = performanceIn(sessions, from, to, now);
+    expect(r.billedMs).toBe(9 * HOUR);
+    expect(r.billedCents.USD).toBe(90_000); // 9h at 100/hr
   });
 });

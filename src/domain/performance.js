@@ -20,7 +20,7 @@ import { periodBoundary } from "./goals.js";
  * in, so an open session's "so far" is the caller's notion of now.
  */
 
-export const PERIODS = ["day", "week", "month", "year"];
+export const PERIODS = ["day", "week", "month", "year", "all"];
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -37,10 +37,31 @@ export const sessionMsInWindow = (session, from, to, now) =>
 /** The window for a period, as a half-open [from, to). `offset` steps whole
  *  periods: -1 is "the period before this one", which is what every comparison
  *  figure is measured against. */
-export const periodRange = (period, now, offset = 0) => ({
-  from: periodBoundary(period, now, offset),
-  to: periodBoundary(period, now, offset + 1),
-});
+export const periodRange = (period, now, offset = 0, earliest = Infinity) => {
+  // All time is not a period. It does not repeat, so it cannot be stepped and
+  // has no predecessor to measure against; it runs from the first thing ever
+  // recorded to the end of today. An empty ledger collapses it to today rather
+  // than opening a window at the epoch.
+  if (period === "all") {
+    return {
+      from: periodBoundary("day", Number.isFinite(earliest) ? earliest : now, 0),
+      to: periodBoundary("day", now, 1),
+    };
+  }
+  return {
+    from: periodBoundary(period, now, offset),
+    to: periodBoundary(period, now, offset + 1),
+  };
+};
+
+/** The first instant anything was recorded, time OR money. All time has to
+ *  start where the record starts, and a project paid per accepted item carries
+ *  money on days that hold no session at all. */
+export const firstRecord = (sessions, earnings = []) => Math.min(
+  ...sessions.flatMap((s) => (s.segments ?? []).map((g) => g.startedAt)),
+  ...earnings.map((e) => e.at),
+  Infinity,
+);
 
 /**
  * The buckets a period is charted in: a day reads hour by hour, a week and a
@@ -59,12 +80,17 @@ export const periodRange = (period, now, offset = 0) => ({
  * rather than an index modulo, so labels land on round clock hours and real
  * dates whatever the period's length.
  */
-export const bucketsFor = (period, now, offset = 0) => {
-  const { from, to } = periodRange(period, now, offset);
+export const bucketsFor = (period, now, offset = 0, earliest = Infinity) => {
+  const { from, to } = periodRange(period, now, offset, earliest);
   const hourly = period === "day";
   // A year reads month by month. Days would be 365 bars two pixels wide, which
-  // is a texture rather than a chart.
-  const monthly = period === "year";
+  // is a texture rather than a chart. All time reads by month for the same
+  // reason, however many years it turns out to cover.
+  const monthly = period === "year" || period === "all";
+  // Over more than a year of months, an axis reading "Jan" three times tells
+  // the reader nothing, so January carries its year instead. Under that there
+  // are too few Januaries to label anything and every month speaks for itself.
+  const spanned = period === "all" && to - from > 400 * 86_400_000;
   const buckets = [];
   for (let at = from; at < to; ) {
     const step = hourly
@@ -77,14 +103,18 @@ export const bucketsFor = (period, now, offset = 0) => {
       to: next,
       label: hourly
         ? String(d.getHours()).padStart(2, "0")
-        : monthly
-          ? d.toLocaleDateString(undefined, { month: "short" })
-          : period === "week"
-            ? d.toLocaleDateString(undefined, { weekday: "short" })
-            : String(d.getDate()),
+        : spanned && (d.getMonth() === 0 || at === from)
+          ? String(d.getFullYear())
+          : monthly
+            ? d.toLocaleDateString(undefined, { month: "short" })
+            : period === "week"
+              ? d.toLocaleDateString(undefined, { weekday: "short" })
+              : String(d.getDate()),
       major: hourly
         ? d.getHours() % 6 === 0
-        : monthly || period === "week" || d.getDate() % 7 === 1,
+        : spanned
+          ? d.getMonth() === 0 || at === from
+          : monthly || period === "week" || d.getDate() % 7 === 1,
     });
     at = next;
   }
@@ -194,8 +224,8 @@ export const byProject = (projects, sessions, from, to, now, rateOf, earnings = 
 /** Each bucket of a period with its totals attached, for the trend chart. The
  *  bucket is spread back in so a caller never re-derives which window a bar
  *  covers. */
-export const trendFor = (period, sessions, now, offset = 0, rateOf) =>
-  bucketsFor(period, now, offset).map((bucket) => ({
+export const trendFor = (period, sessions, now, offset = 0, rateOf, earliest = Infinity) =>
+  bucketsFor(period, now, offset, earliest).map((bucket) => ({
     ...bucket,
     ...performanceIn(sessions, bucket.from, bucket.to, now, rateOf),
   }));

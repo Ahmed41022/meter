@@ -6,14 +6,18 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, effectiveRate, heatDepth, revenueShare, streaks, untimedShare,
+  byCompany, effectiveRate, firstRecord, heatDepth, revenueShare, streaks, untimedShare,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
 import { Delta, Heatmap, SplitBar, StatTile, TrendChart } from "./charts.jsx";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
 
-const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year" };
+// "All" rather than "All time" in the control: five tabs have to fit a phone,
+// and the heading directly under it says "All time" in full.
+const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year", all: "All" };
+// All time has no predecessor, and its absence from this table is what
+// suppresses every comparison figure on screen.
 const PREVIOUS = { day: "yesterday", week: "last week", month: "last month", year: "last year" };
 
 const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
@@ -24,6 +28,7 @@ const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
  * "3 periods ago" is not how anyone thinks about their own week.
  */
 const periodLabel = (period, offset, from, to) => {
+  if (period === "all") return "All time";
   if (offset === 0) {
     return { day: "Today", week: "This week", month: "This month", year: "This year" }[period];
   }
@@ -43,6 +48,15 @@ const rangeNote = (period, from, to) => {
     return day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   }
   if (period === "year") return `Jan – Dec ${new Date(from).getFullYear()}`;
+  // Months, not days: the span of a whole working history reads as "Jun 2024 –
+  // Sep 2026", and a reader who sees no years cannot tell what they are looking
+  // at. Collapsed when it begins and ends in the same month.
+  if (period === "all") {
+    const opts = { month: "short", year: "numeric" };
+    const first = day(from, opts);
+    const last = day(to - 1, opts);
+    return first === last ? first : `${first} – ${last}`;
+  }
   return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
 };
 
@@ -122,8 +136,11 @@ export default function DashboardView({
   }, [projects]);
 
   const view = useMemo(() => {
-    const { from, to } = periodRange(period, now, offset);
-    const before = periodRange(period, now, offset - 1);
+    const earliest = firstRecord(sessions, earnings);
+    const { from, to } = periodRange(period, now, offset, earliest);
+    // Nothing sits behind all time, so there is no comparison to draw. Held as
+    // null rather than an empty window, which would read as a truthful 0%.
+    const before = period === "all" ? null : periodRange(period, now, offset - 1);
     // Every work figure below is derived from `work` alone. Sleep and play are
     // measured on the same clock but must never reach an earnings total, a
     // billable share, or the project breakdown.
@@ -134,8 +151,8 @@ export default function DashboardView({
     return {
       from, to,
       current: performanceIn(work, from, to, now, rateOf, workEarnings),
-      previous: performanceIn(work, before.from, before.to, now, rateOf, workEarnings),
-      trend: trendFor(period, work, now, offset, rateOf),
+      previous: before ? performanceIn(work, before.from, before.to, now, rateOf, workEarnings) : null,
+      trend: trendFor(period, work, now, offset, rateOf, earliest),
       rows: byProject(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
       targets: targetsFor(workProjects(projects), work, now, rateOf),
@@ -203,14 +220,17 @@ export default function DashboardView({
             </button>
           ))}
         </div>
-        <div className="stepper">
-          <button className="step" aria-label={`Previous ${period}`}
-                  onClick={() => setOffset((o) => o - 1)}>‹</button>
-          {/* Forward is disabled at the present period — there is no data
-              ahead of now, and an empty "next week" reads as a bug. */}
-          <button className="step" aria-label={`Next ${period}`} disabled={offset >= 0}
-                  onClick={() => setOffset((o) => Math.min(0, o + 1))}>›</button>
-        </div>
+        {/* All time cannot be stepped: there is exactly one of it. */}
+        {period !== "all" && (
+          <div className="stepper">
+            <button className="step" aria-label={`Previous ${period}`}
+                    onClick={() => setOffset((o) => o - 1)}>‹</button>
+            {/* Forward is disabled at the present period — there is no data
+                ahead of now, and an empty "next week" reads as a bug. */}
+            <button className="step" aria-label={`Next ${period}`} disabled={offset >= 0}
+                    onClick={() => setOffset((o) => Math.min(0, o + 1))}>›</button>
+          </div>
+        )}
       </div>
 
       <div className="grand">
@@ -224,7 +244,7 @@ export default function DashboardView({
             ))}
         <div className="dash-sub">
           {rangeNote(period, from, to)}
-          {earned.length > 0 && (
+          {previous && earned.length > 0 && (
             <> · <Delta ratio={deltaRatio(current.billedCents[lead] ?? 0, previous.billedCents[lead] ?? 0)}
                         label={vs} /></>
           )}
@@ -299,15 +319,20 @@ export default function DashboardView({
 
       <div className="tiles">
         <StatTile label="Billed" value={formatShortDuration(current.billedMs)}
-                  sub={<Delta ratio={deltaRatio(current.billedMs, previous.billedMs)} label={vs} />} />
+                  sub={previous
+                    ? <Delta ratio={deltaRatio(current.billedMs, previous.billedMs)} label={vs} />
+                    : null} />
         <StatTile label="Idle" value={formatShortDuration(current.idleMs)}
-                  sub={<Delta ratio={deltaRatio(current.idleMs, previous.idleMs)}
-                              goodWhenUp={false} label={vs} />} />
+                  sub={previous
+                    ? <Delta ratio={deltaRatio(current.idleMs, previous.idleMs)}
+                             goodWhenUp={false} label={vs} />
+                    : null} />
         <StatTile label="Billed share"
                   value={share === null ? "—" : `${Math.round(share * 100)}%`}
                   sub={share === null ? "no time recorded" : "of time at the desk"} />
         <StatTile
-          label={{ day: "Active hours", year: "Active months" }[period] ?? "Active days"}
+          label={{ day: "Active hours", year: "Active months", all: "Active months" }[period]
+            ?? "Active days"}
           value={active} sub={`of ${trend.length}`} />
         {/* Both rates, because they answer different questions and only one of
             them is about the clock. Where nothing untimed was earned they are
