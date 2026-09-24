@@ -17,10 +17,12 @@
  * want. Month arithmetic is safe for the same reason: it always lands on the
  * 1st, so it can never overflow the way `setMonth` on the 31st does.
  *
- * Weeks begin Monday. Lifetime has no boundary, so it stays at the epoch.
+ * Weeks begin Monday, and years on 1 January. Lifetime has no boundary, so it
+ * stays at the epoch.
  */
 export const periodBoundary = (period, now, n = 0) => {
   const d = new Date(now);
+  if (period === "year") return new Date(d.getFullYear() + n, 0, 1).getTime();
   if (period === "month") return new Date(d.getFullYear(), d.getMonth() + n, 1).getTime();
   if (period === "week" || period === "day") {
     const fromMonday = period === "week" ? (d.getDay() + 6) % 7 : 0;

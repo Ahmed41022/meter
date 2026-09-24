@@ -1172,8 +1172,8 @@ describe("the overall view", () => {
     const overview = [...d.querySelectorAll("[role=tab]")]
       .find((t) => t.textContent === "Overview");
     expect(overview.getAttribute("aria-selected")).toBe("true");
-    expect([...d.querySelectorAll(".segmented .seg")].map((s) => s.textContent))
-      .toEqual(["Day", "Week", "Month"]);
+    expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((s) => s.textContent))
+      .toEqual(["Day", "Week", "Month", "Year"]);
     // Work and Life are places of their own, not sections of one list.
     expect([...d.querySelectorAll(".tabs [role=tab]")].map((t) => t.textContent))
       .toEqual(["Overview", "Work", "Life"]);
@@ -2856,4 +2856,166 @@ describe("the project list counts money that had no hours", () => {
     await toProjects(d, "Work");
     expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
   }, 25_000);
+});
+
+describe("a year on the overview", () => {
+  const HOUR = 3_600_000;
+  const dayAt = (y, m, d, h = 9) => new Date(y, m, d, h).getTime();
+  const thisYear = new Date().getFullYear();
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 100, currency: "USD", createdAt: dayAt(thisYear - 2, 0, 1),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, pid, hours, y, m, d) => ({
+    id, projectId: pid, kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: dayAt(y, m, d), closedAt: dayAt(y, m, d) + hours * HOUR, deletedAt: null,
+    segments: [{ startedAt: dayAt(y, m, d), endedAt: dayAt(y, m, d) + hours * HOUR }],
+  });
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return { dom, d: dom.window.document };
+  };
+  const toYear = async (d) => {
+    [...d.querySelectorAll(".dash-head .seg")].find((b) => b.textContent === "Year").click();
+    await wait(250);
+  };
+
+  it("offers a year beside the day, week and month", async () => {
+    const { d } = await open({ projects: [project("a")], sessions: [] });
+    expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((b) => b.textContent))
+      .toEqual(["Day", "Week", "Month", "Year"]);
+  }, 25_000);
+
+  it("totals the whole calendar year and charts it by month", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [
+        block("s1", "a", 2, thisYear, 0, 15),   // January
+        block("s2", "a", 3, thisYear, 5, 10),   // June
+        block("s3", "a", 4, thisYear - 1, 5, 10), // last year, must not count
+      ],
+    });
+    await toYear(d);
+    expect(d.querySelector(".grand-amt").textContent).toBe("$500.00");
+    expect(d.querySelector(".trend-top").textContent).toMatch(/Time per month/i);
+    expect(d.querySelectorAll(".tcol")).toHaveLength(12);
+    expect([...d.querySelectorAll(".tlab")].map((e) => e.textContent).filter(Boolean))
+      .toHaveLength(12);
+  }, 30_000);
+
+  it("counts active months rather than active days", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2, thisYear, 0, 15), block("s2", "a", 3, thisYear, 5, 10)],
+    });
+    await toYear(d);
+    const tile = [...d.querySelectorAll(".tile")].find((t) => /Active months/i.test(t.textContent));
+    expect(tile.textContent).toMatch(/2/);
+    expect(tile.textContent).toMatch(/of 12/);
+  }, 30_000);
+
+  it("names the year and steps back through them", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2, thisYear - 1, 5, 10)],
+    });
+    await toYear(d);
+    expect(d.querySelector(".grand .eyebrow").textContent).toMatch(/This year/);
+    expect(d.querySelector(".dash-sub").textContent).toMatch(new RegExp(`Jan – Dec ${thisYear}`));
+
+    d.querySelector(".stepper .step").click();
+    await wait(250);
+    expect(d.querySelector(".grand .eyebrow").textContent).toMatch(/Last year/);
+    expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
+  }, 30_000);
+});
+
+describe("the company panel showing up at all", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 100, currency: "USD", createdAt: dayStart(300),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, pid, hours) => ({
+    id, projectId: pid, kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: dayStart(1) + 9 * HOUR, closedAt: dayStart(1) + (9 + hours) * HOUR, deletedAt: null,
+    segments: [{ startedAt: dayStart(1) + 9 * HOUR, endedAt: dayStart(1) + (9 + hours) * HOUR }],
+  });
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return dom.window.document;
+  };
+
+  it("appears for one company once it carries several projects", async () => {
+    // The case a whole imported history lands in: forty projects, one client.
+    const d = await open({
+      projects: [
+        project("a", { company: "Outlier" }),
+        project("b", { company: "Outlier" }),
+      ],
+      sessions: [block("s1", "a", 2), block("s2", "b", 3)],
+    });
+    expect(d.querySelector(".crow")).not.toBeNull();
+    expect(d.querySelector(".crow-name").textContent).toBe("Outlier");
+    expect([...d.querySelectorAll(".sec-head")].some((h) => /1 company\b/.test(h.textContent)))
+      .toBe(true);
+  }, 25_000);
+
+  it("still skips one company on one project, which is just its name again", async () => {
+    const d = await open({
+      projects: [project("a", { company: "Outlier" })],
+      sessions: [block("s1", "a", 2)],
+    });
+    expect(d.querySelector(".crow")).toBeNull();
+  }, 25_000);
+});
+
+describe("reaching further back on the calendar", () => {
+  const HOUR = 3_600_000;
+  const daysAgo = (n) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const seedWith = (backDays) => ({
+    projects: [{
+      id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: daysAgo(900),
+      sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions: backDays.map((n, i) => ({
+      id: `s${i}`, projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+      createdAt: daysAgo(n) + 9 * HOUR, closedAt: daysAgo(n) + 11 * HOUR, deletedAt: null,
+      segments: [{ startedAt: daysAgo(n) + 9 * HOUR, endedAt: daysAgo(n) + 11 * HOUR }],
+    })),
+  });
+
+  it("offers no stepper when everything fits in one calendar", async () => {
+    const dom = await boot(seedWith([1, 2, 3]));
+    await wait(150);
+    expect(dom.window.document.querySelector(".hm-head .step")).toBeNull();
+  }, 25_000);
+
+  it("steps back a whole calendar at a time and stops at the oldest record", async () => {
+    const dom = await boot(seedWith([1, 400]));
+    const d = dom.window.document;
+    await wait(150);
+    const steps = () => [...d.querySelectorAll(".hm-head .step")];
+    expect(steps()).toHaveLength(2);
+    expect(steps()[1].disabled).toBe(true);           // nothing later than now
+
+    const firstSpan = d.querySelector(".hm-span").textContent;
+    expect(d.querySelector(".hm-read").textContent).toMatch(/1 active day/);
+
+    steps()[0].click();
+    await wait(300);
+    expect(d.querySelector(".hm-span").textContent).not.toBe(firstSpan);
+    expect(d.querySelector(".hm-read").textContent).toMatch(/1 active day/);
+    expect(steps()[0].disabled).toBe(true);           // nothing older than that
+    expect(steps()[1].disabled).toBe(false);
+  }, 30_000);
 });

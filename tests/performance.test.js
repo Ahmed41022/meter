@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
-  dailyTotals, heatGrid, heatLevel, heatRange, heatThresholds,
+  dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
   byCompany, effectiveRate, revenueShare, soleCurrency, streaks,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
@@ -712,5 +712,71 @@ describe("streaks", () => {
 
   it("does not let the whole window count as one run across a gap", () => {
     expect(run("xxx.xxx")).toMatchObject({ longest: 3, current: 3 });
+  });
+});
+
+describe("a year at a time", () => {
+  const at = (y, m, d, h = 0) => new Date(y, m, d, h).getTime();
+  const now = at(2026, 8, 24, 12);
+
+  it("runs from 1 January to 1 January", () => {
+    const { from, to } = periodRange("year", now, 0);
+    expect(new Date(from).getFullYear()).toBe(2026);
+    expect([new Date(from).getMonth(), new Date(from).getDate()]).toEqual([0, 1]);
+    expect(new Date(to).getFullYear()).toBe(2027);
+  });
+
+  it("steps whole years backwards", () => {
+    expect(new Date(periodRange("year", now, -1).from).getFullYear()).toBe(2025);
+    expect(new Date(periodRange("year", now, -2).from).getFullYear()).toBe(2024);
+  });
+
+  it("reads month by month, not day by day", () => {
+    // 365 bars two pixels wide is a texture, not a chart.
+    const buckets = bucketsFor("year", now, 0);
+    expect(buckets).toHaveLength(12);
+    expect(buckets.every((b) => b.major)).toBe(true);
+  });
+
+  it("gives February its own length rather than a gap", () => {
+    const leap = bucketsFor("year", at(2024, 5, 1), 0);
+    const feb = leap[1];
+    expect((feb.to - feb.from) / 86_400_000).toBe(29);
+    const plain = bucketsFor("year", at(2023, 5, 1), 0);
+    expect((plain[1].to - plain[1].from) / 86_400_000).toBe(28);
+  });
+
+  it("tiles the year exactly", () => {
+    const buckets = bucketsFor("year", now, 0);
+    const { from, to } = periodRange("year", now, 0);
+    expect(buckets[0].from).toBe(from);
+    expect(buckets[buckets.length - 1].to).toBe(to);
+    expect(buckets.every((b, i) => i === 0 || b.from === buckets[i - 1].to)).toBe(true);
+  });
+});
+
+describe("looking further back than one calendar", () => {
+  const at = (y, m, d) => new Date(y, m, d).getTime();
+  const now = at(2026, 8, 24);
+
+  it("steps a whole grid at a time, so no week lands in two views", () => {
+    const first = heatRange(now, 53, 0);
+    const second = heatRange(now, 53, 1);
+    expect(second.to).toBe(first.from);
+    expect(heatRange(now, 53, 2).to).toBe(second.from);
+  });
+
+  it("keeps every window the same number of weeks", () => {
+    for (const back of [0, 1, 2, 5]) {
+      const { from, to } = heatRange(now, 53, back);
+      expect(heatGrid(from, to, new Map(), now)).toHaveLength(53);
+    }
+  });
+
+  it("knows how far back there is anything to see", () => {
+    expect(heatDepth(at(2026, 0, 1), now)).toBe(0);      // inside the first grid
+    expect(heatDepth(at(2025, 0, 1), now)).toBe(1);
+    expect(heatDepth(at(2024, 0, 1), now)).toBe(2);
+    expect(heatDepth(Infinity, now)).toBe(0);            // nothing recorded at all
   });
 });

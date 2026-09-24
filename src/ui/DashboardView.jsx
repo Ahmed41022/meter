@@ -6,15 +6,15 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, effectiveRate, revenueShare, streaks, untimedShare,
+  byCompany, effectiveRate, heatDepth, revenueShare, streaks, untimedShare,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
 import { Delta, Heatmap, SplitBar, StatTile, TrendChart } from "./charts.jsx";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
 
-const NAMES = { day: "Day", week: "Week", month: "Month" };
-const PREVIOUS = { day: "yesterday", week: "last week", month: "last month" };
+const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year" };
+const PREVIOUS = { day: "yesterday", week: "last week", month: "last month", year: "last year" };
 
 const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
 
@@ -24,26 +24,39 @@ const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
  * "3 periods ago" is not how anyone thinks about their own week.
  */
 const periodLabel = (period, offset, from, to) => {
-  if (offset === 0) return { day: "Today", week: "This week", month: "This month" }[period];
-  if (offset === -1) return { day: "Yesterday", week: "Last week", month: "Last month" }[period];
+  if (offset === 0) {
+    return { day: "Today", week: "This week", month: "This month", year: "This year" }[period];
+  }
+  if (offset === -1) {
+    return { day: "Yesterday", week: "Last week", month: "Last month", year: "Last year" }[period];
+  }
   if (period === "day") return day(from, { weekday: "long", day: "numeric", month: "long" });
   if (period === "month") return day(from, { month: "long", year: "numeric" });
+  if (period === "year") return String(new Date(from).getFullYear());
   return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short" })}`;
 };
 
 /** The exact window, always shown under the name — a reader should never have
  *  to guess where a week was cut. */
-const rangeNote = (period, from, to) =>
-  period === "day"
-    ? day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
-    : `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
+const rangeNote = (period, from, to) => {
+  if (period === "day") {
+    return day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+  if (period === "year") return `Jan – Dec ${new Date(from).getFullYear()}`;
+  return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
+};
 
 /** A year of days for one register, ready to shade. */
-const calendarFor = (sessions, now) => {
-  const { from, to } = heatRange(now);
+const calendarFor = (sessions, now, back = 0) => {
+  const { from, to } = heatRange(now, 53, back);
   const byDay = dailyTotals(sessions, from, to, now);
   return { from, to, byDay };
 };
+
+/** The first instant anything was recorded, so the calendar knows how far
+ *  back there is anything to look at. */
+const earliestOf = (sessions) => Math.min(
+  ...sessions.flatMap((s) => (s.segments ?? []).map((g) => g.startedAt)), Infinity);
 
 const PERIOD_WORD = { week: "this week", month: "this month" };
 
@@ -99,6 +112,7 @@ export default function DashboardView({
   const [period, setPeriod] = useState("week");
   const [offset, setOffset] = useState(0);
   const [heatScale, setHeatScale] = useState("work");
+  const [heatBack, setHeatBack] = useState(0);
 
   /** Which rate values a session is the caller's question, and the answer is a
    *  task override when there is one. Rebuilt only when the projects change. */
@@ -128,15 +142,20 @@ export default function DashboardView({
       companies: byCompany(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       // A fixed rolling year, like Targets and for the same reason: it is
       // context for everything above it, not another reading of the period.
-      calendar: { work: calendarFor(work, now), life: calendarFor(offClock, now) },
+      calendar: { work: calendarFor(work, now, heatBack), life: calendarFor(offClock, now, heatBack) },
+      depth: { work: heatDepth(earliestOf(work), now), life: heatDepth(earliestOf(offClock), now) },
       hasOffClock: offClock.length > 0,
     };
-  }, [projects, sessions, earnings, now, period, offset, rateOf]);
+  }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack]);
 
   const { from, to, current, previous, trend, rows, offRows, targets, companies } = view;
-  // A single named client is a label, not a breakdown — the By project panel
-  // below already says everything this one would.
-  const showCompanies = companies.filter((c) => c.company !== null).length > 1;
+  /** Worth showing once it groups anything: either several clients, or one
+   *  client carrying more than a single project. A lone company on a lone
+   *  project is just the project's name again, and that is the only case this
+   *  skips. */
+  const named = companies.filter((c) => c.company !== null);
+  const showCompanies = named.length > 1
+    || (named.length === 1 && named[0].projects.length > 1);
   const shares = showCompanies ? revenueShare(companies) : null;
   // Off the clock has no billable half, so its calendar shades every tracked
   // minute; work shades the billed ones, which is what the goals count.
@@ -287,8 +306,9 @@ export default function DashboardView({
         <StatTile label="Billed share"
                   value={share === null ? "—" : `${Math.round(share * 100)}%`}
                   sub={share === null ? "no time recorded" : "of time at the desk"} />
-        <StatTile label={period === "day" ? "Active hours" : "Active days"}
-                  value={active} sub={`of ${trend.length}`} />
+        <StatTile
+          label={{ day: "Active hours", year: "Active months" }[period] ?? "Active days"}
+          value={active} sub={`of ${trend.length}`} />
         {/* Both rates, because they answer different questions and only one of
             them is about the clock. Where nothing untimed was earned they are
             the same number, so the second line would be noise and is dropped. */}
@@ -323,7 +343,7 @@ export default function DashboardView({
           <div className="sec-head">
             <span className="eyebrow">By company</span>
             <span className="eyebrow">
-              {companies.filter((c) => c.company !== null).length} companies
+              {named.length} {named.length === 1 ? "company" : "companies"}
             </span>
           </div>
           <div className="panel">
@@ -437,7 +457,8 @@ export default function DashboardView({
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">Activity</span>
-          {view.hasOffClock && (
+          <span className="hm-head">
+            {view.hasOffClock && (
             // Named for the section above it, not for the tabs at the top of the
             // page: a Work/Life pair here would look like navigation and go
             // nowhere.
@@ -450,7 +471,20 @@ export default function DashboardView({
                 </button>
               ))}
             </div>
-          )}
+            )}
+            {/* Steps a whole grid at a time, so a week belongs to exactly one
+                view rather than straddling two. Stops where the records do. */}
+            {view.depth[scale] > 0 && (
+              <span className="stepper">
+                <button className="step" aria-label="Earlier years"
+                        disabled={heatBack >= view.depth[scale]}
+                        onClick={() => setHeatBack((b) => b + 1)}>‹</button>
+                <button className="step" aria-label="Later years"
+                        disabled={heatBack <= 0}
+                        onClick={() => setHeatBack((b) => Math.max(0, b - 1))}>›</button>
+              </span>
+            )}
+          </span>
         </div>
         <div className="panel">
           <Heatmap weeks={heatWeeks} thresholds={heatCuts} scale={scale} streak={streak}
