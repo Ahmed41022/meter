@@ -3368,3 +3368,90 @@ describe("handing the numbers to a spreadsheet", () => {
     expect(btn(d, /Export CSV/i)).toBeUndefined();
   }, 25_000);
 });
+
+describe("telling the user when they work", () => {
+  const HOUR = 3_600_000;
+  /** A run of days at a fixed hour, `n` weeks back, so the pattern has volume. */
+  const runs = (spec) => {
+    const out = [];
+    let i = 0;
+    for (const { day, hour, count, hours = 2, manual } of spec) {
+      for (let k = 0; k < count; k += 1) {
+        const d = new Date();
+        d.setDate(d.getDate() - (d.getDay() + 6) % 7 - 7 * (k + 1)); // a Monday, k weeks back
+        d.setDate(d.getDate() + day);
+        d.setHours(hour, 0, 0, 0);
+        const startedAt = d.getTime();
+        out.push({
+          id: `s${i += 1}`, projectId: "a", kind: "billed", taskId: null, rate: 10,
+          currency: "USD", createdAt: startedAt, closedAt: startedAt + hours * HOUR,
+          deletedAt: null, segments: [{ startedAt, endedAt: startedAt + hours * HOUR }],
+          ...(manual ? { manual: true } : {}),
+        });
+      }
+    }
+    return out;
+  };
+  const seed = (sessions) => ({
+    projects: [{
+      id: "a", name: "p", currentRate: 10, currency: "USD",
+      createdAt: Date.now() - 400 * 86_400_000,
+      sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions,
+  });
+  const panel = (d) => [...d.querySelectorAll(".sec")].find((x) => /When you work/.test(x.textContent));
+  const read = (d) => panel(d)?.querySelector(".rhy-read")?.textContent.replace(/\s+/g, " ") ?? "";
+  const open = async (s) => {
+    const dom = await boot(s);
+    await wait(250);
+    return dom.window.document;
+  };
+
+  it("names the day only when it genuinely stands above the rest", async () => {
+    const d = await open(seed(runs([
+      { day: 2, hour: 20, count: 10, hours: 6 }, // Wednesdays, heavily
+      { day: 0, hour: 20, count: 10, hours: 1 },
+      { day: 4, hour: 20, count: 10, hours: 1 },
+    ])));
+    expect(read(d)).toMatch(/Busiest on Wednesday/);
+  }, 30_000);
+
+  it("calls a flat week flat, rather than crowning the tallest bar", async () => {
+    // Seven bars within a fifth of each other is not a habit.
+    const d = await open(seed(runs(
+      [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, hour: 20, count: 8, hours: 2 })))));
+    expect(read(d)).toMatch(/spread evenly across the week/i);
+    expect(read(d)).not.toMatch(/Busiest on/);
+  }, 30_000);
+
+  it("finds a working stretch that runs across midnight", async () => {
+    // 23:00 + 3h occupies hours 23, 00 and 01. The best four-hour window over
+    // three worked hours has two equal answers, and ties go to the earlier.
+    const d = await open(seed(runs([{ day: 1, hour: 23, count: 14, hours: 3 }])));
+    expect(read(d)).toMatch(/between 22:00 and 02:00/);
+  }, 30_000);
+
+  it("ignores typed-in sessions when reading the clock", async () => {
+    // An imported row's hour was chosen by the importer, not observed. Reading
+    // it back would report that arithmetic as the user's habit.
+    const d = await open(seed([
+      ...runs([{ day: 1, hour: 9, count: 30, hours: 4, manual: true }]),
+      ...runs([{ day: 1, hour: 22, count: 14, hours: 3 }]),
+    ]));
+    expect(read(d)).toMatch(/between 21:00 and 01:00/);
+    expect(read(d)).not.toMatch(/09:00/);
+  }, 30_000);
+
+  it("draws no clock at all on too few measured sessions", async () => {
+    const d = await open(seed(runs([{ day: 1, hour: 9, count: 30, hours: 4, manual: true }])));
+    expect(panel(d)).toBeTruthy(); // the week still reads
+    expect(read(d)).not.toMatch(/between/);
+    expect(panel(d).querySelectorAll(".cyc")).toHaveLength(1);
+  }, 30_000);
+
+  it("shows nothing at all before there is anything to show", async () => {
+    const d = await open(seed([]));
+    expect(panel(d)).toBeUndefined();
+  }, 25_000);
+});
