@@ -9,3 +9,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.zip
+
+# a stray duplicate of dist/meter.html; nothing in the build writes it
+/meter.html
