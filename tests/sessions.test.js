@@ -3,6 +3,7 @@ import {
   startSession, pauseSession, resumeSession, stopSession, recoverSession,
   deleteSession, restoreSession, heartbeat, currentSession, sessionsFor, liveSessions,
   allSessionsFor, idleSessionsFor, isBilled, isIdle, kindOf, utilisation, KIND,
+  addManualSession, wasManual, overlappingSessions,
 } from "../src/domain/sessions.js";
 import { elapsedMs, isRunning, isOpen } from "../src/domain/time.js";
 import { earningsCents } from "../src/domain/money.js";
@@ -278,5 +279,119 @@ describe("utilisation", () => {
 
   it("is null with no data at all, which is not the same as 0%", () => {
     expect(utilisation(0, 0)).toBeNull();
+  });
+});
+
+describe("sessions entered by hand", () => {
+  const at = (h, m = 0) => T + h * HOUR + m * 60_000;
+  const add = (s, window_, extra = {}) =>
+    addManualSession(s, project, { ...window_, ...extra }, T, extra.id ?? "m1");
+
+  it("records a closed block with the project's rate snapshotted", () => {
+    const s = add(empty, { startedAt: at(9), endedAt: at(12) });
+    const m = s.sessions[0];
+    expect(m).toMatchObject({
+      projectId: "p1", kind: KIND.BILLED, rate: 450, closedAt: at(12), manual: true,
+    });
+    expect(elapsedMs(m, at(20))).toBe(3 * HOUR);
+    expect(isOpen(m)).toBe(false);
+  });
+
+  it("marks itself as typed in rather than measured", () => {
+    // The app rests on being able to see what was actually recorded, and a
+    // block you entered is different evidence from one the clock watched.
+    const s = add(empty, { startedAt: at(9), endedAt: at(10) });
+    expect(wasManual(s.sessions[0])).toBe(true);
+    const timed = startSession(empty, project, { now: T, id: "s1" });
+    expect(wasManual(timed.sessions[0])).toBe(false);
+  });
+
+  it("orders the window however it was given", () => {
+    const s = add(empty, { startedAt: at(12), endedAt: at(9) });
+    expect(elapsedMs(s.sessions[0], at(20))).toBe(3 * HOUR);
+    expect(s.sessions[0].segments[0].startedAt).toBe(at(9));
+  });
+
+  it("records nothing for a zero-length block", () => {
+    expect(add(empty, { startedAt: at(9), endedAt: at(9) }).sessions).toHaveLength(0);
+  });
+
+  it("leaves a running meter alone", () => {
+    // Logging Tuesday afternoon is no reason to stop the clock running now.
+    let s = startSession(empty, project, { now: at(14), id: "live" });
+    s = add(s, { startedAt: at(9), endedAt: at(10) });
+    const live = s.sessions.find((x) => x.id === "live");
+    expect(isRunning(live)).toBe(true);
+    expect(live.closedAt).toBeNull();
+  });
+
+  it("can be filed under a task and marked idle like any other", () => {
+    const s = add(empty, { startedAt: at(9), endedAt: at(10) }, { kind: KIND.IDLE, taskId: "t1" });
+    expect(s.sessions[0]).toMatchObject({ kind: KIND.IDLE, taskId: "t1" });
+  });
+});
+
+describe("overlapping time", () => {
+  const at = (h) => T + h * HOUR;
+  const block = (id, from, to) =>
+    addManualSession(empty, project, { startedAt: at(from), endedAt: at(to) }, T, id);
+
+  it("finds a record that collides with the window", () => {
+    // Two records over the same wall-clock hour double-count it. The timer
+    // cannot produce that; a block typed in after the fact can.
+    const s = block("m1", 9, 12);
+    expect(overlappingSessions(s, { startedAt: at(11), endedAt: at(13) }).map((x) => x.id))
+      .toEqual(["m1"]);
+    expect(overlappingSessions(s, { startedAt: at(10), endedAt: at(11) }).map((x) => x.id))
+      .toEqual(["m1"]);
+  });
+
+  it("does not count blocks that merely touch end to end", () => {
+    // 09:00-12:00 and 12:00-13:00 share an instant, not a minute.
+    const s = block("m1", 9, 12);
+    expect(overlappingSessions(s, { startedAt: at(12), endedAt: at(13) })).toEqual([]);
+    expect(overlappingSessions(s, { startedAt: at(7), endedAt: at(9) })).toEqual([]);
+  });
+
+  it("looks across every project, not just this one", () => {
+    // You cannot be working two projects at once either.
+    const other = { id: "p2", currentRate: 90, currency: "USD" };
+    const s = addManualSession(
+      { projects: [project, other], sessions: [] }, other,
+      { startedAt: at(9), endedAt: at(12) }, T, "elsewhere");
+    expect(overlappingSessions(s, { startedAt: at(10), endedAt: at(11) }).map((x) => x.id))
+      .toEqual(["elsewhere"]);
+  });
+
+  it("ignores deleted records", () => {
+    const s = deleteSession(block("m1", 9, 12), "m1", T);
+    expect(overlappingSessions(s, { startedAt: at(10), endedAt: at(11) })).toEqual([]);
+  });
+
+  it("can exclude the record being edited", () => {
+    const s = block("m1", 9, 12);
+    expect(overlappingSessions(s, { startedAt: at(10), endedAt: at(11) }, "m1")).toEqual([]);
+  });
+
+  it("catches a session that is still running", () => {
+    const s = startSession(empty, project, { now: at(9), id: "live" });
+    expect(overlappingSessions(s, { startedAt: at(10), endedAt: at(11) }).map((x) => x.id))
+      .toEqual(["live"]);
+  });
+
+  it("does not flag a running session that started after the window", () => {
+    const s = startSession(empty, project, { now: at(15) });
+    expect(overlappingSessions(s, { startedAt: at(9), endedAt: at(10) })).toEqual([]);
+  });
+
+  it("skips the gap between two blocks of a paused session", () => {
+    let s = startSession(empty, project, { now: at(9), id: "s1" });
+    s = pauseSession(s, "s1", at(10));
+    s = resumeSession(s, "s1", at(14));
+    s = stopSession(s, "s1", at(15));
+    // the break is not time worked, so nothing collides with it
+    expect(overlappingSessions(s, { startedAt: at(11), endedAt: at(13) })).toEqual([]);
+    expect(overlappingSessions(s, { startedAt: at(9, 30), endedAt: at(13) }).map((x) => x.id))
+      .toEqual(["s1"]);
   });
 });

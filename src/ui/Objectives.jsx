@@ -23,10 +23,69 @@ const verdict = (ratio) => {
   return { tone: "on", text: "on estimate" };
 };
 
-function Row({ objective, sessions, now, today, onToggle, onFocus, onRemove }) {
+function Row({ objective, tasks, sessions, now, today, onToggle, onFocus, onRemove, onEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({
+    text: objective.text,
+    hours: objective.estimateMs ? String(objective.estimateMs / 3_600_000) : "",
+    taskId: objective.taskId ?? "",
+  });
   const spent = actualMs(objective, sessions, now);
   const v = verdict(estimateRatio(objective.estimateMs, spent));
   const picked = isToday(objective, today);
+
+  const save = () => {
+    onEdit(objective.id, {
+      text: draft.text,
+      estimateMs: estimateFromHours(draft.hours),
+      taskId: draft.taskId || null,
+    });
+    setEditing(false);
+  };
+  const set = (key) => (e) => setDraft((f) => ({ ...f, [key]: e.target.value }));
+
+  if (editing) {
+    return (
+      <div className="obj-form">
+        <label className="field">
+          <span className="eyebrow">What needs doing</span>
+          <input className="inp" autoFocus value={draft.text} onChange={set("text")}
+                 onKeyDown={(e) => {
+                   if (e.key === "Enter") save();
+                   if (e.key === "Escape") setEditing(false);
+                 }} />
+        </label>
+        <div className="pair">
+          <label className="field">
+            <span className="eyebrow">Estimate (hours)</span>
+            <input className="inp" type="number" min="0" step="any" value={draft.hours}
+                   placeholder="none" onChange={set("hours")}
+                   onKeyDown={(e) => e.key === "Enter" && save()} />
+          </label>
+          {/* Relinking lives here because the usual order is backwards: you
+              write the objective first and only create the task when you
+              actually start timing it. */}
+          <label className="field">
+            <span className="eyebrow">Track under</span>
+            <select className="inp" value={draft.taskId} onChange={set("taskId")}>
+              <option value="">Not timed</option>
+              {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+          </label>
+        </div>
+        {tasks.length === 0 && (
+          <div className="hint">
+            No tasks on this project yet. Start the meter and name one, then come back and
+            this objective can report the hours against it.
+          </div>
+        )}
+        <div className="controls">
+          <button className="btn primary" onClick={save}>Save</button>
+          <button className="btn ghost" onClick={() => setEditing(false)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={"obj" + (isDone(objective) ? " done" : "")}>
@@ -45,6 +104,7 @@ function Row({ objective, sessions, now, today, onToggle, onFocus, onRemove }) {
       </div>
 
       <div className="obj-actions">
+        <button className="linkish" onClick={() => setEditing(true)}>edit</button>
         {!isDone(objective) && (
           <button className="linkish" aria-pressed={picked}
                   onClick={() => onFocus(objective.id, picked ? null : today)}>
@@ -59,7 +119,8 @@ function Row({ objective, sessions, now, today, onToggle, onFocus, onRemove }) {
 }
 
 export default function Objectives({
-  project, objectives, sessions, now, today, words, onAdd, onToggle, onFocus, onRemove,
+  project, objectives, sessions, now, today, words,
+  onAdd, onToggle, onFocus, onRemove, onEdit,
 }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ text: "", hours: "", taskId: "" });
@@ -90,8 +151,9 @@ export default function Objectives({
         {rows.length === 0 && !adding && <div className="empty">{words.noObjectives}</div>}
 
         {rows.map((o) => (
-          <Row key={o.id} objective={o} sessions={sessions} now={now} today={today}
-               onToggle={onToggle} onFocus={onFocus} onRemove={onRemove} />
+          <Row key={o.id} objective={o} tasks={tasks} sessions={sessions} now={now}
+               today={today} onToggle={onToggle} onFocus={onFocus}
+               onRemove={onRemove} onEdit={onEdit} />
         ))}
 
         {adding ? (
@@ -112,18 +174,17 @@ export default function Objectives({
                        placeholder="optional" onChange={set("hours")}
                        onKeyDown={(e) => e.key === "Enter" && submit()} />
               </label>
-              {/* Linking is what lets the row report time spent. Without a task
-                  there is nothing to measure it against, so the field is only
-                  offered once the project actually has tasks. */}
-              {tasks.length > 0 && (
-                <label className="field">
-                  <span className="eyebrow">Track under</span>
-                  <select className="inp" value={form.taskId} onChange={set("taskId")}>
-                    <option value="">Not timed</option>
-                    {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                  </select>
-                </label>
-              )}
+              {/* Linking is what lets the row report time spent. Offered even
+                  with no tasks yet, so the field is somewhere you have already
+                  looked once one exists. */}
+              <label className="field">
+                <span className="eyebrow">Track under</span>
+                <select className="inp" value={form.taskId} onChange={set("taskId")}
+                        disabled={tasks.length === 0}>
+                  <option value="">{tasks.length ? "Not timed" : "No tasks yet"}</option>
+                  {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </label>
             </div>
             <div className="controls">
               <button className="btn primary" onClick={submit}>Add</button>

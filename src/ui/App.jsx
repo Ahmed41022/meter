@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isRunning, isStale } from "../domain/time.js";
 import {
-  assignTaskToMany, correctSession, currentSession, deleteSession, revertCorrection, heartbeat, idleSessionsFor, isBilled,
+  addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
+  overlappingSessions, revertCorrection, heartbeat, idleSessionsFor, isBilled,
   liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
@@ -10,7 +11,7 @@ import { addProject, patchProject, removeProject } from "../domain/projects.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
-  addObjective, dayKey, focusObjective, liveObjectives, objectivesFor,
+  addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
   removeObjective, restoreObjective, toggleObjective, unlinkTask,
 } from "../domain/objectives.js";
 import { CSS } from "./styles.js";
@@ -257,11 +258,17 @@ export default function App({ store: injectedStore }) {
               flash("Task deleted. Its sessions moved to “No task”.", "Undo",
                     () => commit(() => snapshot));
             }}
+            findOverlaps={(window_) => overlappingSessions(stateRef.current, window_)}
+            onAddManual={(entry) => {
+              commit((s) => addManualSession(s, project, entry, Date.now(), uid()));
+              flash("Time added.");
+            }}
             objectives={objectivesFor(state, project.id)}
             today={dayKey(now)}
             onAddObjective={(fields) =>
               commit((s) => addObjective(s, project.id, fields, Date.now(), uid()))}
             onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
+            onEditObjective={(id, patch) => commit((s) => editObjective(s, id, patch))}
             onFocusObjective={(id, key) => commit((s) => focusObjective(s, id, key))}
             onRemoveObjective={(id) => {
               commit((s) => removeObjective(s, id, Date.now()));

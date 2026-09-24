@@ -97,6 +97,9 @@ export const CSS = `
   color:var(--jade);}
 .preview-was{font-family:var(--mono);font-size:12.5px;color:var(--muted);
   text-decoration:line-through;}
+/* The same muted figure without the strike: a correction shows what a number
+   WAS, but a new entry has no superseded value to cross out. */
+.preview-note{font-family:var(--mono);font-size:12.5px;color:var(--muted);}
 .edited{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--line-2);
   color:var(--muted);margin-left:8px;vertical-align:1px;}
@@ -373,6 +376,17 @@ export const CSS = `
 .obj-actions .linkish[aria-pressed="true"]{color:var(--jade);font-weight:700;}
 .obj-form{padding-top:16px;border-top:1px solid var(--line-2);margin-top:4px;}
 .obj-add{margin-top:14px;font-size:13px;}
+
+/* A clash is a warning, not an error — it states what would be double-counted
+   and lets you decide, rather than refusing and leaving you stuck. */
+.clash{border:1px solid #E7DCC4;background:#FDF8EC;border-radius:12px;
+  padding:15px;margin-top:14px;}
+.clash p{margin:8px 0 0;font-size:13px;line-height:1.55;color:var(--ink-2);}
+.clash ul{margin:10px 0 0;padding-left:18px;font-family:var(--mono);font-size:11.5px;
+  color:var(--muted);line-height:1.8;}
+.clash-ok{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:13px;
+  font-weight:600;cursor:pointer;}
+.clash-ok input{width:16px;height:16px;accent-color:var(--flag);cursor:pointer;}
 
 @media (prefers-reduced-motion: reduce){
   .mtr *{animation:none !important;transition:none !important;}

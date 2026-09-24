@@ -9,6 +9,18 @@
 export const segmentMs = (segment, now) =>
   Math.max(0, (segment.endedAt ?? now) - segment.startedAt);
 
+/** Milliseconds of a segment that fall inside [from, to).
+ *
+ *  Clamped at 0, which covers no overlap at all and a backwards clock jump
+ *  alike. Lives here rather than in either caller because both the reporting
+ *  layer and the one-meter-at-a-time rule need it, and time.js is what they
+ *  can both import without a cycle. */
+export const overlapMs = (segment, from, to, now) => {
+  const start = segment.startedAt;
+  const end = segment.endedAt ?? now;
+  return Math.max(0, Math.min(end, to) - Math.max(start, from));
+};
+
 export const elapsedMs = (session, now) =>
   (session.segments || []).reduce((total, s) => total + segmentMs(s, now), 0);
 
