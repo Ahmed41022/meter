@@ -15,6 +15,14 @@ export const CSS = `
   background:var(--paper); color:var(--ink); font-family:var(--sans);
   min-height:100vh; padding:26px 16px 96px; font-size:15px;
   -webkit-font-smoothing:antialiased;
+  /* The page asks for the whole screen with viewport-fit=cover, which puts the
+     notch and the gesture bar OVER the content unless it pays them back. The
+     shorthand above stays as the fallback: a browser without env() drops these
+     four and keeps it. */
+  padding-top:calc(26px + env(safe-area-inset-top));
+  padding-right:calc(16px + env(safe-area-inset-right));
+  padding-bottom:calc(96px + env(safe-area-inset-bottom));
+  padding-left:calc(16px + env(safe-area-inset-left));
 }
 .mtr *{box-sizing:border-box;}
 .mtr :focus-visible{outline:2px solid var(--jade); outline-offset:2px;}
@@ -513,6 +521,12 @@ export const CSS = `
 }
 @media (max-width:420px){
   .btn{min-width:0;padding:12px 13px;font-size:13px;}
-  .mtr{padding:20px 12px 90px;}
+  .mtr{
+    padding:20px 12px 90px;
+    padding-top:calc(20px + env(safe-area-inset-top));
+    padding-right:calc(12px + env(safe-area-inset-right));
+    padding-bottom:calc(90px + env(safe-area-inset-bottom));
+    padding-left:calc(12px + env(safe-area-inset-left));
+  }
 }
 `;
