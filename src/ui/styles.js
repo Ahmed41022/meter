@@ -133,6 +133,9 @@ export const CSS = `
 .concentration{margin:0 0 10px;font-size:12.5px;color:var(--ink-2);}
 .concentration strong{color:var(--ink);font-weight:700;}
 
+.sync-read{margin:0 0 12px;font-size:13px;color:var(--ink-2);line-height:1.5;}
+.sync-bad{color:var(--flag);}
+
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}

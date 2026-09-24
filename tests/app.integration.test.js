@@ -31,11 +31,18 @@ const COUNTER = `<script>
   };
 </script>`;
 
-const boot = async (seed) => {
+/** `settings` seeds device-local keys — the ones that are NOT part of the
+ *  ledger, such as the Google client id. They have to be in place before the
+ *  page runs, because the app reads them once at mount, exactly as a real
+ *  browser would. */
+const boot = async (seed, settings = null) => {
   let html = readFileSync(DIST, "utf8");
-  const preamble = seed
-    ? `<script>localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});</script>${COUNTER}`
-    : COUNTER;
+  const sets = [
+    seed && `localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});`,
+    ...Object.entries(settings ?? {}).map(
+      ([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`),
+  ].filter(Boolean);
+  const preamble = sets.length ? `<script>${sets.join("")}</script>${COUNTER}` : COUNTER;
   html = html.replace('<div id="root"></div>', `<div id="root"></div>${preamble}`);
   const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
   await wait(700);
@@ -3648,4 +3655,102 @@ describe("creating a project that is paid per task", () => {
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings[0]).toMatchObject({ cents: 120_000, units: 6 });
   }, 30_000);
+});
+
+describe("the sync panel", () => {
+  const seed = {
+    projects: [{
+      id: "a", name: "Acme", currentRate: 20, currency: "USD",
+      createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions: [],
+  };
+  const open = async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    return { dom, d };
+  };
+  const panel = (d) => [...d.querySelectorAll(".sec")]
+    .find((x) => /^Sync/.test(x.querySelector(".eyebrow")?.textContent ?? ""));
+
+  it("asks for a client ID before offering to sync anything", async () => {
+    const { d } = await open();
+    expect(panel(d)).toBeTruthy();
+    expect(panel(d).textContent).toMatch(/client ID/i);
+    expect(btn(d, /Sync now/i)).toBeUndefined();
+  }, 25_000);
+
+  it("explains that the permission cannot see the rest of your Drive", async () => {
+    // Worth saying plainly: it is the reason this scope was chosen.
+    const { d } = await open();
+    expect(panel(d).textContent).toMatch(/cannot see the rest of your Drive/i);
+  }, 25_000);
+
+  it("keeps the client ID out of the ledger", async () => {
+    // It is configuration, not work. In the ledger, the thing you need in order
+    // to sync could only arrive by syncing.
+    const { dom, d } = await open();
+    setValue(dom.window, panel(d).querySelector(".inp"), "abc.apps.googleusercontent.com");
+    await wait(150);
+    btn(d, /^Save$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(JSON.stringify(saved)).not.toContain("googleusercontent");
+    expect(dom.window.localStorage.getItem("meter:google-client"))
+      .toBe("abc.apps.googleusercontent.com");
+  }, 25_000);
+
+  it("offers to sign in once it is configured, and can forget the ID again", async () => {
+    const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
+    const d = dom.window.document;
+    await wait(250);
+    await toProjects(d, "Work");
+    expect(btn(d, /Sign in with Google/i)).toBeTruthy();
+    expect(panel(d).textContent).toMatch(/merges rather than replaces/i);
+
+    btn(d, /Change client ID/i).click();
+    await wait(200);
+    expect(dom.window.localStorage.getItem("meter:google-client")).toBeNull();
+    expect(panel(d).textContent).toMatch(/client ID/i);
+  }, 25_000);
+
+  it("says it is working the moment you press it", async () => {
+    // jsdom loads no external script, so the real sign-in cannot complete here;
+    // what matters is that pressing the button visibly does something instead of
+    // appearing dead. Failing AFTER a blocked load is covered in sync.test.js,
+    // where the timeout can be made short.
+    const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
+    const d = dom.window.document;
+    await wait(250);
+    await toProjects(d, "Work");
+    btn(d, /Sign in with Google/i).click();
+    await wait(400);
+    expect(panel(d).textContent).toMatch(/Syncing/i);
+    expect(btn(d, /Sync now|Sign in with Google/i).disabled).toBe(true);
+  }, 25_000);
+
+  it("stamps what a change touched, so two devices can be merged later", async () => {
+    const { dom, d } = await open();
+    d.querySelector(".card").click();
+    await wait(250);
+    // No task: naming one adds it to the PROJECT, which is a real change to the
+    // project and would be stamped correctly.
+    await startMeter(dom);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(typeof saved.sessions[0].updatedAt).toBe("number");
+    // and NOT the project, which this change never touched
+    expect(saved.projects[0]).not.toHaveProperty("updatedAt");
+  }, 30_000);
+
+  it("shows no sync panel on the Life tab, which has no ledger of its own", async () => {
+    const dom = await boot(seed);
+    const d = dom.window.document;
+    await wait(250);
+    await toProjects(d, "Life");
+    expect(panel(d)).toBeUndefined();
+  }, 25_000);
 });

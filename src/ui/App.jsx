@@ -14,6 +14,11 @@ import {
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
+import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
+import { createAuth } from "../sync/google.js";
+import { createDrive, syncOnce } from "../sync/drive.js";
+import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
+import Sync from "./Sync.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
@@ -27,6 +32,8 @@ import ProjectView from "./ProjectView.jsx";
 import DashboardView from "./DashboardView.jsx";
 
 const TICK_MS = 1_000;
+/** A burst of edits should be one upload, not one per keystroke. */
+const PUSH_DELAY_MS = 8_000;
 const HEARTBEAT_MS = 60_000;
 const STALE_MS = 150_000;
 const TOAST_MS = 7_000;
@@ -68,15 +75,40 @@ export default function App({ store: injectedStore }) {
 
   const stateRef = useRef(state);
   const toastTimer = useRef(null);
+  /** Held in a ref so `commit` can ask for a push without depending on the sync
+   *  machinery, which depends on `commit`. */
+  const pushRef = useRef(() => {});
+  const authRef = useRef(null);
+  const pushTimer = useRef(null);
+  /** The revision this device last saw, so the next sync can tell a quiet write
+   *  from one that landed on top of somebody else's. */
+  const revisionRef = useRef(null);
 
-  /** Single write path. Reducers are pure; this is the only place that
-   *  touches React state and storage together. */
-  const commit = useCallback((reduce) => {
-    const next = reduce(stateRef.current);
+  /** Puts a state into React and storage together. Everything that changes the
+   *  ledger goes through here or through `commit`, which wraps it. */
+  const write = useCallback((next) => {
     stateRef.current = next;
     setState(next);
     store.save(next).then((ok) => setSaveFailed(!ok));
   }, [store]);
+
+  /**
+   * Single write path for the user's own changes.
+   *
+   * Stamps what the change touched, which is what lets two devices be merged
+   * later: a record with no stamp loses to one that has been edited since. The
+   * diff is a pointer comparison, because the reducers are pure and spread — see
+   * domain/merge.js.
+   *
+   * `sync: false` is for writes that are not news. The heartbeat fires every
+   * minute and pushing each one would be 1,400 uploads a day to say the meter is
+   * still running; the next real change carries it.
+   */
+  const commit = useCallback((reduce, { sync = true } = {}) => {
+    const before = stateRef.current;
+    write(stampChanges(before, reduce(before), Date.now()));
+    if (sync) pushRef.current();
+  }, [write]);
 
   const flash = useCallback((message, action, run) => {
     clearTimeout(toastTimer.current);
@@ -112,6 +144,77 @@ export default function App({ store: injectedStore }) {
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
   const backup = useMemo(() => backupState(state, now), [state, now]);
 
+  // ------------------------------------------------------------------ syncing
+  const [clientId, setClientId] = useState(() => loadSetting(SETTING.CLIENT_ID));
+  const [clientDraft, setClientDraft] = useState("");
+  const [sync, setSync] = useState({ state: "idle", at: null });
+  const [merged, setMerged] = useState(null);
+
+  /**
+   * One round: read Drive, merge, write back only if the merge changed it.
+   *
+   * A pulled state is adopted with `write` rather than `commit`, deliberately.
+   * `commit` stamps whatever it touched, which would re-date every record that
+   * just arrived and send them all straight back as if they were new edits here.
+   */
+  const runSync = useCallback(async ({ interactive = false } = {}) => {
+    if (!clientId) return;
+    setSync((s) => ({ ...s, state: "syncing", error: null }));
+    try {
+      if (!authRef.current) authRef.current = createAuth({ clientId });
+      const auth = authRef.current;
+      if (interactive && !auth.hasToken()) await auth.signIn();
+      const drive = createDrive({ getToken: auth.getToken });
+      const out = await syncOnce({
+        drive, local: stateRef.current, merge: mergeState, revision: revisionRef.current,
+      });
+      revisionRef.current = out.revision;
+      if (out.pulled) {
+        write(out.state);
+        // Two things only a merge can produce, and both need saying rather than
+        // absorbing: time counted twice, and a meter apparently running in two
+        // places. The second reuses the banner built for two browser tabs.
+        const clashes = overlaps(liveSessions(out.state.sessions), Date.now());
+        if (clashes.length) setMerged({ overlaps: clashes });
+        if (liveSessions(out.state.sessions).filter(isRunning).length > 1) setConflict(true);
+      }
+      // Named fields, never `...out`: it carries the merged ledger under `state`,
+      // and spreading it would put the whole thing into the field that holds the
+      // word "ok".
+      setSync({
+        state: "ok", at: Date.now(),
+        pushed: out.pushed, pulled: out.pulled, created: out.created, raced: out.raced,
+      });
+    } catch (e) {
+      setSync({
+        state: "error", at: Date.now(),
+        error: e?.needsAuth ? "Sign in again to keep syncing." : (e?.message ?? "Sync failed."),
+      });
+    }
+  }, [clientId, write]);
+
+  /** Debounced, so a burst of edits is one upload. Long enough that typing a
+   *  project name is not a dozen round trips. */
+  useEffect(() => {
+    pushRef.current = () => {
+      if (!clientId) return;
+      clearTimeout(pushTimer.current);
+      pushTimer.current = setTimeout(() => runSync(), PUSH_DELAY_MS);
+    };
+    return () => clearTimeout(pushTimer.current);
+  }, [clientId, runSync]);
+
+  /** On opening, and whenever the app comes back to the foreground — which on a
+   *  phone is the moment it matters, because it is how it learns what the other
+   *  device did while it was closed. */
+  useEffect(() => {
+    if (!ready || !clientId) return;
+    runSync();
+    const onShow = () => { if (!document.hidden) runSync(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+  }, [ready, clientId, runSync]);
+
   /** Drives rendering only. Stop this interval and the stored data is still
    *  correct — elapsed time is derived, never accumulated here. */
   useEffect(() => {
@@ -123,7 +226,10 @@ export default function App({ store: injectedStore }) {
   /** Proof of life, so a crash can be closed at the right timestamp. */
   useEffect(() => {
     if (!anyRunning || recoveryId) return;
-    const id = setInterval(() => commit((s) => heartbeat(s, Date.now())), HEARTBEAT_MS);
+    const id = setInterval(
+      () => commit((s) => heartbeat(s, Date.now()), { sync: false }),
+      HEARTBEAT_MS,
+    );
     return () => clearInterval(id);
   }, [anyRunning, recoveryId, commit]);
 
@@ -249,6 +355,20 @@ export default function App({ store: injectedStore }) {
           </>
         )}
 
+        {/* Only a merge can produce this: the app refuses to CREATE overlapping
+            time, so it means the meter ran on two devices at once. Nothing else
+            about the ledger looks wrong — the hours simply read high. */}
+        {merged?.overlaps?.length > 0 && (
+          <Notice title="Some time is counted twice">
+            {merged.overlaps.length === 1 ? "A session" : `${merged.overlaps.length} sessions`}
+            {" "}brought in from another device
+            {merged.overlaps.length === 1 ? " overlaps" : " overlap"} one already here, so
+            those hours are counted twice. Open the project and correct or delete whichever
+            is wrong.
+            {" "}<button className="linkish" onClick={() => setMerged(null)}>Dismiss</button>
+          </Notice>
+        )}
+
         {/* Last of the banners, deliberately. A meter left running overnight or
             a second tab overwriting this one need answering now; a missing
             backup is important but not urgent, and putting it above them buries
@@ -370,6 +490,35 @@ export default function App({ store: injectedStore }) {
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
             onExport={exportBackup} onImport={importBackup} backup={backup}
             onExportCsv={exportCsv}
+          />
+        )}
+
+        {/* Sync belongs beside Export and Restore: they are the three answers to
+            "where else does this exist". Work only — the Life tab has no ledger
+            of its own, it is a view of the same one. */}
+        {!project && tab === "work" && (
+          <Sync
+            clientId={clientId} draft={clientDraft} onDraft={setClientDraft}
+            onSaveClientId={() => {
+              const id = clientDraft.trim();
+              if (!id) return;
+              saveSetting(SETTING.CLIENT_ID, id);
+              setClientId(id);
+              setClientDraft("");
+            }}
+            onForget={() => {
+              saveSetting(SETTING.CLIENT_ID, null);
+              setClientId("");
+              authRef.current = null;
+              revisionRef.current = null;
+              setSync({ state: "idle", at: null });
+            }}
+            status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
+            onSync={() => runSync({ interactive: true })}
+            onSignOut={async () => {
+              await authRef.current?.signOut();
+              setSync({ state: "idle", at: null });
+            }}
           />
         )}
       </div>
