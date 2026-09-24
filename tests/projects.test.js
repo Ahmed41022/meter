@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   acceptsTime, activeProjects, addProject, companiesIn, companyOf, finishedProjects,
-  isActive, isDone, isPaused, patchProject, removeProject, setStatus, statusOf, validateProject,
+  isActive, isDone, isPaused, matchesQuery, patchProject, removeProject, searchProjects,
+  setStatus, statusOf, validateProject,
 } from "../src/domain/projects.js";
 import { startSession } from "../src/domain/sessions.js";
 
@@ -141,5 +142,41 @@ describe("who the work is for", () => {
     // what keeps them from diverging in the first place.
     expect(companiesIn([{ company: "Outlier" }, { company: "outlier" }, { company: "OUTLIER" }]))
       .toEqual(["Outlier"]);
+  });
+});
+
+describe("finding a project in a long list", () => {
+  const p = (name, extra = {}) => ({ id: name, name, ...extra });
+
+  it("matches on any part of the name, ignoring case", () => {
+    expect(matchesQuery(p("hyperion_env_building"), "HYPERION")).toBe(true);
+    expect(matchesQuery(p("hyperion_env_building"), "building")).toBe(true);
+    expect(matchesQuery(p("hyperion_env_building"), "gamebird")).toBe(false);
+  });
+
+  it("treats spaces, underscores and hyphens as the same separator", () => {
+    // The same work is filed three ways in this ledger, so a reader typing one
+    // spelling must find the others.
+    expect(matchesQuery(p("extensions-code-v-code"), "code v code")).toBe(true);
+    expect(matchesQuery(p("code v code"), "code-v-code")).toBe(true);
+    expect(matchesQuery(p("hyperion_env_building"), "env building")).toBe(true);
+    expect(matchesQuery(p("map_explorer_gateway"), "explorer gateway")).toBe(true);
+  });
+
+  it("matches the company, not just the project", () => {
+    expect(matchesQuery(p("gamebird", { company: "Outlier" }), "outlier")).toBe(true);
+    expect(matchesQuery(p("gamebird"), "outlier")).toBe(false);
+  });
+
+  it("shows everything again when the box is cleared", () => {
+    const list = [p("a"), p("b")];
+    expect(searchProjects(list, "")).toHaveLength(2);
+    expect(searchProjects(list, "   ")).toHaveLength(2);
+    expect(searchProjects(list, undefined)).toHaveLength(2);
+  });
+
+  it("keeps the order it was given, so the list does not rearrange as you type", () => {
+    const list = [p("code_SQL"), p("code v code"), p("gamebird")];
+    expect(searchProjects(list, "code").map((x) => x.name)).toEqual(["code_SQL", "code v code"]);
   });
 });

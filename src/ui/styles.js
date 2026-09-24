@@ -103,6 +103,13 @@ export const CSS = `
 .edited{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--line-2);
   color:var(--muted);margin-left:8px;vertical-align:1px;}
+.finder{display:flex;align-items:center;gap:10px;margin:0 0 12px;}
+.find{flex:1;min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+  background:var(--card);color:var(--ink);font:inherit;font-size:14px;}
+.find:focus{outline:none;border-color:var(--jade);}
+.find::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
+.find-clear{font-size:12.5px;flex:0 0 auto;}
+
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}

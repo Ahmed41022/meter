@@ -3193,3 +3193,100 @@ describe("nudging the user to keep a copy they hold", () => {
     expect(d.querySelector(".backup-note").textContent).toMatch(/Last backup 2 days ago/i);
   }, 25_000);
 });
+
+describe("finding one project among forty", () => {
+  const HOUR = 3_600_000;
+  const p = (name, extra = {}) => ({
+    id: name, name, currentRate: 100, currency: "USD", createdAt: Date.now() - 400 * 86_400_000,
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  /** Enough projects that the box appears at all, shaped like the real ledger:
+   *  a handful live, the rest filed away under one client. */
+  const many = {
+    projects: [
+      p("Aether"), p("Taiga Human pref"), p("P2P"),
+      p("hyperion_env_building", { company: "Outlier", status: "done" }),
+      p("code v code", { company: "Outlier", status: "done" }),
+      p("extensions-code-v-code", { company: "Outlier", status: "done" }),
+      p("gamebird", { company: "Outlier", status: "done" }),
+      p("Glider Broiler", { company: "Outlier", status: "done" }),
+    ],
+    sessions: [],
+  };
+  const names = (d) => [...d.querySelectorAll(".card-name")].map((e) => e.textContent);
+  const find = (d) => d.querySelector(".find");
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(200);
+    await toProjects(dom.window.document, "Work");
+    return { dom, d: dom.window.document };
+  };
+  const type = async (dom, d, text) => {
+    setValue(dom.window, find(d), text);
+    await wait(250);
+  };
+
+  it("offers no box on a short list, where nothing can get lost", async () => {
+    const { d } = await open({ projects: [p("Aether"), p("P2P")], sessions: [] });
+    expect(find(d)).toBeNull();
+  }, 25_000);
+
+  it("narrows the list as you type", async () => {
+    const { dom, d } = await open(many);
+    await type(dom, d, "gamebird");
+    expect(names(d)).toEqual(["gamebird"]);
+  }, 30_000);
+
+  it("reaches into the filed-away work, which is where most of it is", async () => {
+    // A match inside a collapsed group is a match the reader cannot see, so
+    // searching opens it.
+    const { dom, d } = await open(many);
+    expect(names(d)).not.toContain("hyperion_env_building");
+    await type(dom, d, "hyperion");
+    expect(names(d)).toContain("hyperion_env_building");
+  }, 30_000);
+
+  it("ignores whether you typed spaces, underscores or hyphens", async () => {
+    const { dom, d } = await open(many);
+    await type(dom, d, "env building");
+    expect(names(d)).toEqual(["hyperion_env_building"]);
+    await type(dom, d, "code-v-code");
+    expect(names(d).sort()).toEqual(["code v code", "extensions-code-v-code"]);
+  }, 30_000);
+
+  it("finds every project belonging to a client", async () => {
+    const { dom, d } = await open(many);
+    await type(dom, d, "outlier");
+    expect(names(d)).toHaveLength(5);
+  }, 30_000);
+
+  it("says so plainly when nothing matches", async () => {
+    const { dom, d } = await open(many);
+    await type(dom, d, "zzzz");
+    expect(d.querySelector(".empty").textContent).toMatch(/Nothing matches/i);
+    expect(names(d)).toHaveLength(0);
+  }, 30_000);
+
+  it("leaves the headline alone, because searching earns you nothing", async () => {
+    const { dom, d } = await open({
+      ...many,
+      sessions: [{
+        id: "s1", projectId: "Aether", kind: "billed", taskId: null, rate: 100,
+        currency: "USD", createdAt: Date.now() - HOUR, closedAt: Date.now(), deletedAt: null,
+        segments: [{ startedAt: Date.now() - HOUR, endedAt: Date.now() }],
+      }],
+    });
+    const before = d.querySelector(".grand-amt").textContent;
+    await type(dom, d, "gamebird");
+    expect(d.querySelector(".grand-amt").textContent).toBe(before);
+  }, 30_000);
+
+  it("brings the whole list back when cleared", async () => {
+    const { dom, d } = await open(many);
+    await type(dom, d, "gamebird");
+    expect(names(d)).toHaveLength(1);
+    btn(d, /^Clear$/).click();
+    await wait(250);
+    expect(names(d).length).toBeGreaterThan(1);
+  }, 30_000);
+});
