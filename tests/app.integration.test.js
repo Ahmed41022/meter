@@ -2268,3 +2268,165 @@ describe("pacing a target", () => {
     expect(d.querySelector(".goal .goal-pace")).toBeNull();
   }, 30_000);
 });
+
+describe("the activity calendar", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const project = (extra = {}) => ({
+    id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(400),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, pid, from, to, kind = "billed") => ({
+    id, projectId: pid, kind, taskId: null, rate: 100, currency: "USD",
+    createdAt: from, closedAt: to, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: to }],
+  });
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return { dom, d: dom.window.document };
+  };
+  const cell = (d, at) => d.querySelector(`.hm-cell[data-at="${at}"]`);
+  /** The Activity toggle. Named for the section above it rather than for the
+   *  tabs, so it cannot be mistaken for navigation. */
+  const register = (d, name) =>
+    [...d.querySelectorAll(".sec-head .seg")].find((b) => b.textContent === name);
+  /** Four days of 1, 2, 3 and 4 hours, so every shade is represented. */
+  const spread = (pid = "p1") => [1, 2, 3, 4].map((h, i) =>
+    block(`s${pid}${i}`, pid, dayStart(i + 2) + 9 * HOUR, dayStart(i + 2) + (9 + h) * HOUR));
+
+  it("draws a year of days, seven to a column", async () => {
+    const { d } = await open({
+      projects: [project()], sessions: [block("a", "p1", dayStart(3), dayStart(3) + 2 * HOUR)],
+    });
+    expect(d.querySelectorAll(".hm-col")).toHaveLength(53);
+    expect(d.querySelectorAll(".hm-cell")).toHaveLength(371);
+    // today is always in the last column, so the calendar ends where you are
+    expect([...d.querySelectorAll(".hm-col")].pop().querySelector(`[data-at="${dayStart()}"]`))
+      .not.toBeNull();
+  }, 25_000);
+
+  it("leaves the days that have not happened yet unshaded", async () => {
+    const { d } = await open({
+      projects: [project()], sessions: [block("a", "p1", dayStart(3), dayStart(3) + 2 * HOUR)],
+    });
+    const future = [...d.querySelectorAll(".hm-cell.future")];
+    // between none (Sunday) and six (Monday), and never today or earlier
+    expect(future.length).toBeLessThan(7);
+    expect(future.every((c) => Number(c.dataset.at) > dayStart())).toBe(true);
+    expect(cell(d, dayStart()).className).not.toMatch(/future/);
+  }, 25_000);
+
+  it("shades each day by how much it carried", async () => {
+    const { d } = await open({ projects: [project()], sessions: spread() });
+    expect(cell(d, dayStart(2)).dataset.level).toBe("1"); // 1h, the lightest
+    expect(cell(d, dayStart(5)).dataset.level).toBe("4"); // 4h, the darkest
+    expect(cell(d, dayStart(9)).dataset.level).toBe("0"); // nothing at all
+  }, 25_000);
+
+  it("puts every day on the same shade when they all carried the same", async () => {
+    // Four identical days are not a gradient, and rendering them as one would
+    // invent a difference the data does not have.
+    const { d } = await open({
+      projects: [project()],
+      sessions: [2, 3, 4, 5].map((n) =>
+        block(`s${n}`, "p1", dayStart(n) + 9 * HOUR, dayStart(n) + 12 * HOUR)),
+    });
+    expect([2, 3, 4, 5].map((n) => cell(d, dayStart(n)).dataset.level))
+      .toEqual(["1", "1", "1", "1"]);
+  }, 25_000);
+
+  it("splits a session that ran past midnight across both days", async () => {
+    // The same overlap rule as every other figure: one session, two days, and
+    // neither of them coloured for the whole of it.
+    const { d } = await open({
+      projects: [project()],
+      sessions: [block("a", "p1", dayStart(3) + 23.5 * HOUR, dayStart(2) + 2.5 * HOUR)],
+    });
+    expect(cell(d, dayStart(3)).dataset.level).not.toBe("0");
+    expect(cell(d, dayStart(2)).dataset.level).not.toBe("0");
+  }, 25_000);
+
+  it("reads out the day and the hours on hover", async () => {
+    const { dom, d } = await open({
+      projects: [project()], sessions: [block("a", "p1", dayStart(3) + 9 * HOUR, dayStart(3) + 13 * HOUR)],
+    });
+    const read = () => d.querySelector(".hm-read").textContent;
+    expect(read()).toMatch(/1 active day/);
+
+    cell(d, dayStart(3)).dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
+    await wait(150);
+    expect(read()).toMatch(/4h 00m/);
+    expect(read()).toMatch(new RegExp(String(new Date(dayStart(3)).getDate())));
+
+    // an empty day says so, rather than reading as nothing at all
+    cell(d, dayStart(4)).dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
+    await wait(150);
+    expect(read()).toMatch(/no billed/);
+
+    // and the summary comes back when the pointer leaves
+    d.querySelector(".hm-grid").dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true }));
+    await wait(150);
+  }, 25_000);
+
+  it("keeps work and off-clock time on separate calendars", async () => {
+    // Sleep must not darken a day on the work calendar, and the toggle is how
+    // each is read without the other.
+    const { d } = await open({
+      projects: [project(), project({ id: "p2", name: "Sleep", offClock: true })],
+      sessions: [
+        block("w", "p1", dayStart(5) + 9 * HOUR, dayStart(5) + 13 * HOUR),
+        block("s", "p2", dayStart(3) + 1 * HOUR, dayStart(3) + 8 * HOUR),
+      ],
+    });
+    expect(cell(d, dayStart(5)).dataset.level).not.toBe("0");
+    expect(cell(d, dayStart(3)).dataset.level).toBe("0");
+    expect(d.querySelector(".hm-top").textContent).toMatch(/Billed per day/);
+
+    register(d, "Off the clock").click();
+    await wait(250);
+    expect(cell(d, dayStart(3)).dataset.level).not.toBe("0");
+    expect(cell(d, dayStart(5)).dataset.level).toBe("0");
+    expect(d.querySelector(".hm-top").textContent).toMatch(/Tracked per day/);
+  }, 30_000);
+
+  it("offers no toggle when nothing is tracked off the clock", async () => {
+    const { d } = await open({
+      projects: [project()], sessions: [block("a", "p1", dayStart(3), dayStart(3) + 2 * HOUR)],
+    });
+    expect(d.querySelector(".hm")).not.toBeNull();
+    expect(d.querySelector(".sec-head .segmented")).toBeNull();
+  }, 25_000);
+
+  it("states the thresholds rather than saying less and more", async () => {
+    // They are quantiles of whatever is being shaded, so they mean nothing
+    // unless the legend spells them out.
+    const { d } = await open({
+      projects: [project()],
+      sessions: spread(),
+    });
+    const legend = [...d.querySelectorAll(".hm-legend .legend-item")].map((e) => e.textContent);
+    expect(legend).toEqual(["to 1h 00m", "to 2h 00m", "to 3h 00m", "over 3h 00m"]);
+  }, 25_000);
+
+  it("does not follow the period control", async () => {
+    const { d } = await open({ projects: [project()], sessions: spread() });
+    const before = d.querySelector(".hm-top").textContent;
+    btn(d, /^Day$/).click();
+    await wait(200);
+    d.querySelector(".step").click();
+    await wait(250);
+    expect(d.querySelector(".hm-top").textContent).toBe(before);
+    expect(cell(d, dayStart(5)).dataset.level).toBe("4");
+  }, 25_000);
+
+  it("says so plainly when there is nothing to shade", async () => {
+    const { d } = await open({ projects: [project()], sessions: [] });
+    expect(d.querySelector(".hm-none").textContent).toMatch(/Nothing recorded in the last year/);
+    expect(d.querySelector(".hm-legend")).toBeNull();
+    expect([...d.querySelectorAll(".hm-cell")].every((c) => c.dataset.level !== "4")).toBe(true);
+  }, 25_000);
+});
