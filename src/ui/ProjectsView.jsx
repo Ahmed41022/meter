@@ -5,7 +5,7 @@ import { companyOf, isDone as projectDone, isPaused, validateProject } from "../
 import { isCancelled, isPending } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
 import { rateFor } from "../domain/tasks.js";
-import { wordsFor } from "./words.js";
+import { countWord, daysWord, wordsFor } from "./words.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
@@ -21,7 +21,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  */
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
-  onOpen, onAdd, onExport, onImport,
+  onOpen, onAdd, onExport, onImport, backup,
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
@@ -217,7 +217,9 @@ export default function ProjectsView({
             <button className="btn primary" onClick={() => setAdding(true)}>
               New {w.projectNoun}
             </button>
-            <button className="btn ghost" onClick={onExport}>Export backup</button>
+            <button className={"btn " + (backup?.stale ? "primary" : "ghost")} onClick={onExport}>
+              Export backup
+            </button>
             <button className="btn ghost" onClick={() => fileRef.current?.click()}>Restore</button>
             <input ref={fileRef} type="file" accept="application/json" style={{ display: "none" }}
                    onChange={(e) => {
@@ -226,6 +228,16 @@ export default function ProjectsView({
                      e.target.value = "";
                    }} />
           </div>
+        )}
+        {/* Stated whether or not it is overdue: a reader should be able to see
+            that the last copy is recent, not have to trust the silence. */}
+        {!life && backup && (
+          <p className="backup-note">
+            {backup.never
+              ? "No backup has ever been exported."
+              : `Last backup ${daysWord(backup.days)}.`}
+            {backup.unsaved > 0 && ` ${countWord(backup.unsaved)} since.`}
+          </p>
         )}
       </div>
     </>
