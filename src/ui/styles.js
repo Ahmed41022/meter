@@ -103,6 +103,7 @@ export const CSS = `
 .edited{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--line-2);
   color:var(--muted);margin-left:8px;vertical-align:1px;}
+.backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 .linkish:hover{color:var(--jade-hi);}

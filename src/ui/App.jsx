@@ -12,12 +12,14 @@ import {
   addEarning, earningsFor, liveEarnings, removeEarning, restoreEarning, setPayState,
 } from "../domain/earnings.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
+import { backupState, recordBackup } from "../domain/backup.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
   removeObjective, restoreObjective, toggleObjective, unlinkTask,
 } from "../domain/objectives.js";
 import { CSS } from "./styles.js";
+import { countWord, daysWord } from "./words.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
@@ -107,6 +109,7 @@ export default function App({ store: injectedStore }) {
   }, [store]);
 
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
+  const backup = useMemo(() => backupState(state, now), [state, now]);
 
   /** Drives rendering only. Stop this interval and the stored data is still
    *  correct — elapsed time is derived, never accumulated here. */
@@ -124,6 +127,8 @@ export default function App({ store: injectedStore }) {
   }, [anyRunning, recoveryId, commit]);
 
   const exportBackup = () => {
+    // Serialised BEFORE the stamp, so the file records the state the user asked
+    // for rather than one that claims to have already been backed up.
     const blob = new Blob([JSON.stringify(stateRef.current, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -131,6 +136,7 @@ export default function App({ store: injectedStore }) {
     a.download = `meter-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    commit((st) => recordBackup(st, Date.now()));
   };
 
   /** Opening a project lands on the tab it belongs to, so the back link
@@ -196,6 +202,17 @@ export default function App({ store: injectedStore }) {
           <Notice title="Not saving">
             Changes aren&apos;t reaching storage, so this session won&apos;t survive a reload. Export a backup
             before you close the tab.
+          </Notice>
+        )}
+
+        {/* Only where there is something to lose, and only once it has sat
+            unsaved for a while — see domain/backup.js for both guards. */}
+        {ready && backup.stale && (
+          <Notice title={backup.never ? "Never backed up" : `Last backed up ${daysWord(backup.days)}`}>
+            {countWord(backup.unsaved)} exist only in this browser. Clearing site data, or
+            reinstalling, takes {backup.unsaved === 1 ? "it" : "them"} with it —
+            {" "}<button className="linkish" onClick={exportBackup}>export a backup</button> to keep a copy
+            you hold.
           </Notice>
         )}
 
@@ -326,7 +343,7 @@ export default function App({ store: injectedStore }) {
             now={now}
             onOpen={openProject}
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
-            onExport={exportBackup} onImport={importBackup}
+            onExport={exportBackup} onImport={importBackup} backup={backup}
           />
         )}
       </div>
