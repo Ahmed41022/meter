@@ -20,7 +20,7 @@ import { periodBoundary } from "./goals.js";
  * in, so an open session's "so far" is the caller's notion of now.
  */
 
-export const PERIODS = ["day", "week", "month"];
+export const PERIODS = ["day", "week", "month", "year"];
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -46,7 +46,9 @@ export const periodRange = (period, now, offset = 0) => ({
  * The buckets a period is charted in: a day reads hour by hour, a week and a
  * month day by day.
  *
- * Hours advance by a fixed 3,600,000ms because an hour is always an hour of
+ * A year advances by calendar month, so February is one bucket of its own
+ * length rather than a gap. Hours advance by a fixed 3,600,000ms because an
+ * hour is always an hour of
  * real time — DST moves the wall-clock LABEL, not the duration. Walking wall
  * clock instead would skip the hour that repeats when the clocks go back, and
  * that hour's work would vanish from the chart. Days advance by calendar date,
@@ -60,19 +62,29 @@ export const periodRange = (period, now, offset = 0) => ({
 export const bucketsFor = (period, now, offset = 0) => {
   const { from, to } = periodRange(period, now, offset);
   const hourly = period === "day";
+  // A year reads month by month. Days would be 365 bars two pixels wide, which
+  // is a texture rather than a chart.
+  const monthly = period === "year";
   const buckets = [];
   for (let at = from; at < to; ) {
-    const next = Math.min(hourly ? at + MS_PER_HOUR : periodBoundary("day", at, 1), to);
+    const step = hourly
+      ? at + MS_PER_HOUR
+      : periodBoundary(monthly ? "month" : "day", at, 1);
+    const next = Math.min(step, to);
     const d = new Date(at);
     buckets.push({
       from: at,
       to: next,
       label: hourly
         ? String(d.getHours()).padStart(2, "0")
-        : period === "week"
-          ? d.toLocaleDateString(undefined, { weekday: "short" })
-          : String(d.getDate()),
-      major: hourly ? d.getHours() % 6 === 0 : period === "week" || d.getDate() % 7 === 1,
+        : monthly
+          ? d.toLocaleDateString(undefined, { month: "short" })
+          : period === "week"
+            ? d.toLocaleDateString(undefined, { weekday: "short" })
+            : String(d.getDate()),
+      major: hourly
+        ? d.getHours() % 6 === 0
+        : monthly || period === "week" || d.getDate() % 7 === 1,
     });
     at = next;
   }
@@ -247,12 +259,27 @@ export const dailyTotals = (sessions, from, to, now) => {
   return byDay;
 };
 
-/** The window a year grid covers: whole weeks, ending with the one `now` is in,
- *  so today is always in the last column. */
-export const heatRange = (now, weeks = 53) => ({
-  from: periodBoundary("week", now, 1 - weeks),
-  to: periodBoundary("week", now, 1),
+/**
+ * The window a year grid covers: whole weeks, ending with the one `now` is in,
+ * so today is always in the last column.
+ *
+ * `back` steps the whole window earlier in units of itself — one step is one
+ * grid, so the columns never half-overlap between views and a week belongs to
+ * exactly one of them.
+ */
+export const heatRange = (now, weeks = 53, back = 0) => ({
+  from: periodBoundary("week", now, 1 - weeks * (back + 1)),
+  to: periodBoundary("week", now, 1 - weeks * back),
 });
+
+/** How many whole grids back the earliest record sits, so the stepper knows
+ *  where to stop rather than walking into empty years for ever. */
+export const heatDepth = (earliest, now, weeks = 53) => {
+  if (!Number.isFinite(earliest)) return 0;
+  let back = 0;
+  while (back < 40 && heatRange(now, weeks, back).from > earliest) back += 1;
+  return back;
+};
 
 /**
  * The grid itself: a column per week, seven rows deep, Monday at the top.

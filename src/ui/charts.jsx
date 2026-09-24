@@ -126,7 +126,9 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
   return (
     <div className="trend">
       <div className="trend-top">
-        <span className="eyebrow">Time per {period === "day" ? "hour" : "day"}</span>
+        <span className="eyebrow">
+          Time per {{ day: "hour", year: "month" }[period] ?? "day"}
+        </span>
         <span className="eyebrow">peak {formatShortDuration(peak)}</span>
       </div>
 
@@ -204,11 +206,15 @@ const RAMP = {
 const EMPTY_CELL = "var(--line-2)";
 
 const monthName = (t) => new Date(t).toLocaleDateString(undefined, { month: "short" });
+const monthYear = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", year: "numeric" });
 const fullDate = (t) => new Date(t).toLocaleDateString(undefined, {
   weekday: "short", day: "numeric", month: "short", year: "numeric",
 });
 
 export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, streak }) {
+  const span = weeks.length
+    ? `${monthYear(weeks[0].days[0].at)} – ${monthYear(weeks[weeks.length - 1].days[6].at)}`
+    : "";
   const [hover, setHover] = useState(null);
   const ramp = RAMP[scale];
 
@@ -257,7 +263,7 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, stre
   return (
     <div className="hm">
       <div className="hm-top">
-        <span className="eyebrow">{noun} per day</span>
+        <span className="eyebrow">{noun} per day<span className="hm-span"> · {span}</span></span>
         {/* The hovered day reads out here rather than in a floating tip. A tip
             would have to live inside the scroll container, and a container that
             scrolls on one axis clips the other — so it would be cut off on the
@@ -283,7 +289,7 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, stre
             ))}
           </div>
           <div className="hm-grid" role="img" onMouseLeave={() => setHover(null)}
-               aria-label={`${noun} per day over the last year: ${summary}`}>
+               aria-label={`${noun} per day, ${span}: ${summary}`}>
             {weeks.map((week) => (
               <div className="hm-col" key={week.from}>
                 {week.days.map((day) => {
