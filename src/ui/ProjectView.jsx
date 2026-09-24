@@ -20,6 +20,7 @@ import SessionEditor from "./SessionEditor.jsx";
 const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
 import Settings from "./Settings.jsx";
+import Objectives from "./Objectives.jsx";
 
 const MS_PER_HOUR = 3_600_000;
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -29,6 +30,7 @@ export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
+  objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective, onRemoveObjective,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
@@ -240,6 +242,12 @@ export default function ProjectView({
           </div>
         </div>
       )}
+
+      <Objectives
+        project={project} objectives={objectives} words={w}
+        sessions={[...sessions, ...idleSessions]} now={now} today={today}
+        onAdd={onAddObjective} onToggle={onToggleObjective}
+        onFocus={onFocusObjective} onRemove={onRemoveObjective} />
 
       {hasTasks && (
         <div className="sec">
