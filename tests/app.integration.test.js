@@ -1173,7 +1173,7 @@ describe("the overall view", () => {
       .find((t) => t.textContent === "Overview");
     expect(overview.getAttribute("aria-selected")).toBe("true");
     expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((s) => s.textContent))
-      .toEqual(["Day", "Week", "Month", "Year"]);
+      .toEqual(["Day", "Week", "Month", "Year", "All"]);
     // Work and Life are places of their own, not sections of one list.
     expect([...d.querySelectorAll(".tabs [role=tab]")].map((t) => t.textContent))
       .toEqual(["Overview", "Work", "Life"]);
@@ -2884,7 +2884,7 @@ describe("a year on the overview", () => {
   it("offers a year beside the day, week and month", async () => {
     const { d } = await open({ projects: [project("a")], sessions: [] });
     expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((b) => b.textContent))
-      .toEqual(["Day", "Week", "Month", "Year"]);
+      .toEqual(["Day", "Week", "Month", "Year", "All"]);
   }, 25_000);
 
   it("totals the whole calendar year and charts it by month", async () => {
@@ -3017,5 +3017,96 @@ describe("reaching further back on the calendar", () => {
     expect(d.querySelector(".hm-read").textContent).toMatch(/1 active day/);
     expect(steps()[0].disabled).toBe(true);           // nothing older than that
     expect(steps()[1].disabled).toBe(false);
+  }, 30_000);
+});
+
+describe("all time on the overview", () => {
+  const HOUR = 3_600_000;
+  const dayAt = (y, m, d, h = 9) => new Date(y, m, d, h).getTime();
+  const thisYear = new Date().getFullYear();
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 100, currency: "USD", createdAt: dayAt(thisYear - 3, 0, 1),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, pid, hours, y, m, d) => ({
+    id, projectId: pid, kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: dayAt(y, m, d), closedAt: dayAt(y, m, d) + hours * HOUR, deletedAt: null,
+    segments: [{ startedAt: dayAt(y, m, d), endedAt: dayAt(y, m, d) + hours * HOUR }],
+  });
+  /** Three years of history, so all time really has to reach across years. */
+  const history = {
+    projects: [project("a")],
+    sessions: [
+      block("s1", "a", 2, thisYear - 2, 0, 15), // Jan, two years ago
+      block("s2", "a", 3, thisYear - 1, 5, 10), // Jun, last year
+      block("s3", "a", 4, thisYear, 0, 20), // Jan, this year
+    ],
+  };
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return { dom, d: dom.window.document };
+  };
+  const toAll = async (d) => {
+    [...d.querySelectorAll(".dash-head .seg")].find((b) => b.textContent === "All").click();
+    await wait(300);
+  };
+
+  it("offers All as a fifth period, after the ones that repeat", async () => {
+    const { d } = await open(history);
+    expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((b) => b.textContent))
+      .toEqual(["Day", "Week", "Month", "Year", "All"]);
+  }, 25_000);
+
+  it("totals every year at once and charts it month by month", async () => {
+    const { d } = await open(history);
+    await toAll(d);
+    expect(d.querySelector(".grand .eyebrow").textContent).toMatch(/All time/);
+    expect(d.querySelector(".grand-amt").textContent).toBe("$900.00"); // 9h at 100
+    expect(d.querySelector(".trend-top").textContent).toMatch(/Time per month/i);
+  }, 30_000);
+
+  it("names the span, so a total with no dates on it cannot be misread", async () => {
+    const { d } = await open(history);
+    await toAll(d);
+    // toContain, not a built regex: a backslash class inside a template literal
+    // is one escaping mistake away from silently matching something else.
+    expect(d.querySelector(".dash-sub").textContent)
+      .toContain(`Jan ${thisYear - 2} – `);
+    expect(d.querySelector(".dash-sub").textContent).toContain(String(thisYear));
+  }, 30_000);
+
+  it("offers no stepper, because there is exactly one all time", async () => {
+    const { d } = await open(history);
+    expect(d.querySelector(".dash-head .stepper")).not.toBeNull();
+    await toAll(d);
+    expect(d.querySelector(".dash-head .stepper")).toBeNull();
+  }, 30_000);
+
+  it("draws no comparison figures, having nothing to compare against", async () => {
+    // A delta here would have to invent a previous all time. Reading "0%"
+    // against a period that cannot exist is worse than reading nothing.
+    const { d } = await open(history);
+    await toAll(d);
+    expect(d.querySelector(".dash-sub .delta")).toBeNull();
+    expect(d.querySelector(".tiles .delta")).toBeNull();
+    // the figures themselves are still there
+    expect([...d.querySelectorAll(".tile-val")][0].textContent).toBe("9h 00m");
+  }, 30_000);
+
+  it("counts a project paid per accepted item, which owns no session", async () => {
+    const { d } = await open({
+      projects: [project("a", { name: "PieceOnly" })],
+      sessions: [],
+      earnings: [{
+        id: "e1", projectId: "a", taskId: null, kind: "piece", cents: 975_000,
+        currency: "USD", at: dayAt(thisYear - 2, 3, 9, 12), note: "",
+        createdAt: dayAt(thisYear - 2, 3, 9), deletedAt: null,
+      }],
+    });
+    await toAll(d);
+    // The window has to open where the MONEY starts; a window built from
+    // sessions alone would begin after this and report nothing.
+    expect(d.querySelector(".grand-amt").textContent).toBe("$9,750.00");
   }, 30_000);
 });

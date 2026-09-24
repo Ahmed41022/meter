@@ -127,7 +127,7 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
     <div className="trend">
       <div className="trend-top">
         <span className="eyebrow">
-          Time per {{ day: "hour", year: "month" }[period] ?? "day"}
+          Time per {{ day: "hour", year: "month", all: "month" }[period] ?? "day"}
         </span>
         <span className="eyebrow">peak {formatShortDuration(peak)}</span>
       </div>
