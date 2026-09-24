@@ -182,9 +182,24 @@ export const CSS = `
 .goal + .goal{margin-top:20px;}
 .goal-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;gap:10px;}
 .goal-val{font-family:var(--mono);font-size:13px;color:var(--ink-2);}
-.bar{height:7px;background:var(--line-2);border-radius:999px;overflow:hidden;}
+.bar{height:7px;background:var(--line-2);border-radius:999px;overflow:hidden;position:relative;}
 .bar-fill{height:100%;background:var(--jade);border-radius:999px;transition:width .5s ease;}
 .bar-fill.done{background:var(--jade-hi);}
+/* where the finished days say the fill should have reached */
+.bar-mark{position:absolute;top:-1px;bottom:-1px;width:2px;transform:translateX(-50%);
+  background:var(--ink);opacity:.4;border-radius:2px;}
+.goal-pace{margin-top:9px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+.goal-pace.behind{color:var(--amber);}
+.goal-pace.missed{color:var(--flag);}
+.goal-pace.ahead,.goal-pace.met{color:var(--jade);}
+
+/* targets on the overview */
+.trg + .trg{margin-top:22px;padding-top:22px;border-top:1px solid var(--line-2);}
+.trg-top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.trg-name{font-weight:600;font-size:14.5px;color:var(--ink);text-decoration:none;}
+.trg-name:hover{color:var(--jade);text-decoration:underline;}
+.trg-of{font-size:11px;color:var(--muted);}
+.trg-top .goal-val{margin-left:auto;}
 
 /* ledger */
 .row{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;
@@ -342,6 +357,10 @@ export const CSS = `
 @media (max-width:420px){
   .tiles{grid-template-columns:repeat(2,1fr);}
   .delta-vs{display:none;}
+  /* A project name and its figure will not share a line this narrow without
+     one of them breaking mid-word. Give the figure its own. */
+  .trg-top{flex-wrap:wrap;row-gap:2px;}
+  .trg-top .goal-val{margin-left:0;flex-basis:100%;}
 }
 
 /* Off the clock: a third, deliberately quiet register. Slate rather than a

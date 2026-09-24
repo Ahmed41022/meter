@@ -8,7 +8,9 @@ import {
   periodRange, splitByClock, trendFor,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
+import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
 import { Delta, SplitBar, StatTile, TrendChart } from "./charts.jsx";
+import { GoalMeter, goalFormatter } from "./parts.jsx";
 
 const NAMES = { day: "Day", week: "Week", month: "Month" };
 const PREVIOUS = { day: "yesterday", week: "last week", month: "last month" };
@@ -34,6 +36,42 @@ const rangeNote = (period, from, to) =>
   period === "day"
     ? day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
+
+const PERIOD_WORD = { week: "this week", month: "this month" };
+
+/**
+ * Every work goal that has a deadline, paced against its own period.
+ *
+ * Deliberately NOT tied to the period control above it. A goal resets when it
+ * resets — asking "am I on for this week?" is a question about now, and the
+ * answer must not change because the reader stepped the report back to look at
+ * last month. Each row therefore says which period it is measuring.
+ *
+ * Lifetime goals are absent for the same reason they have no pacing: a target
+ * with no end cannot be late. Off-clock goals are absent because sleep is not
+ * a work target, and they are paced on their own page instead.
+ *
+ * Ordered by how many days' worth off the line each one is — unit-free, so a
+ * money goal and an hours goal can be compared, and the one needing attention
+ * is at the top.
+ */
+const targetsFor = (projects, work, now, rateOf) =>
+  projects
+    .map((project) => {
+      const goal = normaliseGoal(project.overallGoal);
+      if (!goal || goal.period === "lifetime") return null;
+      const from = periodBoundary(goal.period, now, 0);
+      const to = periodBoundary(goal.period, now, 1);
+      const mine = work.filter((s) => s.projectId === project.id);
+      const { billedMs, billedCents } = performanceIn(mine, from, to, now, rateOf);
+      const value = goal.type === "money"
+        ? (billedCents[project.currency] ?? 0) / 100
+        : billedMs / 60_000;
+      const pacing = pace({ target: goal.target, from, to }, value, now);
+      return { project, goal, value, pacing, state: paceState(pacing) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.pacing.drift / a.pacing.flatPerDay - b.pacing.drift / b.pacing.flatPerDay);
 
 /**
  * The overall view: what a chosen day, week or month was worth across every
@@ -71,10 +109,12 @@ export default function DashboardView({
       trend: trendFor(period, work, now, offset, rateOf),
       rows: byProject(workProjects(projects), work, from, to, now, rateOf),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
+      targets: targetsFor(workProjects(projects), work, now, rateOf),
     };
   }, [projects, sessions, now, period, offset, rateOf]);
 
-  const { from, to, current, previous, trend, rows, offRows } = view;
+  const { from, to, current, previous, trend, rows, offRows, targets } = view;
+  const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   const earned = currenciesByValue(current.billedCents);
   const share = utilisation(current.billedMs, current.idleMs);
@@ -160,6 +200,32 @@ export default function DashboardView({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {targets.length > 0 && (
+        <div className="sec" style={{ marginTop: 0, marginBottom: 26 }}>
+          <div className="sec-head">
+            <span className="eyebrow">Targets</span>
+            <span className="eyebrow">{behind > 0 ? `${behind} behind` : "all on pace"}</span>
+          </div>
+          <div className="panel">
+            {targets.map(({ project, goal, value, pacing }) => {
+              const show = goalFormatter(goal.type, project.currency);
+              return (
+                <div className="trg" key={project.id}>
+                  <div className="trg-top">
+                    <button className="linkish trg-name"
+                            onClick={() => onOpenProject(project.id)}>{project.name}</button>
+                    <span className="trg-of">{PERIOD_WORD[goal.period]}</span>
+                    <span className="goal-val">{show(value)} / {show(goal.target)}</span>
+                  </div>
+                  <GoalMeter type={goal.type} target={goal.target} value={value}
+                             currency={project.currency} pace={pacing} />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

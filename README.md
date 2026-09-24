@@ -108,6 +108,30 @@ Money is never mixed across currencies. If you bill in two, each is totalled and
 
 ---
 
+## Pacing a goal
+
+A goal with a deadline has two questions, and a progress bar only answers one. Half a weekly target is triumphant on Tuesday and a crisis on Sunday, and the bar looks identical either way.
+
+So every goal that resets — weekly or monthly — also reports where it stands:
+
+```
+Taiga Human pref  this week            $765.00 / $1,260.00
+[==============|==========------------------------------]
+$225.00 ahead · 4 days left · needs $123.75/day
+```
+
+The mark on the bar is where the **finished days** say you should be. The fill either reaches it or falls short of it, so the standing is readable before the sentence is.
+
+Pacing is measured against days that have **ended**, never against the fraction of the period that has physically elapsed. Elapsed-time pacing declares you behind at 09:00 on Monday for not having worked overnight, and makes the verdict depend on what hour you happen to open the app. Today counts as neither gone nor done: it is the first of the days you have left, because it is still yours to use.
+
+That is generous early in a period, which is why the **required daily rate** is always there too. On Monday morning the drift cannot tell you anything — `needs $180/day` can.
+
+Goals appear on the **Overview** under *Targets*, sorted by how many days' worth off the line each one is, so whatever needs attention is at the top. That panel deliberately ignores the period control above it: "am I on for this week?" is a question about now, and the answer must not change because you stepped the report back to look at last month.
+
+A **lifetime** goal has no pacing — a target with no end cannot be late. Nor do session goals: a session has no deadline. Off-clock goals are paced on their own page rather than among work targets, because sleep is not a work target.
+
+---
+
 ## Objectives
 
 What you mean to get done, beside what it actually took.
@@ -183,7 +207,7 @@ tests/time.test.js         elapsed time, clock jumps, staleness
 tests/money.test.js        rounding, drift, formatting fallbacks
 tests/sessions.test.js     the state machine and the rate-snapshot rule
 tests/projects.test.js     creation, validation, cascading removal
-tests/goals.test.js        period boundaries including DST
+tests/goals.test.js        period boundaries including DST, and pacing
 tests/performance.test.js  window overlap, calendar buckets, period comparison
 tests/app.integration.test.js   the built HTML, driven in jsdom
 ```
