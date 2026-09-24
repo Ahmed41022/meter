@@ -334,3 +334,63 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, stre
     </div>
   );
 }
+
+const HOUR_LABELS = { 0: "00", 6: "06", 12: "12", 18: "18" };
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/**
+ * One row of bars for a repeating cycle — the seven weekdays, the twenty-four
+ * hours. Scaled to its own busiest bar, because the question is which part of
+ * the cycle is heaviest, not how a Tuesday compares to two in the afternoon.
+ */
+function Cycle({ rows, labelFor, peak, title }) {
+  const widest = Math.max(...rows.map((r) => r.billedMs), 1);
+  return (
+    <div className="cyc" role="img" aria-label={title}>
+      <div className="cyc-bars">
+        {rows.map((r, i) => (
+          <div className={"cyc-col" + (peak === i ? " on" : "")} key={i}
+               title={`${labelFor(i, true)} · ${formatShortDuration(r.billedMs)}`}>
+            <div className="cyc-bar" style={{ height: `${(r.billedMs / widest) * 100}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="cyc-labs">
+        {rows.map((r, i) => <span className="cyc-lab" key={i}>{labelFor(i)}</span>)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * When the work happens, as opposed to how much of it there is.
+ *
+ * Both cycles are shown rather than only the winner: "Tuesday" on its own is a
+ * fact about one bar, and the shape around it is what says whether that fact
+ * means anything.
+ */
+export function Rhythm({ weekdays, hours, dayNames, peakDay, stretch, stretchShare, span }) {
+  return (
+    <>
+      <div className="rhy-read">
+        {peakDay === null
+          // A flat week is a real finding, and a truer one than picking whichever
+          // bar happens to be a few percent taller.
+          ? "Your work is spread evenly across the week"
+          : <>Busiest on <strong>{dayNames[peakDay]}</strong></>}
+        {stretch && <>
+          , and most of it between{" "}
+          <strong>{pad2(stretch.from)}:00</strong> and <strong>{pad2(stretch.to)}:00</strong>
+          {stretchShare !== null && ` — ${Math.round(stretchShare * 100)}% of everything billed`}
+        </>}.
+        {span && <span className="rhy-span">{span}</span>}
+      </div>
+      <Cycle rows={weekdays} peak={peakDay} title="Billed time by day of the week"
+             labelFor={(i, long) => (long ? dayNames[i] : dayNames[i].slice(0, 2))} />
+      {hours && (
+        <Cycle rows={hours} peak={null} title="Billed time by hour of the day"
+               labelFor={(i, long) => (long ? `${pad2(i)}:00` : (HOUR_LABELS[i] ?? ""))} />
+      )}
+    </>
+  );
+}
