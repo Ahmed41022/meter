@@ -125,3 +125,27 @@ export const validateProject = ({ name, rate }, { needsRate = true } = {}) => {
   if (!Number.isFinite(parsed) || parsed <= 0) return "The rate needs to be a number above zero.";
   return null;
 };
+
+/**
+ * Fold a name to what a person typing it means.
+ *
+ * Separators are not meaningful in these names — the same body of work has been
+ * filed as "code v code", "extensions-code-v-code" and "code_SQL" — so spaces,
+ * underscores and hyphens all collapse to one space. Anyone who types
+ * "env building" is looking for `hyperion_env_building`, and a plain substring
+ * match would not find it.
+ */
+const fold = (s) => (s ?? "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+
+/** An empty query matches everything, rather than nothing: a cleared search box
+ *  should show the list again, not an empty one. */
+export const matchesQuery = (project, query) => {
+  const q = fold(query);
+  if (!q) return true;
+  return fold(project?.name).includes(q) || fold(companyOf(project)).includes(q);
+};
+
+/** The company is searched too: with forty projects under one client, "outlier"
+ *  is a question a reader will actually ask. */
+export const searchProjects = (projects, query) =>
+  (projects ?? []).filter((p) => matchesQuery(p, query));
