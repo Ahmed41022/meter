@@ -23,7 +23,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  */
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
-  onOpen, onAdd, onExport, onImport, backup,
+  onOpen, onAdd, onExport, onImport, onExportCsv, backup,
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
@@ -253,6 +253,9 @@ export default function ProjectsView({
               Export backup
             </button>
             <button className="btn ghost" onClick={() => fileRef.current?.click()}>Restore</button>
+            {!life && onExportCsv && (
+              <button className="btn ghost" onClick={onExportCsv}>Export CSV</button>
+            )}
             <input ref={fileRef} type="file" accept="application/json" style={{ display: "none" }}
                    onChange={(e) => {
                      const f = e.target.files?.[0];

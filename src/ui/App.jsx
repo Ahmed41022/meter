@@ -13,6 +13,7 @@ import {
 } from "../domain/earnings.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { backupState, recordBackup } from "../domain/backup.js";
+import { toCsv } from "../domain/csv.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
@@ -126,17 +127,38 @@ export default function App({ store: injectedStore }) {
     return () => clearInterval(id);
   }, [anyRunning, recoveryId, commit]);
 
+  /** Hands the user a file. Throws rather than failing quietly if the browser
+   *  will not make one, so nothing downstream records a backup that never
+   *  happened. */
+  const download = (name, text, type) => {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const stamp = () => `meter-${new Date().toISOString().slice(0, 10)}`;
+
   const exportBackup = () => {
     // Serialised BEFORE the stamp, so the file records the state the user asked
     // for rather than one that claims to have already been backed up.
-    const blob = new Blob([JSON.stringify(stateRef.current, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `meter-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    download(`${stamp()}.json`, JSON.stringify(stateRef.current, null, 2), "application/json");
     commit((st) => recordBackup(st, Date.now()));
+  };
+
+  /**
+   * Deliberately does NOT count as a backup.
+   *
+   * A CSV is for something else to read — a tax return, a spreadsheet. It drops
+   * segments, goals, objectives and every id, so the app cannot read it back.
+   * Letting it clear the backup nudge would leave someone believing they had a
+   * copy they could restore from, which is the one mistake this whole feature
+   * exists to prevent.
+   */
+  const exportCsv = () => {
+    download(`${stamp()}.csv`, toCsv(stateRef.current, Date.now()), "text/csv;charset=utf-8");
   };
 
   /** Opening a project lands on the tab it belongs to, so the back link
@@ -344,6 +366,7 @@ export default function App({ store: injectedStore }) {
             onOpen={openProject}
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
             onExport={exportBackup} onImport={importBackup} backup={backup}
+            onExportCsv={exportCsv}
           />
         )}
       </div>
