@@ -463,15 +463,21 @@ describe("the tab-conflict notice", () => {
   }, 20_000);
 
   it("stays dismissed after 'This tab only' — and does not come back", async () => {
+    // Asks about THIS banner rather than "no banners at all": an unrelated
+    // notice, such as the backup nudge, may legitimately be on screen, and the
+    // bug this guards against was the conflict notice re-arming itself.
+    const conflict = (d) => [...d.querySelectorAll(".banner")]
+      .find((b) => /Already running/.test(b.textContent));
     const dom = await boot(runningSeed(5_000));
     const d = dom.window.document;
+    expect(conflict(d)).toBeTruthy();
     btn(d, /This tab only/i).click();
     await wait(200);
-    expect(d.querySelector(".banner")).toBeNull();
+    expect(conflict(d)).toBeUndefined();
 
     // The bug re-armed it on the very next render. Give it many.
     await wait(1500);
-    expect(d.querySelector(".banner")).toBeNull();
+    expect(conflict(d)).toBeUndefined();
   }, 20_000);
 
   it("leaves the running session alone when dismissed", async () => {
@@ -3453,5 +3459,89 @@ describe("telling the user when they work", () => {
   it("shows nothing at all before there is anything to show", async () => {
     const d = await open(seed([]));
     expect(panel(d)).toBeUndefined();
+  }, 25_000);
+});
+
+describe("which work was worth the time, and how much rides on one project", () => {
+  const HOUR = 3_600_000;
+  const back = (n) => Date.now() - n * 86_400_000;
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 10, currency: "USD", createdAt: back(300),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  /** `hours` at whatever rate makes it come to `dollars`. */
+  const work = (id, pid, hours, dollars) => ({
+    id, projectId: pid, kind: "billed", taskId: null, rate: dollars / hours,
+    currency: "USD", createdAt: back(5), closedAt: back(5) + hours * HOUR, deletedAt: null,
+    segments: [{ startedAt: back(5), endedAt: back(5) + hours * HOUR }],
+  });
+  const seed = {
+    projects: [project("big"), project("good"), project("blip")],
+    sessions: [
+      work("s1", "big", 100, 2_000), // $20/hr, most of the money
+      work("s2", "good", 10, 900), // $90/hr, the best hour
+      work("s3", "blip", 1, 300), // $300/hr on one hour — too little to rank
+    ],
+  };
+  const sorters = (d) => [...d.querySelectorAll('[aria-label="Order projects by"] .seg')];
+  const named = (d) => [...d.querySelectorAll(".prow-name")].map((e) => e.textContent);
+  const open = async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    [...d.querySelectorAll(".dash-head .segmented .seg")].find((b) => b.textContent === "All").click();
+    await wait(300);
+    return d;
+  };
+
+  it("orders by time until asked otherwise", async () => {
+    const d = await open();
+    expect(named(d)[0]).toBe("big");
+    expect(sorters(d).map((b) => b.textContent)).toEqual(["Time", "An hour"]);
+  }, 30_000);
+
+  it("reorders by what an hour actually paid, and says the figure", async () => {
+    const d = await open();
+    sorters(d).find((b) => b.textContent === "An hour").click();
+    await wait(300);
+    expect(named(d)[0]).toBe("good");
+    const row = [...d.querySelectorAll(".prow")].find((r) => /good/.test(r.textContent));
+    expect(row.textContent).toMatch(/\$90\.00\/hr/);
+  }, 30_000);
+
+  it("keeps a one-hour fluke out of the ranking entirely", async () => {
+    // $300/hr across a single hour would sit at the top, where the eye goes.
+    const d = await open();
+    sorters(d).find((b) => b.textContent === "An hour").click();
+    await wait(300);
+    expect(named(d)).not.toContain("blip");
+    // it is still there when ordered by time — only the RANKING excludes it
+    sorters(d).find((b) => b.textContent === "Time").click();
+    await wait(300);
+    expect(named(d)).toContain("blip");
+  }, 30_000);
+
+  it("names the project most of the money rides on", async () => {
+    const d = await open();
+    expect(d.querySelector(".concentration").textContent).toMatch(/big/);
+    expect(d.querySelector(".concentration").textContent).toMatch(/63%/); // 2000 of 3200
+  }, 30_000);
+
+  it("says nothing about concentration when the work is spread", async () => {
+    const dom = await boot({
+      projects: [project("a"), project("b"), project("c"), project("d")],
+      sessions: [
+        work("s1", "a", 10, 250), work("s2", "b", 10, 250),
+        work("s3", "c", 10, 250), work("s4", "d", 10, 250),
+      ],
+    });
+    await wait(250);
+    expect(dom.window.document.querySelector(".concentration")).toBeNull();
+  }, 30_000);
+
+  it("offers no ordering choice when there is nothing to reorder", async () => {
+    const dom = await boot({ projects: [project("a")], sessions: [work("s1", "a", 10, 100)] });
+    await wait(250);
+    expect(sorters(dom.window.document)).toHaveLength(0);
   }, 25_000);
 });

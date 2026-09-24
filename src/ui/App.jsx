@@ -227,17 +227,6 @@ export default function App({ store: injectedStore }) {
           </Notice>
         )}
 
-        {/* Only where there is something to lose, and only once it has sat
-            unsaved for a while — see domain/backup.js for both guards. */}
-        {ready && backup.stale && (
-          <Notice title={backup.never ? "Never backed up" : `Last backed up ${daysWord(backup.days)}`}>
-            {countWord(backup.unsaved)} exist only in this browser. Clearing site data, or
-            reinstalling, takes {backup.unsaved === 1 ? "it" : "them"} with it —
-            {" "}<button className="linkish" onClick={exportBackup}>export a backup</button> to keep a copy
-            you hold.
-          </Notice>
-        )}
-
         {recovering && (
           <RecoveryBanner
             session={recovering} now={now}
@@ -259,6 +248,20 @@ export default function App({ store: injectedStore }) {
             </div>
           </>
         )}
+
+        {/* Last of the banners, deliberately. A meter left running overnight or
+            a second tab overwriting this one need answering now; a missing
+            backup is important but not urgent, and putting it above them buries
+            the thing the user has to act on. */}
+        {ready && backup.stale && (
+          <Notice title={backup.never ? "Never backed up" : `Last backed up ${daysWord(backup.days)}`}>
+            {countWord(backup.unsaved)} exist only in this browser. Clearing site data, or
+            reinstalling, takes {backup.unsaved === 1 ? "it" : "them"} with it —
+            {" "}<button className="linkish" onClick={exportBackup}>export a backup</button> to keep a copy
+            you hold.
+          </Notice>
+        )}
+
 
         {project ? (
           <ProjectView
