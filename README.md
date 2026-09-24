@@ -1,6 +1,6 @@
 # Meter
 
-An hourly earnings meter. Start a timer against a project, watch the money accrue in real time, and keep an honest ledger of every session.
+An hourly earnings meter. Start a timer against a project, watch the money accrue in real time, and keep an honest ledger of every session. An **Overview** tab reports any day, week or month across every project at once.
 
 Built as a single self-contained HTML file — no server, no install, no build step to run it. Open `dist/meter.html` and it works.
 
@@ -50,14 +50,18 @@ src/
     time.js        elapsed, running vs paused vs stopped, staleness
     money.js       earnings in minor units, formatting
     sessions.js    start / pause / resume / stop / recover / delete, billed vs idle
-    projects.js    create, edit, remove, validate
+    projects.js    create, edit, remove, validate, on/off the clock
     goals.js       period boundaries, progress
     tasks.js       task records, label matching, per-task totals, re-filing
+    performance.js day / week / month windows, overlap splitting, trends
   storage/
     store.js       the only module that knows where data lives
   ui/              React components; all logic imported from domain/
+    words.js       work vs off-clock wording, the only thing the flag changes
+    DashboardView  the Overview tab: what a day, week or month was worth
+    charts.jsx     stat tiles and the trend columns
 scripts/build.mjs  bundles everything into one HTML file
-tests/             89 tests: unit on domain, integration on the built artifact
+tests/             261 tests: unit on domain, integration on the built artifact
 desktop/           optional Electron wrapper for a standalone .exe
 tools/             Windows desktop-shortcut installer
 ```
@@ -85,6 +89,34 @@ npm test
 | `npm run desktop` | Package a standalone Windows `.exe` |
 
 `npm run build` must run before `npm test`, because the integration suite drives the built file rather than the source.
+
+---
+
+## Reporting performance
+
+The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week** or **Month**; **Projects** is the tab beside it, and opening one from either place drills into its meter and ledger.
+
+Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
+
+Each period shows what it earned, billed and idle time with the change against the period before, the billable share of time at the desk, how many days (or hours) saw work, a column chart of when the work happened, and a breakdown by project.
+
+Figures are derived by **overlap**, not by when a session started. A session running 23:30 → 00:30 is half an hour of one day and half an hour of the next, counted in each for exactly the minutes it spent there. That is what makes the numbers agree with one another: the daily bars always add up to the weekly headline, and no hour is ever counted twice or lost at a boundary. Period boundaries are built from calendar fields, so they stay correct across DST — including in zones where the clocks go forward at midnight and a local 00:00 simply doesn't exist that day.
+
+Money is never mixed across currencies. If you bill in two, each is totalled and shown on its own line.
+
+---
+
+## Off the clock
+
+Not everything worth timing is work. Sleep, play, time away from the desk — you may want the history without any of it touching what you earned.
+
+Open a project's **Settings** and set it to **Off the clock**. Its hours stay recorded exactly as before; what changes is how they are counted. Off-clock time never enters earnings, billed hours, billable share, active days, or the project breakdown, and it gets its own panel on the Overview reporting the same period. The project keeps its own meter, ledger and tasks, but shows elapsed time where a work project shows money.
+
+An off-clock project also reads differently. "Ledger", "task" and "Stop and save" are accounting words; applied to sleep or an evening of play they invite you to read the panel as money, which is the one thing it isn't. So tasks become **activities**, the ledger becomes **history**, sessions become **entries**, and the meter says **Start tracking**. The billing-only controls go with them: there is no billed-against-idle split to choose, no minute rail counting out an hour you are going to charge for, and no money goal that could never move. Only the labels change — the records, the timer and every figure underneath are identical, which is why it's a lookup in the UI layer (`src/ui/words.js`) and not a second path through the domain.
+
+The flag is absent on every project written before it existed, and absent reads as work — so nothing already recorded moves, and no migration is needed.
+
+This replaces the workaround of giving a project a rate like `0.00001`. That hides the money and nothing else: the hours still land in billed time, in the billable share and in the breakdown, so a night's sleep still reads as a productive night. Setting the rate near zero was always treating the symptom.
 
 ---
 
@@ -126,6 +158,7 @@ tests/money.test.js        rounding, drift, formatting fallbacks
 tests/sessions.test.js     the state machine and the rate-snapshot rule
 tests/projects.test.js     creation, validation, cascading removal
 tests/goals.test.js        period boundaries including DST
+tests/performance.test.js  window overlap, calendar buckets, period comparison
 tests/app.integration.test.js   the built HTML, driven in jsdom
 ```
 
@@ -152,7 +185,19 @@ Cases worth knowing about:
 - A running session offers no edit link — stop it first.
 - The desktop quit-guard treats a paused session as not running, and resolves any doubt as "safe to close".
 - A long ledger starts collapsed, and its totals stay visible while collapsed.
-- Weeks start Monday at local midnight, including across a DST shift.
+- Weeks start Monday at local midnight, including across a DST shift — and including a week containing a day that has no local midnight at all.
+- A session running 23:30 to 00:30 gives each day 30 minutes, and the week the full hour.
+- Every day of a calendar year abuts the next exactly: no window overlaps its neighbour, and no bucket falls in a gap between them.
+- A day that loses or gains an hour to DST is charted with 23 or 25 bars, and they still tile it exactly.
+- The trend bars always sum to the headline figure for the period.
+- Stepping a month back from the 31st lands on the 1st of the previous month, not in the one after it.
+- A period with no predecessor reports no comparison rather than +0%.
+- Off-clock hours never reach earnings, billed time, billable share or the breakdown — while the same data left on the clock inflates all four.
+- A project with no `offClock` flag counts as work, so nothing recorded before the setting existed moves.
+- A session whose project has been deleted counts as work, so reporting fails towards showing time you did record.
+- Moving a project off the clock and back changes only how its hours are counted, never the hours.
+- An off-clock project says activities, history and Start tracking; a work project still says tasks, ledger and Start the meter.
+- Off the clock drops the idle split, the billable-hour rail and the money goal, and prints the elapsed figure once rather than twice.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
 - Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
 - A session saved before idle tracking existed still counts as billed.
@@ -164,13 +209,13 @@ Cases worth knowing about:
 Everything lives in browser storage under `meter:v1`, as:
 
 ```js
-Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal }
+Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock? }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
 Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 

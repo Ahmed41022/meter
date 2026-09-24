@@ -4,6 +4,28 @@
  * field for both jobs is the bug this separation exists to prevent.
  */
 
+/**
+ * Some of what you track isn't work: sleep, play, time away from the desk.
+ * It still wants a timer and a history, but it must never touch an earnings
+ * figure, a billable share, or the project breakdown — a rate of 0.00001 hides
+ * the money and leaves the hours sitting in every other total, which is worse
+ * than not tracking it at all.
+ *
+ * The flag is absent on everything written before it existed, and absent reads
+ * as work. That is unambiguous, so no schema bump: nothing about the existing
+ * data changed meaning.
+ */
+export const isOffClock = (project) => project?.offClock === true;
+
+/** On-the-clock projects. Deliberately the DEFAULT accessor, for the same
+ *  reason `sessionsFor` returns billed sessions only: a caller that forgets
+ *  about off-clock work under-reports your own time (harmless) instead of
+ *  counting sleep as billable (the expensive failure). */
+export const workProjects = (projects) => projects.filter((p) => !isOffClock(p));
+
+/** Off-clock projects must always be asked for by name. */
+export const offClockProjects = (projects) => projects.filter(isOffClock);
+
 export const addProject = (state, { name, rate, currency }, now, id) => ({
   ...state,
   projects: [
