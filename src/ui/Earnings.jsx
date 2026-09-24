@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
-import { EARNING, PAY, isCancelled, isPending } from "../domain/earnings.js";
+import {
+  EARNING, PAY, isCancelled, isPending, perTask, perTaskCents,
+} from "../domain/earnings.js";
 
 const KINDS = [
   [EARNING.PIECE, "Per accepted item"],
@@ -32,6 +34,9 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
   const [form, setForm] = useState({
     amount: "", kind: EARNING.PIECE, at: toInput(now), units: "", note: "",
   });
+  /** What one accepted item is worth here, or null where the project has no
+   *  such price and a count means nothing on its own. */
+  const each = perTask(project);
 
   const rows = [...earnings].sort((a, b) => b.at - a.at);
   const settled = rows.filter((e) => !isPending(e) && !isCancelled(e))
@@ -121,9 +126,21 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
               </label>
               <label className="field">
                 <span className="eyebrow">How many items</span>
-                <input className="inp" type="number" min="0" step="1" placeholder="optional"
+                <input className="inp" type="number" min="0" step="1"
+                       placeholder={each === null ? "optional" : "6"}
                        value={form.units}
-                       onChange={(e) => setForm({ ...form, units: e.target.value })} />
+                       onChange={(e) => {
+                         const units = e.target.value;
+                         // Where the project has a price per item, a count IS
+                         // the amount, so typing one fills it in. Editing the
+                         // amount afterwards stands: a capped or part-paid batch
+                         // is exactly the case you would want to overrule.
+                         const priced = perTaskCents(project, units);
+                         setForm((f) => ({
+                           ...f, units,
+                           amount: priced === null ? f.amount : String(priced / 100),
+                         }));
+                       }} />
               </label>
             </div>
             <label className="field">

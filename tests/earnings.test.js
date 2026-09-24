@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   EARNING, PAY, addEarning, earningTotals, earningsFor, earningsIn, isCancelled,
   isPending, isSettled, liveEarnings, paysOnAcceptance, payStateOf, removeEarning,
-  restoreEarning, setPayState,
+  isPerTask, perTask, perTaskCents, restoreEarning, setPayState,
 } from "../src/domain/earnings.js";
 import { performanceIn, untimedShare, byProject, byCompany } from "../src/domain/performance.js";
 import { KIND } from "../src/domain/sessions.js";
@@ -205,5 +205,41 @@ describe("a project that only pays once the work is accepted", () => {
     const { startSession } = await import("../src/domain/sessions.js");
     expect(startSession(empty, project, { now: T, id: "s1" }).sessions[0])
       .not.toHaveProperty("status");
+  });
+});
+
+describe("work priced per accepted item", () => {
+  it("reads a project written before per-item pricing existed as having none", () => {
+    expect(perTask(project)).toBeNull();
+    expect(isPerTask(project)).toBe(false);
+  });
+
+  it("takes a price per item and multiplies it out", () => {
+    const p = { ...project, perTask: 250 };
+    expect(perTask(p)).toBe(250);
+    expect(isPerTask(p)).toBe(true);
+    expect(perTaskCents(p, 6)).toBe(150_000); // 6 x $250
+  });
+
+  it("refuses a price that is not one", () => {
+    for (const bad of [0, -5, "", null, "abc", NaN]) {
+      expect(perTask({ ...project, perTask: bad })).toBeNull();
+    }
+  });
+
+  it("says null rather than zero when there is nothing to multiply", () => {
+    // A confident $0.00 reads as "these items are worth nothing", which is a
+    // different claim from "this project has no per-item price".
+    expect(perTaskCents(project, 6)).toBeNull();
+    expect(perTaskCents({ ...project, perTask: 250 }, 0)).toBeNull();
+    expect(perTaskCents({ ...project, perTask: 250 }, "")).toBeNull();
+  });
+
+  it("lets a project carry both an hourly rate and a per-item price", () => {
+    // Some work pays by the hour AND throws in per-item bonuses; neither field
+    // says anything about the other.
+    const both = { ...project, currentRate: 20.5, perTask: 500 };
+    expect(perTask(both)).toBe(500);
+    expect(both.currentRate).toBe(20.5);
   });
 });

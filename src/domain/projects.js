@@ -87,19 +87,30 @@ export const companiesIn = (projects) => {
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
 };
 
-export const addProject = (state, { name, rate, currency, offClock = false }, now, id) => ({
+export const addProject = (
+  state,
+  { name, rate, currency, offClock = false, perTask = null, paysOnAcceptance = false },
+  now,
+  id,
+) => ({
   ...state,
   projects: [
     ...state.projects,
     {
       id,
       name: name.trim(),
+      // Zero on work paid per item, and correct: the clock earns nothing there,
+      // the accepted items do. Money is derived from rate x elapsed, so a rate
+      // invented to satisfy a form would show income that never arrived.
       currentRate: rate,
       currency,
       createdAt: now,
       sessionGoal: null,
       overallGoal: null,
       ...(offClock ? { offClock: true } : {}),
+      // Absent unless asked for, like every other field added after the fact.
+      ...(perTask ? { perTask } : {}),
+      ...(paysOnAcceptance ? { paysOnAcceptance: true } : {}),
     },
   ],
 });
@@ -118,9 +129,20 @@ export const removeProject = (state, id) => ({
 
 /** `needsRate` is false for something off the clock, which has nothing to
  *  charge — demanding a rate there is what drove people to type 0.00001. */
-export const validateProject = ({ name, rate }, { needsRate = true } = {}) => {
+/**
+ * `model` says which price the form was asking for, because the two are not
+ * interchangeable: work paid per accepted item has no meaningful hourly rate to
+ * demand up front, and insisting on one forced every such project to be created
+ * as a lie and corrected afterwards.
+ */
+export const validateProject = ({ name, rate, perTask }, { needsRate = true, model = "hourly" } = {}) => {
   if (!name || !name.trim()) return "Give it a name.";
   if (!needsRate) return null;
+  if (model === "perTask") {
+    const each = Number(perTask);
+    if (!Number.isFinite(each) || each <= 0) return "What does one task pay? A number above zero.";
+    return null;
+  }
   const parsed = Number(rate);
   if (!Number.isFinite(parsed) || parsed <= 0) return "The rate needs to be a number above zero.";
   return null;
