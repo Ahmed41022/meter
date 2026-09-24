@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
-import { validateProject } from "../domain/projects.js";
+import { companyOf, isDone as projectDone, isPaused, validateProject } from "../domain/projects.js";
 import { isDone } from "../domain/objectives.js";
 import { rateFor } from "../domain/tasks.js";
 import { wordsFor } from "./words.js";
@@ -27,6 +27,7 @@ export default function ProjectsView({
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", rate: "", currency: CURRENCIES[0] });
   const [error, setError] = useState("");
+  const [showDone, setShowDone] = useState(false);
   const fileRef = useRef(null);
 
   // Money is summed per currency — adding EGP to USD would be a lie. There is
@@ -67,6 +68,52 @@ export default function ProjectsView({
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  /** One card. Defined once and handed to both groups, so a finished project
+   *  reads exactly like a live one — it is filed away, not diminished. */
+  const card = (p) => {
+    const mine = sessions.filter((s) => s.projectId === p.id);
+    const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
+    const cents = life
+      ? 0
+      : mine.reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0);
+    const open = openCount(p.id);
+    const company = life ? null : companyOf(p);
+    const stopped = isPaused(p) || projectDone(p);
+    return (
+      <button className={"card" + (life ? " off" : "") + (stopped ? " stopped" : "")} key={p.id}
+              onClick={() => onOpen(p.id)}>
+        <span>
+          <span className="card-name">
+            {mine.some(isRunning) && <span className="dot" />}
+            {p.name}
+            {isPaused(p) && <span className="tag">Paused</span>}
+          </span>
+          <span className="card-meta">
+            {company && `${company} · `}
+            {life
+              ? `${mine.length} entr${mine.length === 1 ? "y" : "ies"}`
+              : `${formatMoney(Math.round(p.currentRate * 100), p.currency)}/hr · ${
+                  mine.length} session${mine.length === 1 ? "" : "s"}`}
+            {open > 0 && !stopped && ` · ${open} to do`}
+          </span>
+        </span>
+        <span>
+          <span className="card-amt">
+            {life ? (ms ? formatShortDuration(ms) : "—") : formatMoney(cents, p.currency)}
+          </span>
+          <span className="card-dur">
+            {life ? "tracked" : (ms ? formatShortDuration(ms) : "no time yet")}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
+  /** Finished work is filed, not deleted. Paused stays in the live list,
+   *  because "not now" is a different statement from "over". */
+  const running = projects.filter((p) => !projectDone(p));
+  const finished = projects.filter(projectDone);
+
   return (
     <>
       <div className="grand">
@@ -83,49 +130,33 @@ export default function ProjectsView({
       </div>
 
       <div className="stack">
-        {projects.length === 0 && !adding && (
+        {running.length === 0 && !adding && (
           <div className="panel empty">
-            {life
-              ? "Nothing here yet. Add something you track but don’t work — sleep, play, time away."
-              : "Nothing here yet. Add a project with its hourly rate, then start the meter."}
+            {finished.length > 0
+              ? "Nothing running. Everything here is finished — it's all still below."
+              : life
+                ? "Nothing here yet. Add something you track but don’t work — sleep, play, time away."
+                : "Nothing here yet. Add a project with its hourly rate, then start the meter."}
           </div>
         )}
 
-        {projects.map((p) => {
-          const mine = sessions.filter((s) => s.projectId === p.id);
-          const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
-          const cents = life
-            ? 0
-            : mine.reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0);
-          const open = openCount(p.id);
-          return (
-            <button className={"card" + (life ? " off" : "")} key={p.id}
-                    onClick={() => onOpen(p.id)}>
-              <span>
-                <span className="card-name">
-                  {mine.some(isRunning) && <span className="dot" />}
-                  {p.name}
-                </span>
-                <span className="card-meta">
-                  {life
-                    ? `${mine.length} entr${mine.length === 1 ? "y" : "ies"}`
-                    : `${formatMoney(Math.round(p.currentRate * 100), p.currency)}/hr · ${
-                        mine.length} session${mine.length === 1 ? "" : "s"}`}
-                  {open > 0 && ` · ${open} to do`}
-                </span>
-              </span>
-              <span>
-                <span className="card-amt">
-                  {life ? (ms ? formatShortDuration(ms) : "—") : formatMoney(cents, p.currency)}
-                </span>
-                <span className="card-dur">
-                  {life ? "tracked" : (ms ? formatShortDuration(ms) : "no time yet")}
-                </span>
-              </span>
-            </button>
-          );
-        })}
+        {running.map(card)}
       </div>
+
+      {/* Finished projects are filed away rather than deleted: the hours
+          happened and every total still counts them. Collapsed by default,
+          because the list you work from is the live one. */}
+      {finished.length > 0 && (
+        <div className="sec" style={{ marginTop: 18 }}>
+          <button className="done-head" aria-expanded={showDone}
+                  onClick={() => setShowDone((v) => !v)}>
+            <span className={"chev" + (showDone ? " open" : "")}>▶</span>
+            <span className="eyebrow">Done · {finished.length}</span>
+          </button>
+          {showDone && <div className="stack">{finished.map(card)}</div>}
+        </div>
+      )}
+
 
       <div className="sec">
         {adding ? (

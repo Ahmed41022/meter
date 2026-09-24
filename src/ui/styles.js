@@ -366,6 +366,22 @@ export const CSS = `
 .segmented.small{padding:3px;}
 .segmented.small .seg{padding:5px 11px;font-size:11.5px;}
 
+/* by company */
+.crow{display:block;padding:16px 0;border-bottom:1px solid var(--line-2);}
+.crow:first-child{padding-top:0;}
+.crow:last-child{border-bottom:0;padding-bottom:0;}
+.crow-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+.crow-name{font-weight:600;font-size:14.5px;}
+.crow-amt{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;}
+.crow-bar{display:block;height:6px;margin-top:10px;border-radius:999px;
+  background:var(--line-2);overflow:hidden;}
+.crow-fill{display:block;height:100%;background:var(--jade);border-radius:999px;}
+.crow-meta{display:block;margin-top:8px;font-family:var(--mono);font-size:11.5px;
+  color:var(--muted);}
+/* Unassigned is a gap to fill, not a client to rank. */
+.crow.none .crow-name{color:var(--muted);font-weight:500;}
+.crow.none .crow-fill{background:var(--muted);}
+
 /* activity calendar */
 .hm{--hm-cell:10px;--hm-gap:2px;--hm-pitch:12px;}
 .hm-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px;}
@@ -388,11 +404,21 @@ export const CSS = `
 .hm-cell.future{background:transparent;}
 .hm-cell:not(.future):hover{outline:1.5px solid var(--ink);outline-offset:1px;}
 .hm-read{text-align:right;text-transform:none;letter-spacing:0;font-family:var(--mono);
-  font-size:11px;white-space:nowrap;}
+  font-size:11px;line-height:1.5;}
 .hm-read.on{color:var(--ink-2);}
 .hm-legend{margin-top:16px;gap:14px;}
 .hm-legend .legend-item{font-family:var(--mono);font-size:11px;}
 .hm-none{margin-top:14px;font-size:12.5px;color:var(--muted);}
+
+/* paused and done */
+.plate-for{font-size:12.5px;color:var(--muted);margin-top:2px;}
+.plate-name .tag{vertical-align:3px;}
+.card.stopped{opacity:.72;}
+.card.stopped:hover{opacity:1;}
+.done-head{display:flex;align-items:center;gap:8px;background:none;border:0;padding:10px 0;
+  cursor:pointer;font:inherit;color:var(--muted);width:100%;text-align:left;}
+.done-head:hover{color:var(--ink-2);}
+.tiles.closing{margin-top:0;}
 
 /* Off the clock: a third, deliberately quiet register. Slate rather than a
    fourth accent — this time is context, not a series competing with the two

@@ -208,7 +208,7 @@ const fullDate = (t) => new Date(t).toLocaleDateString(undefined, {
   weekday: "short", day: "numeric", month: "short", year: "numeric",
 });
 
-export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun }) {
+export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, streak }) {
   const [hover, setHover] = useState(null);
   const ramp = RAMP[scale];
 
@@ -238,6 +238,22 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun }) {
   const active = cells.filter((d) => valueOf(d) > 0).length;
   const total = cells.reduce((a, d) => a + valueOf(d), 0);
 
+  /**
+   * The streak leads, because it is the one figure here you can still change
+   * today. "none today" is said out loud rather than left to be inferred from
+   * a number that has not moved: the run is alive, it just has not been
+   * extended yet, and those are different things to be told.
+   */
+  const parts = [];
+  if (streak?.current > 0) {
+    parts.push(`${streak.current}-day streak`);
+    if (!streak.includesToday) parts.push("none today");
+  }
+  parts.push(`${active} active ${active === 1 ? "day" : "days"}`);
+  if (streak?.longest > streak?.current) parts.push(`best ${streak.longest}`);
+  parts.push(formatShortDuration(total));
+  const summary = parts.join(" · ");
+
   return (
     <div className="hm">
       <div className="hm-top">
@@ -250,7 +266,7 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun }) {
           {hover
             ? `${fullDate(hover.day.at)} · ${hover.ms > 0
                 ? formatShortDuration(hover.ms) : `no ${noun.toLowerCase()}`}`
-            : `${active} active ${active === 1 ? "day" : "days"} · ${formatShortDuration(total)}`}
+            : summary}
         </span>
       </div>
 
@@ -267,8 +283,7 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun }) {
             ))}
           </div>
           <div className="hm-grid" role="img" onMouseLeave={() => setHover(null)}
-               aria-label={`${noun} per day over the last year: ${active} active `
-                 + `${active === 1 ? "day" : "days"}, ${formatShortDuration(total)} in total`}>
+               aria-label={`${noun} per day over the last year: ${summary}`}>
             {weeks.map((week) => (
               <div className="hm-col" key={week.from}>
                 {week.days.map((day) => {
