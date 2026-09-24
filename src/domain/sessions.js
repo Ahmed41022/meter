@@ -1,5 +1,6 @@
 import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
 import { acceptsTime } from "./projects.js";
+import { PAY, paysOnAcceptance } from "./earnings.js";
 
 /**
  * A session is either billable work or time at the desk that wasn't worked.
@@ -100,6 +101,10 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
         segments: [{ startedAt: now, endedAt: null, lastTick: now }],
         closedAt: null,
         deletedAt: null,
+        // Where the work is only worth something once someone accepts it, that
+        // is true from the moment the meter starts. Marking it afterwards would
+        // mean every figure counted the money first and corrected later.
+        ...(paysOnAcceptance(project) ? { status: PAY.PENDING } : {}),
       },
     ],
   };
@@ -145,6 +150,7 @@ export const addManualSession = (
         closedAt: end,
         deletedAt: null,
         manual: true,
+        ...(paysOnAcceptance(project) ? { status: PAY.PENDING } : {}),
       },
     ],
   };

@@ -8,6 +8,9 @@ import {
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject, setStatus } from "../domain/projects.js";
+import {
+  addEarning, earningsFor, liveEarnings, removeEarning, restoreEarning, setPayState,
+} from "../domain/earnings.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
@@ -37,7 +40,7 @@ const resolveTaskPick = (project, pick, createTask) => {
   const id = resolveTaskId(project, pick.label, uid());
   return { id, prepare: (s) => createTask(s, id, pick.label) };
 };
-const EMPTY = { projects: [], sessions: [], objectives: [] };
+const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 
 export default function App({ store: injectedStore }) {
   // Created ONCE. A default parameter (`store = createStore()`) is evaluated on
@@ -275,6 +278,14 @@ export default function App({ store: injectedStore }) {
               flash("Removed.", "Undo", () => commit((s) => restoreObjective(s, id)));
             }}
             projects={state.projects}
+            earnings={earningsFor(state, project.id)}
+            onAddEarning={(entry) =>
+              commit((s) => addEarning(s, project, entry, Date.now(), uid()))}
+            onRemoveEarning={(id) => {
+              commit((s) => removeEarning(s, id, Date.now()));
+              flash("Removed.", "Undo", () => commit((s) => restoreEarning(s, id)));
+            }}
+            onSetPayState={(id, status) => commit((s) => setPayState(s, id, status))}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onSetStatus={(status) => {
               commit((s) => setStatus(s, project.id, status, Date.now()));
@@ -296,6 +307,7 @@ export default function App({ store: injectedStore }) {
             /* Both kinds: the dashboard reports idle time beside billed, and
                `performanceIn` is what keeps the two apart. */
             sessions={liveSessions(state.sessions)}
+            earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
             now={now}
             today={dayKey(now)}

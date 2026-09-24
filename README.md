@@ -192,6 +192,49 @@ Whatever is already open can always be finished. Stopping a project refuses *new
 
 ---
 
+## Money the clock never measured
+
+Not all work pays by the hour. A task can pay per accepted submission, a month can end with a bonus, a platform can settle an adjustment. That money is real and belongs in the totals — but it has no duration, and this app is built on money being *derived* from time rather than stored.
+
+So it is a separate record rather than a session with the hours left blank. A session means "the meter watched this", and every figure leans on that: elapsed time recomputed from segments, money recomputed from rate × elapsed. A session carrying a stored amount and no segments would be a lie in the one place the app cannot afford one, and every reporting function would have to learn to skip it.
+
+**Earned without the clock** on a project page takes an amount, what it was for (per accepted item, bonus, adjustment), a date, and optionally how many items it covers — because "6 × $500" is the fact and "$3,000" is only the consequence. Negative amounts are allowed; a clawback is a real thing.
+
+### Two rates, because they answer different questions
+
+Once money can arrive without hours, a single "per hour" figure stops meaning one thing. So both are shown:
+
+```
+AN HOUR CAME TO
+$58.30/hr
+$18.97/hr on timed work · 67% earned no tracked time
+```
+
+The first divides everything by the hours recorded. The second divides only the money a clock actually measured. Where nothing untimed was earned they are the same number and the second line is dropped rather than repeated.
+
+---
+
+## Pending, paid, cancelled
+
+Work that only pays once someone accepts it is not earnings yet. A project set to pay **once accepted** starts every new session **pending** — from the moment the meter starts, not marked afterwards, because otherwise every figure counts the money first and corrects later.
+
+The Overview leads with what has actually landed, and pending sits on its own line beneath it:
+
+```
+THIS WEEK · EARNED
+$218.41
+Sep 21 – Sep 27 · −92% vs last week
++ $250.00 pending
+```
+
+Conservative on purpose: the number you glance at should be money you have, or a rejected week reads as a good one.
+
+**Cancelled work keeps its hours and loses its money.** It is dimmed rather than deleted — the hours were still worked, and erasing the record would leave them in the ledger with no account of where their money went.
+
+Absent means settled. Every session recorded before any of this existed counts exactly as it always did, so nothing already stored changed meaning and there is no migration. Only work genuinely waiting on someone else's decision carries a status at all.
+
+---
+
 ## Objectives
 
 What you mean to get done, beside what it actually took.
@@ -268,6 +311,7 @@ tests/money.test.js        rounding, drift, formatting fallbacks
 tests/sessions.test.js     the state machine and the rate-snapshot rule
 tests/projects.test.js     creation, validation, cascading removal, status and companies
 tests/goals.test.js        period boundaries including DST, and pacing
+tests/earnings.test.js     money without hours, and whether it has landed
 tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid,
                            company rollups, effective rate, streaks
 tests/app.integration.test.js   the built HTML, driven in jsdom
@@ -328,14 +372,16 @@ Cases worth knowing about:
 Everything lives in browser storage under `meter:v1`, as:
 
 ```js
-Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock?, company?, status?, statusAt? }
+Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal,
+             offClock?, company?, status?, statusAt?, paysOnAcceptance? }
+Earning    { id, projectId, taskId, kind, cents, currency, at, note, units?, status?, createdAt, deletedAt }
 Objective  { id, projectId, text, done, doneAt, createdAt, focusedOn, estimateMs, taskId, deletedAt }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
 Session    { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original?, manual? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`status` is absent on a running project and `'paused'` or `'done'` otherwise — absent reads as running, and one field rather than two flags because a project cannot be both. `statusAt` stamps when it stopped and is cleared on the way back, so a project running again never reports a range that ended. `company` is absent or empty on work with no client named; it is the key every company figure is grouped by, so it can become a record of its own later without a migration. `manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+An `Earning` is money with no duration anywhere on it — no segments, no rate — because it was never paid by the hour. `kind` is `'piece'`, `'bonus'` or `'adjust'`, and `units` records how many accepted items an amount covers. On both sessions and earnings a `status` of `'pending'` or `'cancelled'` says the money has not landed or never will; **absent means settled**, so nothing written before pay states existed changed meaning. `paysOnAcceptance` is absent on ordinary work and `true` where a session should start out pending. `status` is absent on a running project and `'paused'` or `'done'` otherwise — absent reads as running, and one field rather than two flags because a project cannot be both. `statusAt` stamps when it stopped and is cleared on the way back, so a project running again never reports a range that ended. `company` is absent or empty on work with no client named; it is the key every company figure is grouped by, so it can become a record of its own later without a migration. `manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 

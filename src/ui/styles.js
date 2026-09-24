@@ -366,6 +366,22 @@ export const CSS = `
 .segmented.small{padding:3px;}
 .segmented.small .seg{padding:5px 11px;font-size:11.5px;}
 
+/* money the clock never measured */
+.grand-pending{margin-top:6px;font-family:var(--mono);font-size:13px;color:var(--amber);}
+.ern{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:13px 0;border-bottom:1px solid var(--line-2);}
+.ern:first-child{padding-top:0;}
+.ern:last-of-type{border-bottom:0;}
+.ern-main{display:flex;flex-direction:column;gap:4px;min-width:0;}
+.ern-amt{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;font-weight:600;}
+.ern-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+.ern-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
+.inp.mini{padding:5px 7px;font-size:11.5px;width:auto;}
+/* Cancelled work still happened; it is dimmed, never hidden. */
+.ern.cancelled .ern-amt{text-decoration:line-through;color:var(--muted);}
+.ern-form{padding-top:16px;border-top:1px solid var(--line-2);}
+.ern + .ern-form,.ern + .obj-add{margin-top:4px;}
+
 /* by company */
 .crow{display:block;padding:16px 0;border-bottom:1px solid var(--line-2);}
 .crow:first-child{padding-top:0;}
