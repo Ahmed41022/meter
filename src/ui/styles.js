@@ -363,6 +363,37 @@ export const CSS = `
   .trg-top .goal-val{margin-left:0;flex-basis:100%;}
 }
 
+.segmented.small{padding:3px;}
+.segmented.small .seg{padding:5px 11px;font-size:11.5px;}
+
+/* activity calendar */
+.hm{--hm-cell:10px;--hm-gap:2px;--hm-pitch:12px;}
+.hm-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px;}
+/* 53 columns will not fit a phone. Scrolling keeps the cells legible instead
+   of shrinking them to a size nothing can be aimed at. */
+.hm-scroll{overflow-x:auto;padding-bottom:4px;}
+.hm-months,.hm-body{min-width:calc(var(--hm-pitch) * 53);}
+.hm-months{display:flex;gap:var(--hm-gap);margin-left:calc(28px + 6px);margin-bottom:5px;height:12px;}
+.hm-month{flex:0 0 var(--hm-cell);font-family:var(--mono);font-size:10px;color:var(--muted);
+  white-space:nowrap;overflow:visible;}
+.hm-body{display:flex;gap:6px;}
+/* Pinned, so the rows stay named when the calendar is scrolled sideways. */
+.hm-days{display:flex;flex-direction:column;gap:var(--hm-gap);width:28px;flex:0 0 28px;
+  position:sticky;left:0;background:var(--card);z-index:2;}
+.hm-day{height:var(--hm-cell);line-height:var(--hm-cell);font-family:var(--mono);
+  font-size:9.5px;color:var(--muted);}
+.hm-grid{display:flex;gap:var(--hm-gap);}
+.hm-col{display:flex;flex-direction:column;gap:var(--hm-gap);}
+.hm-cell{width:var(--hm-cell);height:var(--hm-cell);border-radius:2px;display:block;}
+.hm-cell.future{background:transparent;}
+.hm-cell:not(.future):hover{outline:1.5px solid var(--ink);outline-offset:1px;}
+.hm-read{text-align:right;text-transform:none;letter-spacing:0;font-family:var(--mono);
+  font-size:11px;white-space:nowrap;}
+.hm-read.on{color:var(--ink-2);}
+.hm-legend{margin-top:16px;gap:14px;}
+.hm-legend .legend-item{font-family:var(--mono);font-size:11px;}
+.hm-none{margin-top:14px;font-size:12.5px;color:var(--muted);}
+
 /* Off the clock: a third, deliberately quiet register. Slate rather than a
    fourth accent — this time is context, not a series competing with the two
    that carry money. */
