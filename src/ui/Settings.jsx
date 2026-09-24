@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
-import { isOffClock } from "../domain/projects.js";
+import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
 
-export default function Settings({ project, onPatch, onDeleteProject, hasRunningSession }) {
+export default function Settings({
+  project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
+}) {
   const [name, setName] = useState(project.name);
+  const [company, setCompany] = useState(companyOf(project) ?? "");
   const [rate, setRate] = useState(String(project.currentRate));
   const [sessionGoal, setSessionGoal] = useState(project.sessionGoal || { type: "money", target: "" });
   const [overallGoal, setOverallGoal] = useState(
@@ -91,6 +94,29 @@ export default function Settings({ project, onPatch, onDeleteProject, hasRunning
         </>
       )}
 
+      {/* Off the clock has no client. A company on sleep would be a category
+          error, and it would then turn up in the revenue breakdown. */}
+      {!isOffClock(project) && (
+        <>
+          <label className="field">
+            <span className="eyebrow">Company</span>
+            <input className="inp" value={company} list="meter-companies"
+                   placeholder="who it's for — optional"
+                   onChange={(e) => setCompany(e.target.value)}
+                   onBlur={() => onPatch({ company: company.trim() })} />
+          </label>
+          {/* Suggestions from what you have already typed: the list is what
+              stops "Outlier" and "outlier" becoming two clients. */}
+          <datalist id="meter-companies">
+            {companiesIn(projects).map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <div className="hint">
+            Projects sharing a company are totalled together on the Overview — what each
+            one earned, the hours, and what an hour actually came to across all of them.
+          </div>
+        </>
+      )}
+
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Counts as</span>
       </div>
@@ -124,7 +150,32 @@ export default function Settings({ project, onPatch, onDeleteProject, hasRunning
       </div>
       {goalFields("overallGoal", overallGoal, setOverallGoal, true)}
 
-      <div className="sec-head" style={{ marginTop: 12 }}>
+      <div className="sec-head" style={{ marginTop: 22 }}>
+        <span className="eyebrow">Status</span>
+      </div>
+      {/* Three states, one control — two checkboxes could express "paused and
+          done", which is not a thing a project can be. */}
+      <div className="seg" role="tablist" aria-label="Project status">
+        {[["active", "Running"], ["paused", "Paused"], ["done", "Done"]].map(([key, label]) => (
+          <button key={key} role="tab" aria-selected={statusOf(project) === key}
+                  className={"seg-btn" + (statusOf(project) === key ? " on" : "")}
+                  onClick={() => onSetStatus(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="hint">
+        {statusOf(project) === "done"
+          ? "Finished. It has left the Targets panel and won't take new time, and its page now "
+            + "reports what it came to. Every hour it recorded is still in your history."
+          : statusOf(project) === "paused"
+            ? "On hold. It stays where it is but has left the Targets panel and won't take new "
+              + "time — set it running again when you come back to it."
+            : "Paused keeps it in place for work that has gone quiet. Done files it away with a "
+              + "closing summary. Both leave Targets and stop the meter; neither hides any history."}
+      </div>
+
+      <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Danger</span>
       </div>
       {confirming ? (

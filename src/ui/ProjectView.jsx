@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { elapsedMs, isOpen, isRunning, startedAt } from "../domain/time.js";
+import { elapsedMs, isOpen, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
 import {
   earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
-import { isOffClock } from "../domain/projects.js";
+import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
-import { sessionMsInWindow } from "../domain/performance.js";
+import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
@@ -20,6 +20,7 @@ import SessionEditor from "./SessionEditor.jsx";
  *  the per-task figures stay reachable without a long scroll. */
 const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
+import { StatTile } from "./charts.jsx";
 import Settings from "./Settings.jsx";
 import Objectives from "./Objectives.jsx";
 import ManualSession from "./ManualSession.jsx";
@@ -32,6 +33,7 @@ export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
+  projects = [], onSetStatus,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual,
@@ -101,12 +103,35 @@ export default function ProjectView({
   const taskRows = taskTotals(project, [...sessions, ...idleSessions], now);
   const hasTasks = taskRows.some((r) => r.taskId);
 
+  const stopped = !acceptsTime(project);
+  /** A stopped project with nothing open has no meter to show: the money
+   *  reads $0.00 for ever and the rail counts out an hour that will never
+   *  start. What it came to is the panel below. */
+  const bare = stopped && !current;
+  const company = companyOf(project);
+  /** The span the project actually ran, taken from the work rather than from
+   *  when it was created or marked done — a project made in March and first
+   *  worked in June ran from June. */
+  const allSessions = [...sessions, ...idleSessions];
+  const ranFrom = allSessions.length
+    ? Math.min(...allSessions.map((s) => startedAt(s))) : null;
+  const ranTo = allSessions.length
+    ? Math.max(...allSessions.map((s) => s.closedAt ?? lastActivityAt(s) ?? startedAt(s))) : null;
+  const closingRate = effectiveRate(totalCents, totalMs);
+  const goalUnit = (v) => (overallGoal?.type === "money"
+    ? formatMoney(Math.round(v * 100), currency) : formatShortDuration(v * 60_000));
+
   return (
     <>
       <div className={"face" + (idling ? " idle" : "")}>
         <div className="face-top">
           <div>
-            <div className="plate-name">{project.name}</div>
+            <div className="plate-name">
+              {project.name}
+              {isPaused(project) && <span className="tag">Paused</span>}
+              {isDone(project) && <span className="tag">Done</span>}
+            </div>
+            {company && <div className="plate-for">{company}</div>}
             <div className="plate-rate">
               {offClock ? "off the clock · not counted as work" : <>
                 {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
@@ -116,21 +141,23 @@ export default function ProjectView({
               </>}
             </div>
           </div>
-          <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
-            {running ? (idling ? "Idling" : "Running") : current ? "Paused" : "Stopped"}
-          </span>
+          {!bare && (
+            <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
+              {running ? (idling ? "Idling" : "Running") : current ? "Paused" : "Stopped"}
+            </span>
+          )}
         </div>
 
         {/* An off-clock project has no earnings to show, and a huge 0.00 reads
             as a broken meter. The elapsed time is the figure that matters. */}
-        <div className="money">
+        {!bare && <div className="money">
           {offClock
             ? <span className="money-head">{formatDuration(shownMs)}</span>
             : <>
                 <span className="money-head">{head}</span>
                 {tail !== null && <span className="money-tail">{tail}</span>}
               </>}
-        </div>
+        </div>}
 
         {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
 
@@ -140,7 +167,7 @@ export default function ProjectView({
           </button>
         )}
 
-        <div className="clock">
+        {!bare && <div className="clock">
           {/* Off the clock the headline figure is already this duration, so
               repeating it here would just print the same number twice. */}
           {!offClock && <span className="clock-main">{formatDuration(shownMs)}</span>}
@@ -149,12 +176,12 @@ export default function ProjectView({
               ? `started ${time(startedAt(current))}`
               : offClock ? "not tracking" : "meter is stopped"}
           </span>
-        </div>
+        </div>}
 
         {/* Minute rail: one mark per minute of the current billable hour. It
             counts out an hour you are going to charge for, so off the clock
             there is nothing for it to count. */}
-        {!offClock && <>
+        {!offClock && !bare && <>
         <div className="rail" aria-hidden="true">
           {Array.from({ length: 60 }, (_, i) => (
             <span key={i} className={
@@ -192,7 +219,7 @@ export default function ProjectView({
         )}
 
         <div className="controls">
-          {!current && !prompt && (
+          {!current && !prompt && !stopped && (
             <>
               <button className="btn primary" onClick={() => setPrompt({ kind: KIND.BILLED })}>
                 {w.start}
@@ -215,16 +242,34 @@ export default function ProjectView({
               </button>
             </>
           )}
+          {!current && !prompt && stopped && (
+            <button className="btn primary" onClick={() => onSetStatus("active")}>
+              {isDone(project) ? "Reopen this project" : "Set it running again"}
+            </button>
+          )}
+          {/* Whatever is already open can always be finished — stopping a
+              project refuses NEW time, it does not strand a session that was
+              running when you stopped it. Only the new-session button goes. */}
           {current && !running && (
             <>
               <button className="btn primary" onClick={onResume}>Resume</button>
-              <button className="btn ghost"
-                      onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, { taskId: current.taskId })}>
-                {offClock ? "New entry" : "New session"}
-              </button>
+              {!stopped && (
+                <button className="btn ghost"
+                        onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, { taskId: current.taskId })}>
+                  {offClock ? "New entry" : "New session"}
+                </button>
+              )}
             </>
           )}
         </div>
+
+        {stopped && (
+          <div className="hint" style={{ marginTop: 14, marginBottom: 0 }}>
+            {isDone(project)
+              ? "This project is done, so it won't take new time. Everything it recorded is still here."
+              : "This project is on hold, so it won't take new time. Nothing it recorded has changed."}
+          </div>
+        )}
 
         {/* Switching kind is always explicit. Auto-starting the other timer
             would attribute time to the wrong bucket with no trace of why. */}
@@ -238,7 +283,47 @@ export default function ProjectView({
         )}
       </div>
 
-      {(sessionGoal || overallGoal) && (
+      {/* What it came to. A finished project is no longer a thing to pace, so
+          the goal reads as an outcome and the panel reports the whole run
+          rather than this week's slice of it. */}
+      {isDone(project) && (
+        <div className="sec">
+          <div className="sec-head">
+            <span className="eyebrow">What it came to</span>
+            {ranFrom !== null && (
+              <span className="eyebrow">
+                {date(ranFrom)} – {date(ranTo)}{new Date(ranTo).getFullYear() !== new Date().getFullYear()
+                  ? ` ${new Date(ranTo).getFullYear()}` : ""}
+              </span>
+            )}
+          </div>
+          <div className="panel">
+            {allSessions.length === 0 ? (
+              <div className="empty">No time was ever recorded against this one.</div>
+            ) : (
+              <div className="tiles closing">
+                {!offClock && (
+                  <StatTile label="Earned" value={formatMoney(totalCents, currency)} />
+                )}
+                <StatTile label={offClock ? "Tracked" : "Billed"}
+                          value={formatShortDuration(totalMs)}
+                          sub={idleMs > 0 ? `${formatShortDuration(idleMs)} idle` : null} />
+                {!offClock && closingRate !== null && (
+                  <StatTile label="An hour came to" value={`${formatMoney(closingRate, currency)}/hr`}
+                            sub={share === null ? null : `${Math.round(share * 100)}% of desk time billed`} />
+                )}
+                {overallGoal && (
+                  <StatTile label="Goal"
+                            value={overallValue >= overallGoal.target ? "Met" : "Short"}
+                            sub={`${goalUnit(overallValue)} of ${goalUnit(overallGoal.target)}`} />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isDone(project) && (sessionGoal || overallGoal) && (
         <div className="sec">
           <div className="sec-head"><span className="eyebrow">Goals</span></div>
           <div className="panel">
@@ -260,11 +345,15 @@ export default function ProjectView({
         </div>
       )}
 
+      {/* On a finished project the list is a record, not a plan — shown when
+          there is something to show, and with nothing new to add. */}
+      {(!isDone(project) || objectives.some((o) => o.projectId === project.id)) && (
       <Objectives
-        project={project} objectives={objectives} words={w}
+        project={project} objectives={objectives} words={w} readOnly={isDone(project)}
         sessions={[...sessions, ...idleSessions]} now={now} today={today}
         onAdd={onAddObjective} onToggle={onToggleObjective}
         onFocus={onFocusObjective} onRemove={onRemoveObjective} onEdit={onEditObjective} />
+      )}
 
       {hasTasks && (
         <div className="sec">
@@ -342,10 +431,12 @@ export default function ProjectView({
           <span className="eyebrow">
             {offClock ? "" : `${formatMoney(totalCents, project.currency)} · `}
             {totalMs ? formatShortDuration(totalMs) : "0m"}
-            {" · "}
-            <button className="linkish" onClick={() => setAddingTime((v) => !v)}>
-              {addingTime ? "cancel" : "add time"}
-            </button>
+            {!stopped && <>
+              {" · "}
+              <button className="linkish" onClick={() => setAddingTime((v) => !v)}>
+                {addingTime ? "cancel" : "add time"}
+              </button>
+            </>}
           </span>
         </div>
 
@@ -467,7 +558,8 @@ export default function ProjectView({
           </button>
         </div>
         {settingsOpen && (
-          <Settings project={project} onPatch={onPatch} onDeleteProject={onDeleteProject}
+          <Settings project={project} projects={projects} onPatch={onPatch}
+                    onDeleteProject={onDeleteProject} onSetStatus={onSetStatus}
                     hasRunningSession={!!running} />
         )}
       </div>

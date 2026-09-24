@@ -138,6 +138,8 @@ A **lifetime** goal has no pacing — a target with no end cannot be late. Nor d
 
 A year of days at the foot of the Overview, each shaded by how much time it carried. It answers the question none of the period views can: not what this week was worth, but what the year has actually looked like — the streaks, the gaps, the weeks that quietly went missing.
 
+Its summary line leads with the **streak** — the run of consecutive days with something on them, because it is the one figure there you can still change today. A day that isn't logged yet doesn't break it: the line says *none today* rather than silently reporting a number that hasn't moved, since a live run that hasn't been extended and a broken one are different things to be told.
+
 Work and off-clock time get **separate calendars**, switched with the toggle in the heading, and separate colour ramps: jade for work, the same quiet slate the rest of the app gives time you track but don't work. They are never shaded on one scale, because they are not the same quantity.
 
 The shade boundaries are **quantiles of whatever is being shaded**, not fixed hour marks. Six hours is a full day of work and a short night's sleep, so one fixed scale would render one of the two as a flat wall of colour. That makes the boundaries arbitrary unless they are stated, so the legend spells out every one of them rather than saying "less" and "more". Empty days are left out of the distribution — include them and a single busy week in a blank year sets every boundary by how often you did nothing.
@@ -145,6 +147,48 @@ The shade boundaries are **quantiles of whatever is being shaded**, not fixed ho
 Days are walked as calendar dates, not as 86,400,000ms steps. A week containing a DST shift is 167 or 169 hours long, and stepping by fixed milliseconds would slide the grid by an hour and eventually put a Tuesday in the Monday row. Each column is labelled with the month its **midweek** day falls in: the week of 31 Aug – 6 Sep is four-sevenths September, and going by the Monday leaves September unlabelled.
 
 Like *Targets*, the calendar ignores the period control above it — it is context for everything else on the page, not another reading of the chosen week. Where 53 columns don't fit, it scrolls, opens on the most recent weeks, and keeps the day names pinned.
+
+---
+
+## Who the work is for
+
+A project can name the company it's for, and the Overview then totals every project of that client together under **By company**.
+
+```
+BY COMPANY                                   2 companies
+Outlier                                          $602.34
+████████████████████████████████████████████████████
+6h 42m · $90.00/hr · 97% of revenue · 2 projects
+
+Aether Labs                                       $15.87
+██
+2h 07m · $7.50/hr · 3% of revenue
+```
+
+Two figures there aren't available anywhere else. **What an hour came to** is the blend across every project and every task-level rate override for that client — a client who looks busy at $7.50/hr and one who looks quiet at $90/hr are not the same client, and this is what says so. **Share of revenue** is client concentration, the number that tells you how much of your income walks out of the door if one relationship ends.
+
+Projects with no company are kept as their own row rather than dropped. Leaving them out would make the shares add up to less than the whole while looking like they added up to all of it.
+
+The panel doesn't appear for a single client — the By project list below it already says everything it would. Off-clock projects are never in it: sleep has no client, and it is certainly not unassigned revenue.
+
+The company is free text with suggestions from what you've already typed. It's a name until it needs to carry something, so it isn't a record of its own yet; the suggestion list is what stops *Outlier* and *outlier* becoming two clients. Every figure above is keyed by the name, so it can become a real entity later without touching a single stored project.
+
+---
+
+## Paused and done
+
+A project is **running**, **paused** or **done**, set in its settings — never two of those at once, because two checkboxes could express a state that doesn't exist and then every reader has to decide what it means.
+
+Both stopped states leave the **Targets** panel and refuse new time. A goal you aren't working towards is not news, it's a number that can only get worse; and a project you stopped shouldn't quietly resume because a Start button was still there. The refusal lives in the domain rather than only in the hidden button — starting a meter is the one action that *closes* whatever else is open, so a start that shouldn't have happened doesn't merely add a bad session, it ends a good one.
+
+What separates them is what you're saying:
+
+- **Paused** is "not now". The card stays exactly where it is, tagged, for work that's gone quiet for a month.
+- **Done** is "finished". The card moves to a collapsed **Done** group at the bottom of the list, and the project page replaces its goals with a closing summary: what it earned, the hours, what an hour came to across the whole run, whether the goal was met, and the span it actually ran — taken from the work itself, so a project created in March and first worked in June ran from June.
+
+Neither hides a minute of history. Both still appear in By project, By company, the calendar and every earnings total for the periods they actually worked. The hours happened and the money was real.
+
+Whatever is already open can always be finished. Stopping a project refuses *new* time; it never strands a session that was running when you stopped it.
 
 ---
 
@@ -222,9 +266,10 @@ Note that Edge and Chrome grey out "Install as an app" for `file://` pages, sinc
 tests/time.test.js         elapsed time, clock jumps, staleness
 tests/money.test.js        rounding, drift, formatting fallbacks
 tests/sessions.test.js     the state machine and the rate-snapshot rule
-tests/projects.test.js     creation, validation, cascading removal
+tests/projects.test.js     creation, validation, cascading removal, status and companies
 tests/goals.test.js        period boundaries including DST, and pacing
-tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid
+tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid,
+                           company rollups, effective rate, streaks
 tests/app.integration.test.js   the built HTML, driven in jsdom
 ```
 
@@ -283,14 +328,14 @@ Cases worth knowing about:
 Everything lives in browser storage under `meter:v1`, as:
 
 ```js
-Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock? }
+Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock?, company?, status?, statusAt? }
 Objective  { id, projectId, text, done, doneAt, createdAt, focusedOn, estimateMs, taskId, deletedAt }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
 Session    { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original?, manual? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`status` is absent on a running project and `'paused'` or `'done'` otherwise — absent reads as running, and one field rather than two flags because a project cannot be both. `statusAt` stamps when it stopped and is cleared on the way back, so a project running again never reports a range that ended. `company` is absent or empty on work with no client named; it is the key every company figure is grouped by, so it can become a record of its own later without a migration. `manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
