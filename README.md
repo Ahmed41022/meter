@@ -96,11 +96,13 @@ npm test
 
 ## Reporting performance
 
-The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week** or **Month**. **Work** and **Life** are the tabs beside it, and opening a project from any of the three drills into its meter and ledger.
+The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week**, **Month** or **Year**. **Work** and **Life** are the tabs beside it, and opening a project from any of the three drills into its meter and ledger.
 
 Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
 
-Each period shows what it earned, billed and idle time with the change against the period before, the billable share of time at the desk, how many days (or hours) saw work, a column chart of when the work happened, and a breakdown by project.
+Each period shows what it earned, billed and idle time with the change against the period before, the billable share of time at the desk, how many days (or hours, or months) saw work, a column chart of when the work happened, and a breakdown by project.
+
+A year reads month by month rather than day by day — 365 bars two pixels wide are a texture, not a chart — and each month is one bucket of its own length, so February is never a gap.
 
 Two panels on that page deliberately ignore the period control: **Targets** and **the activity calendar**. Both answer questions about *now* rather than about the period on screen.
 
@@ -146,6 +148,8 @@ The shade boundaries are **quantiles of whatever is being shaded**, not fixed ho
 
 Days are walked as calendar dates, not as 86,400,000ms steps. A week containing a DST shift is 167 or 169 hours long, and stepping by fixed milliseconds would slide the grid by an hour and eventually put a Tuesday in the Monday row. Each column is labelled with the month its **midweek** day falls in: the week of 31 Aug – 6 Sep is four-sevenths September, and going by the Monday leaves September unlabelled.
 
+Where there is more history than one calendar holds, arrows in the heading step back a **whole grid at a time**, so a week belongs to exactly one view instead of straddling two. They stop where your records do rather than walking into empty years, and the heading names the span it is showing.
+
 Like *Targets*, the calendar ignores the period control above it — it is context for everything else on the page, not another reading of the chosen week. Where 53 columns don't fit, it scrolls, opens on the most recent weeks, and keeps the day names pinned.
 
 ---
@@ -169,7 +173,7 @@ Two figures there aren't available anywhere else. **What an hour came to** is th
 
 Projects with no company are kept as their own row rather than dropped. Leaving them out would make the shares add up to less than the whole while looking like they added up to all of it.
 
-The panel doesn't appear for a single client — the By project list below it already says everything it would. Off-clock projects are never in it: sleep has no client, and it is certainly not unassigned revenue.
+The panel appears as soon as it groups anything: several clients, or one client carrying more than a single project — which is what a whole imported history looks like, forty projects under one name. The only case it skips is one company on one project, where it would just be the project's name again. Off-clock projects are never in it: sleep has no client, and it is certainly not unassigned revenue.
 
 The company is free text with suggestions from what you've already typed. It's a name until it needs to carry something, so it isn't a record of its own yet; the suggestion list is what stops *Outlier* and *outlier* becoming two clients. Every figure above is keyed by the name, so it can become a real entity later without touching a single stored project.
 

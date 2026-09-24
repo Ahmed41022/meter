@@ -401,6 +401,9 @@ export const CSS = `
 /* activity calendar */
 .hm{--hm-cell:10px;--hm-gap:2px;--hm-pitch:12px;}
 .hm-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px;}
+.hm-span{text-transform:none;letter-spacing:0;font-family:var(--mono);font-size:10.5px;}
+/* The register toggle and the year stepper share the heading's right side. */
+.hm-head{display:flex;align-items:center;gap:10px;}
 /* 53 columns will not fit a phone. Scrolling keeps the cells legible instead
    of shrinking them to a size nothing can be aimed at. */
 .hm-scroll{overflow-x:auto;padding-bottom:4px;}
