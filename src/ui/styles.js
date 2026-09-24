@@ -408,9 +408,11 @@ export const CSS = `
    of shrinking them to a size nothing can be aimed at. */
 .hm-scroll{overflow-x:auto;padding-bottom:4px;}
 .hm-months,.hm-body{min-width:calc(var(--hm-pitch) * 53);}
-.hm-months{display:flex;gap:var(--hm-gap);margin-left:calc(28px + 6px);margin-bottom:5px;height:12px;}
+.hm-months{display:flex;gap:6px;margin-bottom:5px;height:12px;}
+.hm-gutter{position:sticky;left:0;flex:0 0 28px;background:var(--card);z-index:2;}
+.hm-months .hm-month:first-of-type{margin-left:0;}
 .hm-month{flex:0 0 var(--hm-cell);font-family:var(--mono);font-size:10px;color:var(--muted);
-  white-space:nowrap;overflow:visible;}
+  white-space:nowrap;overflow:visible;margin-right:calc(var(--hm-gap) - 6px);}
 .hm-body{display:flex;gap:6px;}
 /* Pinned, so the rows stay named when the calendar is scrolled sideways. */
 .hm-days{display:flex;flex-direction:column;gap:var(--hm-gap);width:28px;flex:0 0 28px;

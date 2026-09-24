@@ -278,6 +278,10 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, stre
 
       <div className="hm-scroll" ref={openAtToday}>
         <div className="hm-months">
+          {/* Matches the sticky day-name column beside the grid. Without it the
+              month row scrolls out from under that column and the first label
+              shows as a stray letter poking past it. */}
+          <span className="hm-gutter" />
           {labels.map((label, i) => (
             <span className="hm-month" key={weeks[i].from}>{label}</span>
           ))}
