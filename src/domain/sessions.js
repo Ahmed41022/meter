@@ -1,4 +1,4 @@
-import { isOpen, isRunning, lastActivityAt } from "./time.js";
+import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
 
 /**
  * A session is either billable work or time at the desk that wasn't worked.
@@ -91,6 +91,69 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
       },
     ],
   };
+};
+
+/**
+ * Time you worked but didn't time, entered after the fact.
+ *
+ * This is the one way a session comes into being without the meter, so it is
+ * marked `manual` rather than passed off as something the clock watched. The
+ * whole app rests on being able to see what was actually recorded, and a block
+ * you typed in is a different kind of evidence from one it measured.
+ *
+ * Unlike `startSession` it does NOT close whatever is open: this is a closed
+ * block of the past, and stopping a meter that is running now because you
+ * logged Tuesday afternoon would be absurd.
+ *
+ * The rate is the project's CURRENT one, because no rate history exists to ask
+ * — if the work was priced differently, a task rate can still correct it.
+ */
+export const addManualSession = (
+  state, project, { startedAt, endedAt, kind = KIND.BILLED, taskId = null }, now, id
+) => {
+  const start = Math.min(startedAt, endedAt);
+  const end = Math.max(startedAt, endedAt);
+  if (!(end > start)) return state; // a zero-length block records nothing
+  return {
+    ...state,
+    sessions: [
+      ...state.sessions,
+      {
+        id,
+        projectId: project.id,
+        kind,
+        taskId,
+        rate: project.currentRate,
+        currency: project.currency,
+        createdAt: now,
+        segments: [{ startedAt: start, endedAt: end }],
+        closedAt: end,
+        deletedAt: null,
+        manual: true,
+      },
+    ],
+  };
+};
+
+/** Sessions written by the meter have no flag, and absent reads as measured. */
+export const wasManual = (session) => session.manual === true;
+
+/**
+ * Live sessions whose time collides with a window, on ANY project.
+ *
+ * One person cannot be in two places at once, which is why starting a session
+ * closes every other open one. A block typed in after the fact can break that
+ * rule in a way the timer never could — two overlapping records double-count
+ * the same wall-clock hour and quietly inflate both the total and the money.
+ * Callers surface these rather than silently accepting them.
+ */
+export const overlappingSessions = (state, { startedAt, endedAt }, excludeId = null) => {
+  const start = Math.min(startedAt, endedAt);
+  const end = Math.max(startedAt, endedAt);
+  return liveSessions(state.sessions).filter(
+    (s) => s.id !== excludeId
+      && (s.segments || []).some((g) => overlapMs(g, start, end, end) > 0)
+  );
 };
 
 /** Pause ends the current segment but leaves the session open. */
