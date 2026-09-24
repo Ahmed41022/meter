@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { wordsFor } from "./words.js";
 import { tasksFor } from "../domain/tasks.js";
 
 const NONE = "__none__";
@@ -11,6 +12,7 @@ const NONE = "__none__";
  */
 export default function TaskPrompt({
   project, initialTaskId = null, confirmLabel = "Start", onConfirm, onCancel,
+  words = wordsFor(false),
 }) {
   const tasks = tasksFor(project);
   const [mode, setMode] = useState(tasks.length ? "existing" : "new");
@@ -27,28 +29,28 @@ export default function TaskPrompt({
 
   return (
     <div className="prompt">
-      <span className="eyebrow">Which task?</span>
+      <span className="eyebrow">{words.whichTask}</span>
 
       <div className="seg" role="tablist">
         <button role="tab" aria-selected={mode === "existing"}
                 className={"seg-btn" + (mode === "existing" ? " on" : "")}
                 disabled={!tasks.length}
                 onClick={() => setMode("existing")}>
-          Existing{tasks.length ? ` (${tasks.length})` : ""}
+          {words.existing}{tasks.length ? ` (${tasks.length})` : ""}
         </button>
         <button role="tab" aria-selected={mode === "new"}
                 className={"seg-btn" + (mode === "new" ? " on" : "")}
                 onClick={() => setMode("new")}>
-          New task
+          {words.newTask}
         </button>
       </div>
 
       {mode === "existing" ? (
         <label className="field">
-          <span className="eyebrow">Task</span>
+          <span className="eyebrow">{words.taskCap}</span>
           <select className="inp" value={taskId} autoFocus
                   onChange={(e) => setTaskId(e.target.value)}>
-            <option value={NONE}>No task</option>
+            <option value={NONE}>{words.noTask}</option>
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>

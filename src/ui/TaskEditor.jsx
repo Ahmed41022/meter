@@ -1,3 +1,4 @@
+import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
 
@@ -6,7 +7,7 @@ import { formatMoney } from "../domain/money.js";
  * empty means "value each session at the rate it recorded", which is the
  * default and the honest one until you know what you're actually being paid.
  */
-export default function TaskEditor({ task, currency, projectRate, sessionCount, onSave, onDelete, onCancel }) {
+export default function TaskEditor({ task, currency, projectRate, sessionCount, onSave, onDelete, onCancel, words = wordsFor(false) }) {
   const [label, setLabel] = useState(task.label);
   const [rate, setRate] = useState(task.rate == null ? "" : String(task.rate));
   const [confirming, setConfirming] = useState(false);
@@ -34,7 +35,7 @@ export default function TaskEditor({ task, currency, projectRate, sessionCount, 
 
   return (
     <div className="prompt">
-      <span className="eyebrow">Edit task</span>
+      <span className="eyebrow">{words.editTask}</span>
       <label className="field">
         <span className="eyebrow">Name</span>
         <input className="inp" value={label} autoFocus onChange={(e) => setLabel(e.target.value)}

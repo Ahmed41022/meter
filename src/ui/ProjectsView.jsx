@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
-import { validateProject } from "../domain/projects.js";
+import { isOffClock, offClockProjects, validateProject, workProjects } from "../domain/projects.js";
 import { rateFor } from "../domain/tasks.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
@@ -12,12 +12,15 @@ export default function ProjectsView({ projects, sessions, now, onOpen, onAdd, o
   const [error, setError] = useState("");
   const fileRef = useRef(null);
 
-  // Totals are summed per currency — adding EGP to USD would be a lie.
+  // Totals are summed per currency — adding EGP to USD would be a lie — and
+  // off-clock projects are left out entirely: their hours are not earnings.
   const totals = useMemo(() => {
     const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
     const acc = {};
     sessions.forEach((s) => {
-      const cents = earningsCents(rateFor(byId[s.projectId], s), elapsedMs(s, now));
+      const project = byId[s.projectId];
+      if (isOffClock(project)) return;
+      const cents = earningsCents(rateFor(project, s), elapsedMs(s, now));
       acc[s.currency] = (acc[s.currency] || 0) + cents;
     });
     return Object.entries(acc);
@@ -52,7 +55,7 @@ export default function ProjectsView({ projects, sessions, now, onOpen, onAdd, o
           </div>
         )}
 
-        {projects.map((p) => {
+        {workProjects(projects).map((p) => {
           const mine = sessions.filter((s) => s.projectId === p.id);
           const cents = mine.reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0);
           const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
@@ -76,6 +79,35 @@ export default function ProjectsView({ projects, sessions, now, onOpen, onAdd, o
           );
         })}
       </div>
+
+      {offClockProjects(projects).length > 0 && (
+        <div className="sec">
+          <div className="sec-head"><span className="eyebrow">Off the clock</span></div>
+          <div className="stack">
+            {offClockProjects(projects).map((p) => {
+              const mine = sessions.filter((s) => s.projectId === p.id);
+              const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
+              return (
+                <button className="card off" key={p.id} onClick={() => onOpen(p.id)}>
+                  <span>
+                    <span className="card-name">
+                      {mine.some(isRunning) && <span className="dot" />}
+                      {p.name}
+                    </span>
+                    <span className="card-meta">
+                      not work · {mine.length} entr{mine.length === 1 ? "y" : "ies"}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="card-amt">{ms ? formatShortDuration(ms) : "—"}</span>
+                    <span className="card-dur">tracked</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="sec">
         {adding ? (
