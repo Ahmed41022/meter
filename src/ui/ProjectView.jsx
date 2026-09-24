@@ -7,6 +7,7 @@ import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/
 import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
+import { PAY, isCancelled, isPending } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
@@ -24,6 +25,7 @@ import { StatTile } from "./charts.jsx";
 import Settings from "./Settings.jsx";
 import Objectives from "./Objectives.jsx";
 import ManualSession from "./ManualSession.jsx";
+import Earnings from "./Earnings.jsx";
 
 const MS_PER_HOUR = 3_600_000;
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -34,6 +36,7 @@ export default function ProjectView({
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
+  earnings = [], onAddEarning, onRemoveEarning, onSetPayState,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual,
@@ -345,6 +348,12 @@ export default function ProjectView({
         </div>
       )}
 
+      {!offClock && (
+        <Earnings project={project} earnings={earnings} now={now}
+                  onAdd={onAddEarning} onRemove={onRemoveEarning}
+                  onSetPayState={onSetPayState} />
+      )}
+
       {/* On a finished project the list is a record, not a plan — shown when
           there is something to show, and with nothing new to add. */}
       {(!isDone(project) || objectives.some((o) => o.projectId === project.id)) && (
@@ -461,6 +470,16 @@ export default function ProjectView({
             <button className="btn primary" onClick={() => setBulkPrompt(true)}>
               {w.assign}
             </button>
+            {/* Work paid on acceptance arrives pending and is settled in
+                batches, which is how it actually gets approved. */}
+            <button className="btn ghost" onClick={() => {
+              selected.forEach((id) => onSetPayState(id, PAY.PAID));
+              setSelected([]);
+            }}>Mark paid</button>
+            <button className="btn ghost" onClick={() => {
+              selected.forEach((id) => onSetPayState(id, PAY.PENDING));
+              setSelected([]);
+            }}>Mark pending</button>
             <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
           </div>
         )}
@@ -517,6 +536,8 @@ export default function ProjectView({
               <div>
                 <div className="row-when">
                   {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
+                  {isPending(s) && <span className="tag">Pending</span>}
+                  {isCancelled(s) && <span className="tag">Cancelled</span>}
                   {isIdle(s) && <span className="tag">Idle</span>}
                   {wasCorrected(s) && <span className="edited">Edited</span>}
                   {wasManual(s) && <span className="edited">Added</span>}

@@ -242,7 +242,10 @@ describe("what a window was worth", () => {
 
   it("ignores sessions with no time in the window", () => {
     const result = performanceIn([session(at(2026, 8, 1), at(2026, 8, 2))], from, to, 0);
-    expect(result).toEqual({ billedMs: 0, idleMs: 0, billedCents: {}, idleCents: {} });
+    expect(result).toEqual({
+      billedMs: 0, idleMs: 0,
+      billedCents: {}, idleCents: {}, pendingCents: {}, timedCents: {},
+    });
   });
 
   it("counts a still-running session up to the caller's now", () => {

@@ -2629,3 +2629,182 @@ describe("companies, and projects that have stopped", () => {
     expect(read).toMatch(/none today/);
   }, 25_000);
 });
+
+describe("money the clock never measured", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 20.5, currency: "USD", createdAt: dayStart(300),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, pid, hours, back = 0, extra = {}) => ({
+    id, projectId: pid, kind: "billed", taskId: null, rate: 20.5, currency: "USD",
+    createdAt: dayStart(back) + 9 * HOUR, closedAt: dayStart(back) + (9 + hours) * HOUR,
+    deletedAt: null,
+    segments: [{ startedAt: dayStart(back) + 9 * HOUR, endedAt: dayStart(back) + (9 + hours) * HOUR }],
+    ...extra,
+  });
+  const earning = (id, pid, cents, back = 0, extra = {}) => ({
+    id, projectId: pid, taskId: null, kind: "piece", cents, currency: "USD",
+    at: dayStart(back) + 12 * HOUR, note: "", createdAt: dayStart(back), deletedAt: null, ...extra,
+  });
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return { dom, d: dom.window.document };
+  };
+
+  it("adds money with no hours to the total without moving the clock", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2)],
+      earnings: [earning("e1", "a", 300_000, 1, { units: 6 })],
+    });
+    // 2h at $20.50 = $41.00, plus a $3,000 settlement that took no time
+    expect(d.querySelector(".grand-amt").textContent).toBe("$3,041.00");
+    expect([...d.querySelectorAll(".tile-val")][0].textContent).toBe("2h 00m");
+  }, 25_000);
+
+  it("quotes the rate two ways when most of the money was never timed", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2)],
+      earnings: [earning("e1", "a", 300_000, 1)],
+    });
+    const tile = [...d.querySelectorAll(".tile")].find((t) => /An hour came to/i.test(t.textContent));
+    expect(tile.textContent).toMatch(/\$1,520\.50\/hr/);      // all money over 2h
+    expect(tile.textContent).toMatch(/\$20\.50\/hr on timed work/);
+    expect(tile.textContent).toMatch(/99% earned no tracked time/);
+  }, 25_000);
+
+  it("says nothing about a second rate when every penny was timed", async () => {
+    const { d } = await open({ projects: [project("a")], sessions: [block("s1", "a", 2)] });
+    const tile = [...d.querySelectorAll(".tile")].find((t) => /An hour came to/i.test(t.textContent));
+    expect(tile.textContent).toMatch(/\$20\.50\/hr/);
+    expect(tile.textContent).not.toMatch(/on timed work/);
+  }, 25_000);
+
+  it("keeps pending money out of the headline and on its own line", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2), block("s2", "a", 4, 1, { status: "pending" })],
+    });
+    expect(d.querySelector(".grand-amt").textContent).toBe("$41.00");
+    expect(d.querySelector(".grand-pending").textContent).toMatch(/\$82\.00 pending/);
+  }, 25_000);
+
+  it("counts cancelled money nowhere but keeps its hours", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2), block("s2", "a", 4, 1, { status: "cancelled" })],
+    });
+    expect(d.querySelector(".grand-amt").textContent).toBe("$41.00");
+    expect(d.querySelector(".grand-pending")).toBeNull();
+  }, 25_000);
+
+  it("does not let a project whose money is all pending read as earning nothing", async () => {
+    const { d } = await open({
+      projects: [project("a", { name: "Live" }), project("b", { name: "Waiting" })],
+      sessions: [block("s1", "a", 2), block("s2", "b", 4, 1, { status: "pending" })],
+    });
+    const waiting = [...d.querySelectorAll(".prow")].find((r) => /Waiting/.test(r.textContent));
+    expect(waiting.textContent).toMatch(/\$82\.00 pending/);
+  }, 25_000);
+
+  it("keeps a project with no session at all in the breakdown", async () => {
+    // Its whole income was paid per accepted item; filtering on hours would
+    // drop the project that earned the most.
+    const { d } = await open({
+      projects: [project("a", { name: "PieceOnly" })],
+      sessions: [],
+      earnings: [earning("e1", "a", 975_000, 1)],
+    });
+    expect([...d.querySelectorAll(".prow-name")].map((e) => e.textContent)).toContain("PieceOnly");
+    expect(d.querySelector(".grand-amt").textContent).toBe("$9,750.00");
+  }, 25_000);
+
+  it("lists what was earned without the clock on the project page", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", "a", 2)],
+      earnings: [
+        earning("e1", "a", 300_000, 1, { units: 6 }),
+        earning("e2", "a", 14_735, 2, { kind: "bonus", note: "mission reward" }),
+        earning("e3", "a", -1_181, 3, { kind: "adjust", status: "cancelled" }),
+      ],
+    });
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+
+    const rows = [...d.querySelectorAll(".ern")].map((r) => r.textContent);
+    expect(rows[0]).toMatch(/6 × \$500\.00/);       // the fact, not just the total
+    expect(rows.join(" ")).toMatch(/mission reward/);
+    expect(d.querySelector(".ern.cancelled")).not.toBeNull();
+    // the header totals only what actually counts
+    const head = [...d.querySelectorAll(".sec-head")].find((h) => /without the clock/i.test(h.textContent));
+    expect(head.textContent).toMatch(/\$3,147\.35/);
+  }, 30_000);
+
+  it("adds an amount by hand and leaves the hours alone", async () => {
+    const { dom, d } = await open({ projects: [project("a")], sessions: [block("s1", "a", 2)] });
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+
+    btn(d, /Add earnings/i).click();
+    await wait(200);
+    setValue(dom.window, d.querySelector('.ern-form input[type="number"]'), "250");
+    await wait(150);
+    btn(d, /^Add$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.earnings).toHaveLength(1);
+    expect(saved.earnings[0].cents).toBe(25_000);
+    expect(saved.earnings[0]).not.toHaveProperty("segments");
+    // the ledger is untouched: this was money, not time
+    expect(saved.sessions).toHaveLength(1);
+  }, 30_000);
+
+  it("starts the meter pending on a project that pays once accepted", async () => {
+    const { dom, d } = await open({
+      projects: [project("a", { paysOnAcceptance: true })], sessions: [],
+    });
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    await startMeter(dom, { task: "Batch 1" });
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].status).toBe("pending");
+  }, 30_000);
+
+  it("settles a batch of sessions from the ledger", async () => {
+    const { dom, d } = await open({
+      projects: [project("a")],
+      sessions: [
+        block("s1", "a", 2, 1, { status: "pending" }),
+        block("s2", "a", 3, 2, { status: "pending" }),
+      ],
+    });
+    // an em dash, not $0.00: nothing has been earned yet, which is a different
+    // statement from having earned zero
+    expect(d.querySelector(".grand-amt").textContent).toBe("—");
+    expect(d.querySelector(".grand-pending").textContent).toMatch(/\$102\.50 pending/);
+
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    btn(d, /Select all/i).click();
+    await wait(200);
+    btn(d, /^Mark paid$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions.every((s) => s.status === undefined)).toBe(true);
+  }, 30_000);
+});

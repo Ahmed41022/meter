@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
+import { paysOnAcceptance } from "../domain/earnings.js";
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
@@ -139,6 +140,31 @@ export default function Settings({
         Off the clock is for what you track but don&apos;t work: sleep, play, time away. The hours
         stay recorded and get their own panel; they never reach an earnings figure.
       </div>
+
+      {!isOffClock(project) && (
+        <>
+          <div className="sec-head" style={{ marginTop: 22 }}>
+            <span className="eyebrow">When it pays</span>
+          </div>
+          <div className="seg" role="tablist" aria-label="When this project pays">
+            <button role="tab" aria-selected={!paysOnAcceptance(project)}
+                    className={"seg-btn" + (paysOnAcceptance(project) ? "" : " on")}
+                    onClick={() => onPatch({ paysOnAcceptance: false })}>
+              As worked
+            </button>
+            <button role="tab" aria-selected={paysOnAcceptance(project)}
+                    className={"seg-btn" + (paysOnAcceptance(project) ? " on" : "")}
+                    onClick={() => onPatch({ paysOnAcceptance: true })}>
+              Once accepted
+            </button>
+          </div>
+          <div className="hint">
+            Paid once accepted means new sessions start out <strong>pending</strong>: their money
+            is reported on its own line rather than in your earnings, until you mark it paid.
+            Work that is rejected can be marked cancelled, which keeps the hours and drops the money.
+          </div>
+        </>
+      )}
 
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Session goal</span>
