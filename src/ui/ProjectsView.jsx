@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
-import { companyOf, isDone as projectDone, isPaused, validateProject } from "../domain/projects.js";
+import {
+  companyOf, isDone as projectDone, isPaused, searchProjects, validateProject,
+} from "../domain/projects.js";
 import { isCancelled, isPending } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
 import { rateFor } from "../domain/tasks.js";
@@ -29,6 +31,7 @@ export default function ProjectsView({
   const [form, setForm] = useState({ name: "", rate: "", currency: CURRENCIES[0] });
   const [error, setError] = useState("");
   const [showDone, setShowDone] = useState(false);
+  const [query, setQuery] = useState("");
   const fileRef = useRef(null);
 
   // Money is summed per currency — adding EGP to USD would be a lie. There is
@@ -125,8 +128,18 @@ export default function ProjectsView({
 
   /** Finished work is filed, not deleted. Paused stays in the live list,
    *  because "not now" is a different statement from "over". */
-  const running = projects.filter((p) => !projectDone(p));
-  const finished = projects.filter(projectDone);
+  // Searching narrows the LIST only. The headline above still totals every
+  // project, because what you have earned does not change while you look for
+  // something.
+  const matching = searchProjects(projects, query);
+  const running = matching.filter((p) => !projectDone(p));
+  const finished = matching.filter(projectDone);
+  const searching = query.trim() !== "";
+  // Worth a box only once the list is long enough to lose something in. Kept
+  // visible while a query is live, so it never vanishes mid-search.
+  const searchable = projects.length > 6 || searching;
+  // A match inside a collapsed group is a match the reader cannot see.
+  const openFinished = showDone || searching;
 
   return (
     <>
@@ -143,8 +156,25 @@ export default function ProjectsView({
         ))}
       </div>
 
+      {searchable && (
+        <div className="finder">
+          <input className="find" type="search" value={query} placeholder={`Find a ${w.projectNoun}`}
+                 aria-label={`Find a ${w.projectNoun}`}
+                 onChange={(e) => setQuery(e.target.value)} />
+          {searching && (
+            <button className="linkish find-clear" onClick={() => setQuery("")}>Clear</button>
+          )}
+        </div>
+      )}
+
       <div className="stack">
-        {running.length === 0 && !adding && (
+        {searching && matching.length === 0 && (
+          <div className="panel empty">
+            Nothing matches “{query.trim()}”.
+          </div>
+        )}
+
+        {!searching && running.length === 0 && !adding && (
           <div className="panel empty">
             {finished.length > 0
               ? "Nothing running. Everything here is finished — it's all still below."
@@ -162,12 +192,14 @@ export default function ProjectsView({
           because the list you work from is the live one. */}
       {finished.length > 0 && (
         <div className="sec" style={{ marginTop: 18 }}>
-          <button className="done-head" aria-expanded={showDone}
+          <button className="done-head" aria-expanded={openFinished}
                   onClick={() => setShowDone((v) => !v)}>
-            <span className={"chev" + (showDone ? " open" : "")}>▶</span>
-            <span className="eyebrow">Done · {finished.length}</span>
+            <span className={"chev" + (openFinished ? " open" : "")}>▶</span>
+            <span className="eyebrow">
+              Done · {finished.length}{searching && ` matching`}
+            </span>
           </button>
-          {showDone && <div className="stack">{finished.map(card)}</div>}
+          {openFinished && <div className="stack">{finished.map(card)}</div>}
         </div>
       )}
 
