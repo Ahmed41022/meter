@@ -1,0 +1,222 @@
+import { useMemo, useState } from "react";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { utilisation } from "../domain/sessions.js";
+import { offClockProjects, workProjects } from "../domain/projects.js";
+import { rateFor } from "../domain/tasks.js";
+import {
+  PERIODS, activeBuckets, byProject, currenciesByValue, deltaRatio, performanceIn,
+  periodRange, splitByClock, trendFor,
+} from "../domain/performance.js";
+import { Delta, SplitBar, StatTile, TrendChart } from "./charts.jsx";
+
+const NAMES = { day: "Day", week: "Week", month: "Month" };
+const PREVIOUS = { day: "yesterday", week: "last week", month: "last month" };
+
+const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
+
+/**
+ * What the reader is looking at, in words. Relative names for the periods
+ * people actually name — "today", "last week" — and dates beyond that, because
+ * "3 periods ago" is not how anyone thinks about their own week.
+ */
+const periodLabel = (period, offset, from, to) => {
+  if (offset === 0) return { day: "Today", week: "This week", month: "This month" }[period];
+  if (offset === -1) return { day: "Yesterday", week: "Last week", month: "Last month" }[period];
+  if (period === "day") return day(from, { weekday: "long", day: "numeric", month: "long" });
+  if (period === "month") return day(from, { month: "long", year: "numeric" });
+  return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short" })}`;
+};
+
+/** The exact window, always shown under the name — a reader should never have
+ *  to guess where a week was cut. */
+const rangeNote = (period, from, to) =>
+  period === "day"
+    ? day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    : `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
+
+/**
+ * The overall view: what a chosen day, week or month was worth across every
+ * project at once.
+ *
+ * Every figure is derived through `performanceIn`, which splits sessions by
+ * their overlap with the window. That is what makes the numbers here agree with
+ * each other — the daily bars sum to the weekly headline, and a session that ran
+ * past midnight is counted in both days for exactly the minutes it spent in each.
+ */
+export default function DashboardView({ projects, sessions, now, onOpenProject }) {
+  const [period, setPeriod] = useState("week");
+  const [offset, setOffset] = useState(0);
+
+  /** Which rate values a session is the caller's question, and the answer is a
+   *  task override when there is one. Rebuilt only when the projects change. */
+  const rateOf = useMemo(() => {
+    const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+    return (s) => rateFor(byId[s.projectId], s);
+  }, [projects]);
+
+  const view = useMemo(() => {
+    const { from, to } = periodRange(period, now, offset);
+    const before = periodRange(period, now, offset - 1);
+    // Every work figure below is derived from `work` alone. Sleep and play are
+    // measured on the same clock but must never reach an earnings total, a
+    // billable share, or the project breakdown.
+    const { work, offClock } = splitByClock(projects, sessions);
+    return {
+      from, to,
+      current: performanceIn(work, from, to, now, rateOf),
+      previous: performanceIn(work, before.from, before.to, now, rateOf),
+      trend: trendFor(period, work, now, offset, rateOf),
+      rows: byProject(workProjects(projects), work, from, to, now, rateOf),
+      offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
+    };
+  }, [projects, sessions, now, period, offset, rateOf]);
+
+  const { from, to, current, previous, trend, rows, offRows } = view;
+  const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
+  const earned = currenciesByValue(current.billedCents);
+  const share = utilisation(current.billedMs, current.idleMs);
+  const active = activeBuckets(trend);
+  const lead = earned[0]?.[0] ?? projects[0]?.currency ?? "USD";
+  const vs = PREVIOUS[period];
+  /** Bars are scaled to the longest desk time on screen. Scaling to the first
+   *  row instead would break the moment a row below it had more idle time than
+   *  the leader had billed — the rows are ordered by billed time, not total. */
+  const widest = Math.max(...rows.map((r) => r.billedMs + r.idleMs), 1);
+
+  return (
+    <>
+      <div className="dash-head">
+        <div className="segmented" role="tablist" aria-label="Reporting period">
+          {PERIODS.map((p) => (
+            <button key={p} role="tab" aria-selected={period === p}
+                    className={"seg" + (period === p ? " on" : "")}
+                    onClick={() => { setPeriod(p); setOffset(0); }}>
+              {NAMES[p]}
+            </button>
+          ))}
+        </div>
+        <div className="stepper">
+          <button className="step" aria-label={`Previous ${period}`}
+                  onClick={() => setOffset((o) => o - 1)}>‹</button>
+          {/* Forward is disabled at the present period — there is no data
+              ahead of now, and an empty "next week" reads as a bug. */}
+          <button className="step" aria-label={`Next ${period}`} disabled={offset >= 0}
+                  onClick={() => setOffset((o) => Math.min(0, o + 1))}>›</button>
+        </div>
+      </div>
+
+      <div className="grand">
+        <span className="eyebrow">{periodLabel(period, offset, from, to)} · earned</span>
+        {earned.length === 0
+          ? <div className="grand-amt">—</div>
+          : earned.map(([cur, cents], i) => (
+              <div className={i === 0 ? "grand-amt" : "grand-alt"} key={cur}>
+                {formatMoney(cents, cur)}
+              </div>
+            ))}
+        <div className="dash-sub">
+          {rangeNote(period, from, to)}
+          {earned.length > 0 && (
+            <> · <Delta ratio={deltaRatio(current.billedCents[lead] ?? 0, previous.billedCents[lead] ?? 0)}
+                        label={vs} /></>
+          )}
+        </div>
+      </div>
+
+      <div className="tiles">
+        <StatTile label="Billed" value={formatShortDuration(current.billedMs)}
+                  sub={<Delta ratio={deltaRatio(current.billedMs, previous.billedMs)} label={vs} />} />
+        <StatTile label="Idle" value={formatShortDuration(current.idleMs)}
+                  sub={<Delta ratio={deltaRatio(current.idleMs, previous.idleMs)}
+                              goodWhenUp={false} label={vs} />} />
+        <StatTile label="Billed share"
+                  value={share === null ? "—" : `${Math.round(share * 100)}%`}
+                  sub={share === null ? "no time recorded" : "of time at the desk"} />
+        <StatTile label={period === "day" ? "Active hours" : "Active days"}
+                  value={active} sub={`of ${trend.length}`} />
+      </div>
+
+      <div className="sec">
+        <div className="sec-head"><span className="eyebrow">Trend</span></div>
+        <div className="panel">
+          <TrendChart trend={trend} period={period} currency={lead}
+                      emptyNote={offset === 0 ? "Nothing recorded yet." : "Nothing recorded in this period."} />
+        </div>
+      </div>
+
+      {current.idleMs > 0 && (
+        <div className="sec">
+          <div className="sec-head"><span className="eyebrow">Time at the desk</span></div>
+          <div className="panel">
+            <SplitBar billedMs={current.billedMs} idleMs={current.idleMs} share={share} />
+          </div>
+        </div>
+      )}
+
+      <div className="sec">
+        <div className="sec-head">
+          <span className="eyebrow">By project</span>
+          <span className="eyebrow">{rows.length ? `${rows.length} active` : ""}</span>
+        </div>
+        <div className="panel">
+          {rows.length === 0 ? (
+            <div className="empty">
+              No project logged time in this period.
+            </div>
+          ) : rows.map(({ project, billedMs, idleMs, billedCents }) => {
+            // One colour for every bar. These are projects, not an ordered
+            // scale, so shading them by size would double-encode the length.
+            const cents = billedCents[project.currency] ?? 0;
+            return (
+              <button className="prow" key={project.id} onClick={() => onOpenProject(project.id)}>
+                <span className="prow-top">
+                  <span className="prow-name">{project.name}</span>
+                  <span className="prow-amt">{formatMoney(cents, project.currency)}</span>
+                </span>
+                <span className="prow-bar">
+                  <span className="prow-billed"
+                        style={{ width: `${(billedMs / widest) * 100}%` }} />
+                  <span className="prow-idle"
+                        style={{ width: `${(idleMs / widest) * 100}%` }} />
+                </span>
+                <span className="prow-meta">
+                  {formatShortDuration(billedMs)} billed
+                  {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {offRows.length > 0 && (
+        <div className="sec">
+          <div className="sec-head">
+            <span className="eyebrow">Off the clock</span>
+            <span className="eyebrow">{formatShortDuration(offMs)}</span>
+          </div>
+          <div className="panel">
+            <div className="hint" style={{ marginTop: 0, marginBottom: 14 }}>
+              Tracked, but counted as neither work nor earnings.
+            </div>
+            {offRows.map(({ project, billedMs, idleMs }) => {
+              const total = billedMs + idleMs;
+              return (
+                <button className="prow off" key={project.id}
+                        onClick={() => onOpenProject(project.id)}>
+                  <span className="prow-top">
+                    <span className="prow-name">{project.name}</span>
+                    <span className="prow-amt">{formatShortDuration(total)}</span>
+                  </span>
+                  <span className="prow-bar">
+                    <span className="prow-off" style={{ width: `${(total / offMs) * 100}%` }} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
