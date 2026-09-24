@@ -3290,3 +3290,81 @@ describe("finding one project among forty", () => {
     expect(names(d).length).toBeGreaterThan(1);
   }, 30_000);
 });
+
+describe("handing the numbers to a spreadsheet", () => {
+  const HOUR = 3_600_000;
+  const back = (n) => Date.now() - n * 86_400_000;
+  const seed = {
+    projects: [{
+      id: "a", name: "hyperion", currentRate: 20, currency: "USD", company: "Outlier",
+      createdAt: back(40), sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions: [{
+      id: "s1", projectId: "a", kind: "billed", taskId: null, rate: 20, currency: "USD",
+      createdAt: back(2), closedAt: back(2) + 2 * HOUR, deletedAt: null,
+      segments: [{ startedAt: back(2), endedAt: back(2) + 2 * HOUR }],
+    }],
+    earnings: [{
+      id: "e1", projectId: "a", taskId: null, kind: "piece", cents: 300_000,
+      currency: "USD", at: back(1), note: "", units: 6, createdAt: back(1), deletedAt: null,
+    }],
+    lastBackupAt: back(30),
+  };
+  /** jsdom implements no blob URLs and will not read a Blob back, so the file
+   *  is caught on its way in — the text handed to the Blob constructor IS the
+   *  file the browser would have written. */
+  const grab = async (dom, d, label) => {
+    const written = [];
+    const RealBlob = dom.window.Blob;
+    dom.window.Blob = function Caught(parts, opts) {
+      written.push(String(parts[0]));
+      return new RealBlob(parts, opts);
+    };
+    dom.window.URL.createObjectURL = () => "blob:x";
+    dom.window.URL.revokeObjectURL = () => {};
+    btn(d, label).click();
+    await wait(300);
+    dom.window.Blob = RealBlob;
+    return written[0];
+  };
+
+  it("writes a CSV a spreadsheet can open, with both kinds of income", async () => {
+    const dom = await boot(seed);
+    const d = dom.window.document;
+    await wait(200);
+    await toProjects(d, "Work");
+    const csv = await grab(dom, d, /Export CSV/i);
+
+    const rows = csv.trim().split("\n");
+    expect(rows[0]).toMatch(/^"Date","Project","Company"/);
+    expect(rows).toHaveLength(3); // header, the session, the piece-rate money
+    expect(csv).toContain('"hyperion"');
+    expect(csv).toContain('"Outlier"');
+    expect(csv).toContain('"40.00"'); // 2h at $20
+    expect(csv).toContain('"3000.00"'); // the money no clock measured
+    expect(csv).toMatch(/"6 items"/);
+  }, 30_000);
+
+  it("does not count a CSV as a backup", async () => {
+    // It drops ids, segments, goals and objectives, so the app cannot read it
+    // back. Clearing the nudge would leave the user believing otherwise.
+    const dom = await boot({ ...seed, lastBackupAt: undefined });
+    const d = dom.window.document;
+    await wait(200);
+    await toProjects(d, "Work");
+    await grab(dom, d, /Export CSV/i);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.lastBackupAt).toBeUndefined();
+    expect([...d.querySelectorAll(".banner")].some((b) => /backed up/i.test(b.textContent)))
+      .toBe(true);
+  }, 30_000);
+
+  it("offers no CSV on the Life tab, where there is no money", async () => {
+    const dom = await boot(seed);
+    const d = dom.window.document;
+    await wait(200);
+    await toProjects(d, "Life");
+    expect(btn(d, /Export CSV/i)).toBeUndefined();
+  }, 25_000);
+});
