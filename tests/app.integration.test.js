@@ -2110,3 +2110,161 @@ describe("linking an objective to a task", () => {
     expect(d.querySelector(".obj-form").textContent).toMatch(/No tasks on this project yet/);
   }, 25_000);
 });
+
+describe("pacing a target", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  /** Monday 00:00 of the week being reported on, whatever day it is today. */
+  const weekStart = () => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).getTime();
+  };
+  /** Days of this week already finished — Monday 0, Sunday 6. Derived from the
+   *  calendar rather than from the app, so it is an independent expectation. */
+  const daysDone = () => (new Date().getDay() + 6) % 7;
+
+  const project = (extra = {}) => ({
+    id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(60),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (from, to, extra = {}) => ({
+    id: `s${from}`, projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: from, closedAt: to, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: to }], ...extra,
+  });
+  /** Three hours today — always inside both the current week and month. */
+  const todaysWork = () => block(dayStart() + HOUR, dayStart() + 4 * HOUR);
+
+  const overview = async (seed) => {
+    const dom = await boot(seed);
+    await wait(150);
+    return { dom, d: dom.window.document };
+  };
+
+  it("shows a weekly target with how it is going", async () => {
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 1260, period: "week" } })],
+      sessions: [todaysWork()],
+    });
+    const row = d.querySelector(".trg");
+    expect(row).not.toBeNull();
+    expect(row.textContent).toMatch(/Acme/);
+    expect(row.textContent).toMatch(/this week/);
+    expect(row.querySelector(".goal-val").textContent).toBe("$300.00 / $1,260.00");
+    // Whatever day it is, there is a standing and a daily figure to act on.
+    expect(row.querySelector(".goal-pace").textContent).toMatch(/needs \$[\d,.]+\/day/);
+    expect(row.querySelector(".goal-pace").textContent).toMatch(/left|behind|ahead|On pace/);
+  }, 25_000);
+
+  it("marks where the finished days say you should be", async () => {
+    // Nothing is owed on the first day of a period, so there is nothing to
+    // mark; from the second day on the mark is the whole point.
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 1260, period: "week" } })],
+      sessions: [todaysWork()],
+    });
+    const mark = d.querySelector(".trg .bar-mark");
+    if (daysDone() === 0) expect(mark).toBeNull();
+    else expect(mark).not.toBeNull();
+  }, 25_000);
+
+  it("says met rather than asking for more once the target is reached", async () => {
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 100, period: "week" } })],
+      sessions: [todaysWork()],
+    });
+    expect(d.querySelector(".trg .goal-pace").textContent).toMatch(/^Met · \$200\.00 over$/);
+    expect(d.querySelector(".trg .bar-mark")).toBeNull();
+    expect(d.querySelector(".trg .bar-fill").className).toMatch(/done/);
+  }, 25_000);
+
+  it("leaves a lifetime goal out of it", async () => {
+    // A target with no end cannot be late, so there is no pace to report.
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 50_000, period: "lifetime" } })],
+      sessions: [todaysWork()],
+    });
+    expect(d.querySelector(".trg")).toBeNull();
+    expect([...d.querySelectorAll(".eyebrow")].some((e) => e.textContent === "Targets")).toBe(false);
+  }, 25_000);
+
+  it("keeps sleep and play out of the work targets", async () => {
+    const { d } = await overview({
+      projects: [project({
+        offClock: true, name: "Sleep",
+        overallGoal: { type: "time", target: 3360, period: "week" },
+      })],
+      sessions: [todaysWork()],
+    });
+    expect(d.querySelector(".trg")).toBeNull();
+  }, 25_000);
+
+  it("does not follow the period control", async () => {
+    // "Am I on for this week?" is a question about now. Stepping the report
+    // back to last month must not change the answer.
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 1260, period: "week" } })],
+      sessions: [todaysWork()],
+    });
+    const before = d.querySelector(".trg .goal-pace").textContent;
+
+    btn(d, /^Month$/).click();
+    await wait(200);
+    d.querySelector(".step").click(); // step back a month
+    await wait(250);
+
+    expect(d.querySelector(".trg")).not.toBeNull();
+    expect(d.querySelector(".trg .goal-pace").textContent).toBe(before);
+  }, 25_000);
+
+  it("counts the minutes that fell inside the week, not the ones that started there", async () => {
+    // Regression: a session running 23:30 Sunday to 00:30 Monday is half an
+    // hour of this week. Crediting it to whichever week it STARTED in gave the
+    // goal a different answer from the Overview for the very same days.
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "time", target: 600, period: "week" } })],
+      sessions: [block(weekStart() - 30 * 60_000, weekStart() + 30 * 60_000)],
+    });
+    expect(d.querySelector(".trg .goal-val").textContent).toBe("30m / 10h 00m");
+
+    // and the project's own goal bar must agree, which is where it did not
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    expect(d.querySelector(".goal .goal-val").textContent).toBe("30m / 10h 00m");
+  }, 30_000);
+
+  it("reads the same on the project page as on the overview", async () => {
+    const { d } = await overview({
+      projects: [project({ overallGoal: { type: "money", target: 1260, period: "week" } })],
+      sessions: [todaysWork()],
+    });
+    const fromDash = {
+      value: d.querySelector(".trg .goal-val").textContent,
+      pace: d.querySelector(".trg .goal-pace").textContent,
+    };
+
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+
+    expect(d.querySelector(".goal .goal-val").textContent).toBe(fromDash.value);
+    expect(d.querySelector(".goal .goal-pace").textContent).toBe(fromDash.pace);
+  }, 30_000);
+
+  it("leaves a session goal unpaced", async () => {
+    // A session has no deadline to be behind on.
+    const { d } = await overview({
+      projects: [project({ sessionGoal: { type: "money", target: 180 } })],
+      sessions: [todaysWork()],
+    });
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    expect(d.querySelector(".goal")).not.toBeNull();
+    expect(d.querySelector(".goal .goal-pace")).toBeNull();
+  }, 30_000);
+});
