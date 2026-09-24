@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import { companyOf, isDone as projectDone, isPaused, validateProject } from "../domain/projects.js";
+import { isCancelled, isPending } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
 import { rateFor } from "../domain/tasks.js";
 import { wordsFor } from "./words.js";
@@ -19,7 +20,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  * them.
  */
 export default function ProjectsView({
-  scope = "work", projects, sessions, objectives = [], now,
+  scope = "work", projects, sessions, earnings = [], objectives = [], now,
   onOpen, onAdd, onExport, onImport,
 }) {
   const life = scope === "life";
@@ -38,12 +39,19 @@ export default function ProjectsView({
     const acc = {};
     sessions.forEach((s) => {
       const project = byId[s.projectId];
-      if (!project) return;
+      if (!project || isPending(s) || isCancelled(s)) return;
       acc[s.currency] = (acc[s.currency] || 0)
         + earningsCents(rateFor(project, s), elapsedMs(s, now));
     });
+    // Money that never came from an hour still belongs in what you have
+    // earned. Leaving it out understated the headline by more than half on a
+    // ledger where most of the work was paid per accepted item.
+    earnings.forEach((e) => {
+      if (!byId[e.projectId] || isPending(e) || isCancelled(e)) return;
+      acc[e.currency] = (acc[e.currency] || 0) + e.cents;
+    });
     return Object.entries(acc);
-  }, [life, projects, sessions, now]);
+  }, [life, projects, sessions, earnings, now]);
 
   const trackedMs = useMemo(() => {
     if (!life) return 0;
@@ -73,9 +81,14 @@ export default function ProjectsView({
   const card = (p) => {
     const mine = sessions.filter((s) => s.projectId === p.id);
     const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
+    const settled = (s) => !isPending(s) && !isCancelled(s);
     const cents = life
       ? 0
-      : mine.reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0);
+      : mine.filter(settled).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+        + earnings.filter((e) => e.projectId === p.id && settled(e)).reduce((a, e) => a + e.cents, 0);
+    const waiting = life ? 0
+      : mine.filter(isPending).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+        + earnings.filter((e) => e.projectId === p.id && isPending(e)).reduce((a, e) => a + e.cents, 0);
     const open = openCount(p.id);
     const company = life ? null : companyOf(p);
     const stopped = isPaused(p) || projectDone(p);
@@ -103,6 +116,7 @@ export default function ProjectsView({
           </span>
           <span className="card-dur">
             {life ? "tracked" : (ms ? formatShortDuration(ms) : "no time yet")}
+            {waiting !== 0 && ` · ${formatMoney(waiting, p.currency)} pending`}
           </span>
         </span>
       </button>

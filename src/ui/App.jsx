@@ -321,6 +321,7 @@ export default function App({ store: injectedStore }) {
             sessions={tab === "life"
               ? liveSessions(state.sessions)
               : liveSessions(state.sessions).filter(isBilled)}
+            earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
             now={now}
             onOpen={openProject}
