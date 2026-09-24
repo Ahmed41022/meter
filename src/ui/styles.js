@@ -110,6 +110,18 @@ export const CSS = `
 .find::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
 .find-clear{font-size:12.5px;flex:0 0 auto;}
 
+.rhy-read{font-size:13px;color:var(--ink-2);line-height:1.5;margin-bottom:14px;}
+.rhy-read strong{color:var(--ink);font-weight:700;}
+.rhy-span{display:block;margin-top:2px;font-size:11.5px;color:var(--muted);}
+.cyc{margin-bottom:14px;}
+.cyc-bars{display:flex;align-items:flex-end;gap:3px;height:52px;}
+.cyc-col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;}
+.cyc-bar{width:100%;min-height:2px;background:var(--jade-soft);border-radius:3px 3px 0 0;}
+.cyc-col.on .cyc-bar{background:var(--jade);}
+.cyc-labs{display:flex;gap:3px;margin-top:5px;}
+.cyc-lab{flex:1;min-width:0;text-align:center;font-size:10px;color:var(--muted);
+  font-family:var(--mono);letter-spacing:.02em;}
+
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}

@@ -10,7 +10,10 @@ import {
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
-import { Delta, Heatmap, SplitBar, StatTile, TrendChart } from "./charts.jsx";
+import { Delta, Heatmap, Rhythm, SplitBar, StatTile, TrendChart } from "./charts.jsx";
+import {
+  busiestStretch, byHourOfDay, byWeekday, shareOf, standsOut, timedOnly,
+} from "../domain/rhythm.js";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
@@ -21,6 +24,11 @@ const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year", all: "Al
 const PREVIOUS = { day: "yesterday", week: "last week", month: "last month", year: "last year" };
 
 const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
+
+/** Monday first, named by the reader's own locale rather than hardcoded. Built
+ *  from a known Monday so the list cannot drift with the current date. */
+const DAY_NAMES = Array.from({ length: 7 }, (_, i) =>
+  new Date(2024, 0, 1 + i).toLocaleDateString(undefined, { weekday: "long" }));
 
 /**
  * What the reader is looking at, in words. Relative names for the periods
@@ -161,6 +169,21 @@ export default function DashboardView({
       // context for everything above it, not another reading of the period.
       calendar: { work: calendarFor(work, now, heatBack), life: calendarFor(offClock, now, heatBack) },
       depth: { work: heatDepth(earliestOf(work), now), life: heatDepth(earliestOf(offClock), now) },
+      // Deliberately over the WHOLE record rather than the chosen period. A
+      // habit is a shape that needs months to show, and "you work Tuesdays"
+      // drawn from four days would be a coincidence stated as a fact.
+      rhythm: {
+        from: Number.isFinite(earliest) ? earliest : now,
+        // Every session, because an imported row's DATE came from the export
+        // and is real.
+        weekdays: byWeekday(work, 0, now, now),
+        // Measured sessions only. A typed-in row's hour was chosen, not
+        // observed — this ledger's imported rows were all laid out from 09:00
+        // because the source gave dates and no times, and reading those back
+        // would report the importer's arithmetic as the user's habit.
+        hours: byHourOfDay(timedOnly(work), 0, now, now),
+        timed: timedOnly(work).length,
+      },
       hasOffClock: offClock.length > 0,
     };
   }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack]);
@@ -183,6 +206,15 @@ export default function DashboardView({
   const heatDays = heatWeeks.flatMap((w) => w.days).filter((d) => !d.future);
   const heatCuts = heatThresholds(heatDays.map(heatValue));
   const streak = streaks(heatDays, (d) => heatValue(d) > 0);
+  // `standsOut` rather than `busiest`: seven bars within a fifth of each other
+  // is a flat week, and naming a winner from it states noise as a habit.
+  const peak = standsOut(view.rhythm.weekdays);
+  const peakDay = peak ? peak.weekday : null;
+  // A dozen measured sessions is not a working pattern, so below that the
+  // hourly half is not drawn at all.
+  const enoughTimed = view.rhythm.timed >= 12;
+  const stretch = enoughTimed ? busiestStretch(view.rhythm.hours, 4) : null;
+  const stretchShare = stretch ? shareOf(view.rhythm.hours, stretch.billedMs) : null;
   const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   const earned = currenciesByValue(current.billedCents);
@@ -516,6 +548,20 @@ export default function DashboardView({
                    valueOf={heatValue} noun={scale === "work" ? "Billed" : "Tracked"} />
         </div>
       </div>
+
+      {/* Only once there is enough of a record for a shape to mean anything. */}
+      {view.rhythm.weekdays.some((r) => r.billedMs > 0) && (
+        <div className="sec">
+          <div className="sec-head"><span className="eyebrow">When you work</span></div>
+          <div className="panel">
+            <Rhythm weekdays={view.rhythm.weekdays} hours={stretch ? view.rhythm.hours : null}
+                    dayNames={DAY_NAMES} peakDay={peakDay}
+                    stretch={stretch} stretchShare={stretchShare}
+                    span={`Across everything recorded, from ${day(view.rhythm.from, { month: "short", year: "numeric" })}`
+                      + (stretch ? " · hours from timed sessions only" : "")} />
+          </div>
+        </div>
+      )}
     </>
   );
 }
