@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   periodStart, periodBoundary, goalProgress, isGoalMet, normaliseGoal, inPeriod,
+  dayEnds, pace, paceGoal, paceState,
 } from "../src/domain/goals.js";
 
 describe("period boundaries", () => {
@@ -122,5 +123,147 @@ describe("period membership", () => {
 
   it("includes everything for a lifetime goal", () => {
     expect(inPeriod({ startedAt: 1 }, "lifetime", Date.now(), startedAtOf)).toBe(true);
+  });
+});
+
+describe("counting the days of a period", () => {
+  const at = (y, m, d, h = 0) => new Date(y, m, d, h).getTime();
+
+  it("counts calendar days, not 24-hour slices", () => {
+    // Regression guard: Africa/Cairo sprang forward at 00:00 on 26 Apr 2024,
+    // so this week is 167 hours long. Dividing elapsed time by 86,400,000 gives
+    // 6.96 days and floors to 6 — the last day of the week would silently stop
+    // existing, and every pacing figure derived from it would be wrong.
+    const ends = dayEnds(at(2024, 3, 22), at(2024, 3, 29));
+    expect(ends).toHaveLength(7);
+    expect(at(2024, 3, 29) - at(2024, 3, 22)).toBe(167 * 3_600_000);
+  });
+
+  it("tiles the window exactly, with nothing spilling past the end", () => {
+    const from = at(2024, 4, 13);
+    const to = at(2024, 4, 20);
+    const ends = dayEnds(from, to);
+    expect(ends[ends.length - 1]).toBe(to);
+    // each end is the next one's start, so the days meet without gap or overlap
+    const starts = [from, ...ends.slice(0, -1)];
+    expect(ends.every((end, i) => end > starts[i])).toBe(true);
+  });
+
+  it("counts a 31-day month as 31 days and February as its own length", () => {
+    expect(dayEnds(at(2024, 0, 1), at(2024, 1, 1))).toHaveLength(31);
+    expect(dayEnds(at(2024, 1, 1), at(2024, 2, 1))).toHaveLength(29); // leap
+    expect(dayEnds(at(2023, 1, 1), at(2023, 2, 1))).toHaveLength(28);
+  });
+
+  it("has no days at all in an empty or backwards window", () => {
+    expect(dayEnds(at(2024, 4, 13), at(2024, 4, 13))).toEqual([]);
+    expect(dayEnds(at(2024, 4, 20), at(2024, 4, 13))).toEqual([]);
+  });
+});
+
+describe("pacing a goal", () => {
+  const at = (y, m, d, h = 0) => new Date(y, m, d, h).getTime();
+  // The user's real goal: $1,260 a week on a $90/hr project — 14 hours, or
+  // $180 a day flat.
+  const weekly = { type: "money", target: 1260, period: "week" };
+  const wed = at(2024, 4, 15, 14, 30); // Wed of the week Mon 13 – Sun 19
+
+  it("judges the value against the days that have finished", () => {
+    // Wednesday afternoon: Monday and Tuesday are done, so two days' worth is
+    // what was owed by now. Today is not counted as gone — it is still yours.
+    const p = paceGoal(weekly, 360, wed);
+    expect(p).toMatchObject({ totalDays: 7, daysDone: 2, daysLeft: 5, expected: 360, drift: 0 });
+    expect(paceState(p)).toBe("even");
+  });
+
+  it("reports how far off the line the value actually is", () => {
+    expect(paceGoal(weekly, 200, wed).drift).toBe(-160);
+    expect(paceState(paceGoal(weekly, 200, wed))).toBe("behind");
+    expect(paceGoal(weekly, 500, wed).drift).toBe(140);
+    expect(paceState(paceGoal(weekly, 500, wed))).toBe("ahead");
+  });
+
+  it("says what each remaining day would have to carry", () => {
+    // $760 left over Wednesday, Thursday, Friday, Saturday, Sunday.
+    expect(paceGoal(weekly, 500, wed).needPerDay).toBe(152);
+    // and the same deficit late in the week is a much steeper ask
+    const sun = at(2024, 4, 19, 10);
+    expect(paceGoal(weekly, 500, sun).needPerDay).toBe(760);
+    expect(paceGoal(weekly, 500, sun).daysLeft).toBe(1);
+  });
+
+  it("counts today as the first day left, never as a day gone", () => {
+    // Otherwise the last day of a period has nothing left to do it in, and the
+    // required daily figure divides by zero.
+    const sun = at(2024, 4, 19, 23, 59);
+    const p = paceGoal(weekly, 1000, sun);
+    expect(p.daysLeft).toBe(1);
+    expect(p.closed).toBe(false);
+    expect(p.needPerDay).toBe(260);
+  });
+
+  it("cannot call you behind at the start of a period", () => {
+    // Nothing was owed yet. The honest figure this early is what it will take
+    // per day, and that is the one `needPerDay` carries.
+    const mon = at(2024, 4, 13, 9);
+    const p = paceGoal(weekly, 0, mon);
+    expect(p).toMatchObject({ daysDone: 0, expected: 0, drift: 0, daysLeft: 7 });
+    expect(paceState(p)).toBe("even");
+    expect(p.needPerDay).toBe(180);
+  });
+
+  it("treats a trivial gap as on pace rather than as news", () => {
+    // Being $2 behind on a $1,260 week is true and useless.
+    expect(paceState(paceGoal(weekly, 358, wed))).toBe("even");
+    expect(paceState(paceGoal(weekly, 352, wed))).toBe("behind");
+  });
+
+  it("stops asking for more once the target is met", () => {
+    const p = paceGoal(weekly, 1400, wed);
+    expect(paceState(p)).toBe("met");
+    expect(p).toMatchObject({ remaining: 0, over: 140, needPerDay: null });
+  });
+
+  it("calls a finished period missed rather than behind", () => {
+    // Monday of the following week: the whole of the last one is spent, and
+    // "3 days left" would be a lie about a period that has none.
+    const nextMon = at(2024, 4, 20, 9);
+    const p = pace({ target: 1260, from: at(2024, 4, 13), to: at(2024, 4, 20) }, 900, nextMon);
+    expect(p).toMatchObject({ daysDone: 7, daysLeft: 0, closed: true, needPerDay: null });
+    expect(paceState(p)).toBe("missed");
+    expect(p.remaining).toBe(360);
+  });
+
+  it("paces a month against its own length", () => {
+    const monthly = { type: "time", target: 3100, period: "month" };
+    const p = paceGoal(monthly, 0, at(2024, 3, 11, 12)); // 11 Apr, a 30-day month
+    expect(p.totalDays).toBe(30);
+    expect(p.daysDone).toBe(10);
+    expect(p.flatPerDay).toBeCloseTo(103.333, 3);
+  });
+
+  it("paces a week that loses an hour to DST without losing a day", () => {
+    // 26 Apr 2024 was 23 hours long in Africa/Cairo. The week is still seven
+    // days, and Friday is still one of them.
+    const p = paceGoal(weekly, 0, at(2024, 3, 27, 12)); // Sat 27 Apr
+    expect(p.totalDays).toBe(7);
+    expect(p.daysDone).toBe(5);
+    expect(p.flatPerDay).toBe(180);
+  });
+
+  it("has nothing to say about a goal with no end", () => {
+    // A lifetime target is not late.
+    expect(paceGoal({ type: "money", target: 5000, period: "lifetime" }, 100, wed)).toBeNull();
+    expect(paceState(null)).toBeNull();
+  });
+
+  it("has nothing to say without a target", () => {
+    expect(paceGoal(null, 100, wed)).toBeNull();
+    expect(paceGoal({ type: "money", target: 0, period: "week" }, 100, wed)).toBeNull();
+    expect(paceGoal({ type: "money", target: "", period: "week" }, 100, wed)).toBeNull();
+  });
+
+  it("reads a target typed as a string, like the input field gives it", () => {
+    expect(paceGoal({ type: "money", target: "1260", period: "week" }, 360, wed).flatPerDay).toBe(180);
   });
 });

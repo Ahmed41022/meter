@@ -5,7 +5,8 @@ import {
 } from "../domain/money.js";
 import { isOffClock } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
-import { periodStart } from "../domain/goals.js";
+import { paceGoal, periodBoundary } from "../domain/goals.js";
+import { sessionMsInWindow } from "../domain/performance.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
@@ -68,11 +69,23 @@ export default function ProjectView({
   const asTime = (goal) => (goal && offClock ? { ...goal, type: "time" } : goal);
   const sessionGoal = asTime(project.sessionGoal);
   const overallGoal = asTime(project.overallGoal);
-  const periodSessions = overallGoal
-    ? sessions.filter((s) => startedAt(s) >= periodStart(overallGoal.period, now))
-    : [];
-  const periodCents = periodSessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
-  const periodMs = periodSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
+  /**
+   * The goal counts the time that actually fell INSIDE its period, not every
+   * session that happened to start there. A session running 23:30 Sunday to
+   * 00:30 Monday belongs half to each week, and crediting it whole to the week
+   * it began in is what used to make this figure disagree with the very same
+   * week on the Overview, which derives everything by overlap. Lifetime has no
+   * boundaries, so its window is everything.
+   */
+  const goalWindow = overallGoal && overallGoal.period !== "lifetime"
+    ? { from: periodBoundary(overallGoal.period, now, 0), to: periodBoundary(overallGoal.period, now, 1) }
+    : { from: 0, to: Infinity };
+  const inGoalWindow = (s) => sessionMsInWindow(s, goalWindow.from, goalWindow.to, now);
+  const periodCents = overallGoal
+    ? sessions.reduce((a, s) => a + earningsCents(rateFor(project, s), inGoalWindow(s)), 0) : 0;
+  const periodMs = overallGoal ? sessions.reduce((a, s) => a + inGoalWindow(s), 0) : 0;
+  const overallValue = overallGoal
+    ? (overallGoal.type === "money" ? periodCents / 100 : periodMs / 60000) : 0;
 
   // The ledger shows both kinds; the totals above keep them apart.
   const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
@@ -241,7 +254,7 @@ export default function ProjectView({
                 label={overallGoal.period === "lifetime" ? "All time"
                      : overallGoal.period === "week" ? "This week" : "This month"}
                 type={overallGoal.type} target={overallGoal.target} currency={project.currency}
-                value={overallGoal.type === "money" ? periodCents / 100 : periodMs / 60000} />
+                value={overallValue} pace={paceGoal(overallGoal, overallValue, now)} />
             )}
           </div>
         </div>
