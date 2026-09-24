@@ -4,18 +4,34 @@
  * boundary from a Date object is what keeps this correct across DST shifts.
  */
 
-/** Start of the current period, in epoch ms. Weeks begin Monday. */
-export const periodStart = (period, now) => {
+/**
+ * Start of the period `n` whole periods from the one containing `now`.
+ *
+ * Built from calendar FIELDS, never by adjusting an instant. That distinction
+ * is load-bearing: in a zone that springs forward at midnight (Africa/Cairo
+ * does) local 00:00 does not exist on that date, so `setHours(0,0,0,0)`
+ * normalises to 01:00 — and carrying that hour into `setDate` put the start of
+ * the week an hour late, quietly dropping work done just after midnight on the
+ * Monday. Constructing each boundary from its own calendar date cannot drift;
+ * Date normalises a missing midnight forward for us, which is the answer we
+ * want. Month arithmetic is safe for the same reason: it always lands on the
+ * 1st, so it can never overflow the way `setMonth` on the 31st does.
+ *
+ * Weeks begin Monday. Lifetime has no boundary, so it stays at the epoch.
+ */
+export const periodBoundary = (period, now, n = 0) => {
   const d = new Date(now);
-  if (period === "week") {
-    const dayFromMonday = (d.getDay() + 6) % 7;
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - dayFromMonday);
-    return d.getTime();
+  if (period === "month") return new Date(d.getFullYear(), d.getMonth() + n, 1).getTime();
+  if (period === "week" || period === "day") {
+    const fromMonday = period === "week" ? (d.getDay() + 6) % 7 : 0;
+    const step = period === "week" ? 7 : 1;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - fromMonday + n * step).getTime();
   }
-  if (period === "month") return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
   return 0; // lifetime
 };
+
+/** Start of the current period, in epoch ms. Weeks begin Monday. */
+export const periodStart = (period, now) => periodBoundary(period, now, 0);
 
 export const inPeriod = (session, period, now, startedAtOf) =>
   startedAtOf(session) >= periodStart(period, now);

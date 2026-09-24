@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { periodStart, goalProgress, isGoalMet, normaliseGoal, inPeriod } from "../src/domain/goals.js";
+import {
+  periodStart, periodBoundary, goalProgress, isGoalMet, normaliseGoal, inPeriod,
+} from "../src/domain/goals.js";
 
 describe("period boundaries", () => {
   it("starts weeks on Monday at local midnight", () => {
@@ -29,6 +31,34 @@ describe("period boundaries", () => {
 
   it("returns the epoch for a lifetime goal so nothing is filtered out", () => {
     expect(periodStart("lifetime", Date.now())).toBe(0);
+  });
+
+  it("starts the week at midnight even when a day in it has no midnight", () => {
+    // Regression: some zones spring forward AT 00:00 (Africa/Cairo did on
+    // 24 Apr 2026), so `setHours(0,0,0,0)` normalises to 01:00. Carrying that
+    // hour into the day-of-week subtraction put the start of the week an hour
+    // late, and work done just after midnight on the Monday fell outside the
+    // period. Boundaries are built from calendar fields now, so it cannot.
+    for (const day of [20, 21, 22, 23, 24, 25, 26]) {
+      const start = new Date(periodStart("week", new Date(2026, 3, day, 13, 30).getTime()));
+      expect(start.getDay()).toBe(1);
+      expect(start.getDate()).toBe(20);
+      expect([start.getHours(), start.getMinutes()]).toEqual([0, 0]);
+    }
+  });
+
+  it("steps whole periods without drifting off the boundary", () => {
+    const t = new Date(2026, 8, 24, 13, 45).getTime();
+    expect(periodBoundary("week", t, 0)).toBe(periodStart("week", t));
+    // A month back from the 31st must not overflow into the following month.
+    const back = new Date(periodBoundary("month", new Date(2026, 2, 31, 12).getTime(), -1));
+    expect([back.getMonth(), back.getDate()]).toEqual([1, 1]);
+  });
+
+  it("buckets a day at local midnight", () => {
+    const start = new Date(periodStart("day", new Date(2026, 8, 24, 13, 45).getTime()));
+    expect(start.getDate()).toBe(24);
+    expect(start.getHours()).toBe(0);
   });
 
   it("lands on local midnight even across a DST transition", () => {
