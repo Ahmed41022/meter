@@ -7,7 +7,7 @@ import {
   liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
-import { addProject, patchProject, removeProject } from "../domain/projects.js";
+import { addProject, patchProject, removeProject, setStatus } from "../domain/projects.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
@@ -274,7 +274,15 @@ export default function App({ store: injectedStore }) {
               commit((s) => removeObjective(s, id, Date.now()));
               flash("Removed.", "Undo", () => commit((s) => restoreObjective(s, id)));
             }}
+            projects={state.projects}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
+            onSetStatus={(status) => {
+              commit((s) => setStatus(s, project.id, status, Date.now()));
+              if (status !== "active") {
+                flash(status === "done" ? "Marked done." : "Paused.", "Undo",
+                  () => commit((s) => setStatus(s, project.id, "active", Date.now())));
+              }
+            }}
             onDeleteProject={() => {
               const snapshot = stateRef.current;
               commit((s) => removeProject(s, project.id));

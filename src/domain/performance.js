@@ -1,6 +1,6 @@
 import { overlapMs } from "./time.js";
 import { isIdle } from "./sessions.js";
-import { isOffClock } from "./projects.js";
+import { companyOf, isOffClock } from "./projects.js";
 import { earningsCents } from "./money.js";
 import { periodBoundary } from "./goals.js";
 
@@ -260,3 +260,116 @@ export const heatThresholds = (values, steps = 4) => {
 /** 0 for a day with nothing on it, then 1..steps. */
 export const heatLevel = (ms, thresholds) =>
   ms <= 0 ? 0 : thresholds.filter((t) => ms > t).length + 1;
+
+/** A display order across currencies, never a sum — the same rule
+ *  `currenciesByValue` follows. Ranks a row by its single largest currency. */
+const topCents = (cents) => Math.max(0, ...Object.values(cents));
+
+/** The one currency a cents map is in, or null when it holds none or several.
+ *  Figures that divide money — an effective rate, a share — exist only when
+ *  there is a single unit to divide. */
+export const soleCurrency = (cents) => {
+  const held = Object.keys(cents);
+  return held.length === 1 ? held[0] : null;
+};
+
+/**
+ * What an hour of billed work actually came to, in cents per hour.
+ *
+ * The figure a per-project rate cannot give you: across several projects, and
+ * across tasks carrying their own rate overrides, this is the blend. A client
+ * who looks busy at $7.50/hr and one who looks quiet at $90/hr are not the
+ * same client, and only this says so.
+ *
+ * Billed time is the divisor, not desk time — idle hours earn nothing by
+ * definition, and folding them in would report a rate you never charged. The
+ * billable share is a separate question the tiles already answer.
+ */
+export const effectiveRate = (cents, billedMs) =>
+  billedMs > 0 ? Math.round(cents / (billedMs / MS_PER_HOUR)) : null;
+
+/**
+ * The window's work grouped by who it was for.
+ *
+ * Projects with no company are kept as their own row rather than dropped, so
+ * the shares add up to the whole and unassigned work is visible instead of
+ * silently missing from the total.
+ *
+ * Off-clock projects have no client and must not be passed in — sleep is not
+ * unassigned revenue.
+ */
+export const byCompany = (projects, sessions, from, to, now, rateOf) => {
+  const companyById = new Map(projects.map((p) => [p.id, companyOf(p) ?? ""]));
+  const grouped = new Map();
+  for (const session of sessions) {
+    if (!companyById.has(session.projectId)) continue;
+    const key = companyById.get(session.projectId);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(session);
+  }
+
+  return [...grouped.entries()]
+    .map(([key, group]) => {
+      const totals = performanceIn(group, from, to, now, rateOf);
+      const currency = soleCurrency(totals.billedCents);
+      return {
+        company: key || null,
+        projects: projects.filter((p) => (companyOf(p) ?? "") === key),
+        ...totals,
+        currency,
+        // Null rather than a figure when the row spans currencies: there is no
+        // single unit for "per hour" to be in.
+        rateCents: currency ? effectiveRate(totals.billedCents[currency], totals.billedMs) : null,
+      };
+    })
+    .filter((row) => row.billedMs > 0 || row.idleMs > 0)
+    // Unassigned always sits last: it is a gap to fill, not a client to rank.
+    .sort((a, b) => (a.company === null) - (b.company === null)
+      || topCents(b.billedCents) - topCents(a.billedCents)
+      || b.billedMs - a.billedMs);
+};
+
+/**
+ * Each row's share of the window's revenue.
+ *
+ * Null when the money spans currencies — 100 EGP and 100 USD have no total to
+ * take a share of, and inventing one would be the same lie as adding them.
+ */
+export const revenueShare = (rows) => {
+  const currencies = new Set(rows.flatMap((r) => Object.keys(r.billedCents)));
+  if (currencies.size !== 1) return null;
+  const [currency] = currencies;
+  const total = rows.reduce((a, r) => a + (r.billedCents[currency] ?? 0), 0);
+  if (total <= 0) return null;
+  return new Map(rows.map((r) => [r, (r.billedCents[currency] ?? 0) / total]));
+};
+
+/**
+ * Consecutive days with something on them: the run you are on, and the best
+ * one in the window.
+ *
+ * Today not being active does not break the current streak, it just hasn't
+ * extended it yet — the day is not over. Reporting a five-day run as broken at
+ * 09:00 would be both wrong and the kind of thing that makes a streak feel
+ * like an accusation. `includesToday` is returned rather than folded in, so
+ * the wording can say which of the two it is instead of implying the stronger
+ * one.
+ *
+ * `cells` must be in calendar order and must not include days that have not
+ * happened yet.
+ */
+export const streaks = (cells, isActive) => {
+  let longest = 0;
+  let run = 0;
+  for (const cell of cells) {
+    run = isActive(cell) ? run + 1 : 0;
+    if (run > longest) longest = run;
+  }
+
+  const last = cells.length - 1;
+  const includesToday = last >= 0 && isActive(cells[last]);
+  let current = 0;
+  for (let i = includesToday ? last : last - 1; i >= 0 && isActive(cells[i]); i -= 1) current += 1;
+
+  return { current, longest, includesToday };
+};

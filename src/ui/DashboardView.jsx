@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { utilisation } from "../domain/sessions.js";
-import { offClockProjects, workProjects } from "../domain/projects.js";
+import { activeProjects, offClockProjects, workProjects } from "../domain/projects.js";
 import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
+  byCompany, revenueShare, streaks,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -56,14 +57,16 @@ const PERIOD_WORD = { week: "this week", month: "this month" };
  *
  * Lifetime goals are absent for the same reason they have no pacing: a target
  * with no end cannot be late. Off-clock goals are absent because sleep is not
- * a work target, and they are paced on their own page instead.
+ * a work target, and they are paced on their own page instead. Paused and
+ * finished projects are absent because a target you are not working towards
+ * is not news — it is a number that can only ever get worse.
  *
  * Ordered by how many days' worth off the line each one is — unit-free, so a
  * money goal and an hours goal can be compared, and the one needing attention
  * is at the top.
  */
 const targetsFor = (projects, work, now, rateOf) =>
-  projects
+  activeProjects(projects)
     .map((project) => {
       const goal = normaliseGoal(project.overallGoal);
       if (!goal || goal.period === "lifetime") return null;
@@ -118,6 +121,7 @@ export default function DashboardView({
       rows: byProject(workProjects(projects), work, from, to, now, rateOf),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
       targets: targetsFor(workProjects(projects), work, now, rateOf),
+      companies: byCompany(workProjects(projects), work, from, to, now, rateOf),
       // A fixed rolling year, like Targets and for the same reason: it is
       // context for everything above it, not another reading of the period.
       calendar: { work: calendarFor(work, now), life: calendarFor(offClock, now) },
@@ -125,15 +129,20 @@ export default function DashboardView({
     };
   }, [projects, sessions, now, period, offset, rateOf]);
 
-  const { from, to, current, previous, trend, rows, offRows, targets } = view;
+  const { from, to, current, previous, trend, rows, offRows, targets, companies } = view;
+  // A single named client is a label, not a breakdown — the By project panel
+  // below already says everything this one would.
+  const showCompanies = companies.filter((c) => c.company !== null).length > 1;
+  const shares = showCompanies ? revenueShare(companies) : null;
   // Off the clock has no billable half, so its calendar shades every tracked
   // minute; work shades the billed ones, which is what the goals count.
   const scale = view.hasOffClock ? heatScale : "work";
   const heat = view.calendar[scale];
   const heatValue = scale === "work" ? (d) => d.billedMs : (d) => d.billedMs + d.idleMs;
   const heatWeeks = heatGrid(heat.from, heat.to, heat.byDay, periodBoundary("day", now, 0));
-  const heatCuts = heatThresholds(
-    heatWeeks.flatMap((w) => w.days).filter((d) => !d.future).map(heatValue));
+  const heatDays = heatWeeks.flatMap((w) => w.days).filter((d) => !d.future);
+  const heatCuts = heatThresholds(heatDays.map(heatValue));
+  const streak = streaks(heatDays, (d) => heatValue(d) > 0);
   const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   const earned = currenciesByValue(current.billedCents);
@@ -280,6 +289,49 @@ export default function DashboardView({
         </div>
       )}
 
+      {showCompanies && (
+        <div className="sec">
+          <div className="sec-head">
+            <span className="eyebrow">By company</span>
+            <span className="eyebrow">
+              {companies.filter((c) => c.company !== null).length} companies
+            </span>
+          </div>
+          <div className="panel">
+            {companies.map((row) => {
+              const share = shares?.get(row) ?? null;
+              return (
+                <div className={"crow" + (row.company === null ? " none" : "")} key={row.company ?? ""}>
+                  <span className="crow-top">
+                    <span className="crow-name">{row.company ?? "No company"}</span>
+                    <span className="crow-amt">
+                      {currenciesByValue(row.billedCents).length === 0
+                        ? "—"
+                        : currenciesByValue(row.billedCents)
+                            .map(([cur, c]) => formatMoney(c, cur)).join(" · ")}
+                    </span>
+                  </span>
+                  <span className="crow-bar">
+                    <span className="crow-fill"
+                          style={{ width: `${(share ?? 0) * 100}%` }} />
+                  </span>
+                  <span className="crow-meta">
+                    {formatShortDuration(row.billedMs)}
+                    {row.idleMs > 0 && ` · ${formatShortDuration(row.idleMs)} idle`}
+                    {/* The blended rate: what an hour of this client's work
+                        actually came to across every project and task rate. */}
+                    {row.rateCents !== null
+                      && ` · ${formatMoney(row.rateCents, row.currency)}/hr`}
+                    {share !== null && ` · ${Math.round(share * 100)}% of revenue`}
+                    {row.projects.length > 1 && ` · ${row.projects.length} projects`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">By project</span>
@@ -364,7 +416,7 @@ export default function DashboardView({
           )}
         </div>
         <div className="panel">
-          <Heatmap weeks={heatWeeks} thresholds={heatCuts} scale={scale}
+          <Heatmap weeks={heatWeeks} thresholds={heatCuts} scale={scale} streak={streak}
                    valueOf={heatValue} noun={scale === "work" ? "Billed" : "Tracked"} />
         </div>
       </div>

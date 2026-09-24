@@ -395,3 +395,36 @@ describe("overlapping time", () => {
       .toEqual(["s1"]);
   });
 });
+
+describe("a project that has stopped taking time", () => {
+  const HOUR_ = 3_600_000;
+  const paused = { ...project, status: "paused" };
+  const done = { ...project, status: "done" };
+
+  it("refuses to start a meter on it", () => {
+    expect(startSession(empty, paused, { now: T, id: "s1" }).sessions).toHaveLength(0);
+    expect(startSession(empty, done, { now: T, id: "s1" }).sessions).toHaveLength(0);
+  });
+
+  it("refuses time typed in after the fact too", () => {
+    // Same rule by every route, not just the one with a Start button.
+    const s = addManualSession(empty, done,
+      { startedAt: T, endedAt: T + HOUR_ }, T, "m1");
+    expect(s.sessions).toHaveLength(0);
+  });
+
+  it("leaves a running session alone rather than closing it", () => {
+    // Starting a meter is the one action that closes whatever else is open.
+    // A refused start must not still have that side effect.
+    const live = startSession(empty, project, { now: T, id: "live" });
+    const after = startSession(live, done, { now: T + HOUR_, id: "nope" });
+    expect(after).toBe(live);
+    expect(isRunning(after.sessions[0])).toBe(true);
+    expect(after.sessions[0].closedAt).toBeNull();
+  });
+
+  it("takes time again the moment it is running", () => {
+    expect(startSession(empty, { ...project, status: null }, { now: T, id: "s1" }).sessions)
+      .toHaveLength(1);
+  });
+});

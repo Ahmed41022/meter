@@ -3,6 +3,7 @@ import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatGrid, heatLevel, heatRange, heatThresholds,
+  byCompany, effectiveRate, revenueShare, soleCurrency, streaks,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -560,5 +561,153 @@ describe("the activity calendar", () => {
       const cuts = heatThresholds(same, 4);
       expect(same.every((v) => heatLevel(v, cuts) === 1)).toBe(true);
     });
+  });
+});
+
+describe("grouping by who the work was for", () => {
+  const at = (y, m, d, h = 0) => new Date(y, m, d, h).getTime();
+  const from = at(2024, 4, 13);
+  const to = at(2024, 4, 20);
+  const now = at(2024, 4, 19);
+  const project = (id, company, rate = 100, currency = "USD") =>
+    ({ id, name: id, currentRate: rate, currency, company });
+  const sess = (id, projectId, hours, rate = 100, currency = "USD", kind = KIND.BILLED) => ({
+    id, projectId, kind, rate, currency, deletedAt: null,
+    segments: [{ startedAt: at(2024, 4, 14, 9), endedAt: at(2024, 4, 14, 9 + hours) }],
+    closedAt: at(2024, 4, 14, 9 + hours),
+  });
+
+  it("adds up every project belonging to one company", () => {
+    const projects = [project("a", "Outlier"), project("b", "Outlier"), project("c", "Aether", 50)];
+    const rows = byCompany(projects, [
+      sess("s1", "a", 2), sess("s2", "b", 3), sess("s3", "c", 4, 50),
+    ], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Outlier", "Aether"]);
+    expect(rows[0].billedMs).toBe(5 * HOUR);
+    expect(rows[0].billedCents.USD).toBe(500_00);
+    expect(rows[0].projects.map((p) => p.id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps unassigned work as its own row, last", () => {
+    // Dropping it would make the shares add up to less than the whole while
+    // looking like they added up to all of it.
+    const rows = byCompany(
+      [project("a", "Outlier"), project("b", null)],
+      [sess("s1", "a", 1), sess("s2", "b", 9)], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Outlier", null]);
+    expect(rows[1].billedMs).toBe(9 * HOUR);
+  });
+
+  it("ranks companies by what they paid, not by hours", () => {
+    const rows = byCompany(
+      [project("a", "Rich", 500), project("b", "Busy", 10)],
+      [sess("s1", "a", 1, 500), sess("s2", "b", 20, 10)], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Rich", "Busy"]);
+  });
+
+  it("drops a company with no time in the window", () => {
+    const rows = byCompany(
+      [project("a", "Outlier"), project("b", "Dormant")], [sess("s1", "a", 1)], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Outlier"]);
+  });
+
+  it("ignores sessions whose project was not passed in", () => {
+    // Off-clock work has no client, and sleep is not unassigned revenue.
+    const rows = byCompany([project("a", "Outlier")],
+      [sess("s1", "a", 2), sess("s2", "sleep", 8)], from, to, now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].billedMs).toBe(2 * HOUR);
+  });
+
+  it("keeps idle time out of the money but not out of the row", () => {
+    const rows = byCompany([project("a", "Outlier")],
+      [sess("s1", "a", 2), sess("s2", "a", 1, 100, "USD", KIND.IDLE)], from, to, now);
+    expect(rows[0]).toMatchObject({ billedMs: 2 * HOUR, idleMs: HOUR });
+    expect(rows[0].billedCents.USD).toBe(200_00);
+  });
+});
+
+describe("what an hour actually came to", () => {
+  it("blends the rates across a company's work", () => {
+    // The figure no per-project rate can give you.
+    expect(effectiveRate(500_00, 5 * HOUR)).toBe(100_00);
+    expect(effectiveRate(300_00, 4 * HOUR)).toBe(75_00);
+  });
+
+  it("divides billed hours, never desk hours", () => {
+    // Idle time earns nothing by definition; folding it in would report a rate
+    // that was never charged.
+    expect(effectiveRate(180_00, 2 * HOUR)).toBe(90_00);
+  });
+
+  it("has no answer without billed time", () => {
+    expect(effectiveRate(0, 0)).toBeNull();
+    expect(effectiveRate(100_00, 0)).toBeNull();
+  });
+
+  it("names the single currency a figure can be in, or refuses", () => {
+    expect(soleCurrency({ USD: 100 })).toBe("USD");
+    expect(soleCurrency({})).toBeNull();
+    expect(soleCurrency({ USD: 100, EGP: 50 })).toBeNull();
+  });
+});
+
+describe("share of the revenue", () => {
+  const row = (billedCents) => ({ billedCents });
+
+  it("splits one currency into shares that add up", () => {
+    const rows = [row({ USD: 800_00 }), row({ USD: 200_00 })];
+    const shares = revenueShare(rows);
+    expect(shares.get(rows[0])).toBeCloseTo(0.8, 6);
+    expect(shares.get(rows[1])).toBeCloseTo(0.2, 6);
+    expect([...shares.values()].reduce((a, b) => a + b, 0)).toBeCloseTo(1, 6);
+  });
+
+  it("refuses to take a share across currencies", () => {
+    // 100 EGP and 100 USD have no total to be a share of, and inventing one is
+    // the same lie as adding them.
+    expect(revenueShare([row({ USD: 100_00 }), row({ EGP: 100_00 })])).toBeNull();
+  });
+
+  it("has nothing to divide when nothing was earned", () => {
+    expect(revenueShare([row({})])).toBeNull();
+    expect(revenueShare([row({ USD: 0 })])).toBeNull();
+  });
+});
+
+describe("streaks", () => {
+  const days = (pattern) => [...pattern].map((c) => ({ ms: c === "x" ? 3_600_000 : 0 }));
+  const run = (pattern) => streaks(days(pattern), (d) => d.ms > 0);
+
+  it("counts the longest run of consecutive days", () => {
+    expect(run("xx..xxxx..x").longest).toBe(4);
+  });
+
+  it("counts the run you are on right now", () => {
+    expect(run("..xxxxx")).toMatchObject({ current: 5, includesToday: true });
+  });
+
+  it("does not break today's streak just because today is not over", () => {
+    // Reporting a five-day run as broken at 09:00 would be wrong, and the kind
+    // of wrong that makes a streak feel like an accusation.
+    expect(run("..xxxxx.")).toMatchObject({ current: 5, includesToday: false });
+  });
+
+  it("is broken once a whole day has passed with nothing on it", () => {
+    expect(run("xxxxx..")).toMatchObject({ current: 0, includesToday: false });
+  });
+
+  it("counts a single day as a run of one", () => {
+    expect(run("....x")).toMatchObject({ current: 1, longest: 1, includesToday: true });
+  });
+
+  it("handles a calendar that is entirely empty or entirely full", () => {
+    expect(run("......")).toMatchObject({ current: 0, longest: 0, includesToday: false });
+    expect(run("xxxxxx")).toMatchObject({ current: 6, longest: 6, includesToday: true });
+    expect(streaks([], () => true)).toMatchObject({ current: 0, longest: 0, includesToday: false });
+  });
+
+  it("does not let the whole window count as one run across a gap", () => {
+    expect(run("xxx.xxx")).toMatchObject({ longest: 3, current: 3 });
   });
 });

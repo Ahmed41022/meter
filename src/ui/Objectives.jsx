@@ -119,7 +119,7 @@ function Row({ objective, tasks, sessions, now, today, onToggle, onFocus, onRemo
 }
 
 export default function Objectives({
-  project, objectives, sessions, now, today, words,
+  project, objectives, sessions, now, today, words, readOnly = false,
   onAdd, onToggle, onFocus, onRemove, onEdit,
 }) {
   const [adding, setAdding] = useState(false);
@@ -191,7 +191,7 @@ export default function Objectives({
               <button className="btn ghost" onClick={() => setAdding(false)}>Cancel</button>
             </div>
           </div>
-        ) : (
+        ) : readOnly ? null : (
           <button className="linkish obj-add" onClick={() => setAdding(true)}>
             + {words.newObjective}
           </button>

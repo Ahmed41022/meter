@@ -1,4 +1,5 @@
 import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
+import { acceptsTime } from "./projects.js";
 
 /**
  * A session is either billable work or time at the desk that wasn't worked.
@@ -70,6 +71,17 @@ export const utilisation = (billedMs, idleMs) => {
  * a task updates every session that points at it.
  */
 export const startSession = (state, project, { now, id, kind = KIND.BILLED, taskId = null }) => {
+  /**
+   * A paused or finished project takes no new time, and the rule lives here
+   * rather than only in the button that hides.
+   *
+   * Starting a meter is the one action that CLOSES whatever else is open, so a
+   * start that should not have happened does not merely add a bad session — it
+   * stops a good one. Returning the state untouched makes that unreachable
+   * however the call got here.
+   */
+  if (!acceptsTime(project)) return state;
+
   const closed = state.sessions.map((s) =>
     !s.deletedAt && isOpen(s) ? { ...closeOpenSegments(s, now), closedAt: now } : s
   );
@@ -111,6 +123,9 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
 export const addManualSession = (
   state, project, { startedAt, endedAt, kind = KIND.BILLED, taskId = null }, now, id
 ) => {
+  // Typed-in time is still new time: a project that stopped taking it stopped
+  // taking it by every route, not just the one with a Start button.
+  if (!acceptsTime(project)) return state;
   const start = Math.min(startedAt, endedAt);
   const end = Math.max(startedAt, endedAt);
   if (!(end > start)) return state; // a zero-length block records nothing
