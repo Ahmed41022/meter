@@ -2808,3 +2808,52 @@ describe("money the clock never measured", () => {
     expect(saved.sessions.every((s) => s.status === undefined)).toBe(true);
   }, 30_000);
 });
+
+describe("the project list counts money that had no hours", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const seed = (earnings) => ({
+    projects: [{
+      id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(300),
+      sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions: [{
+      id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+      createdAt: dayStart(1) + 9 * HOUR, closedAt: dayStart(1) + 11 * HOUR, deletedAt: null,
+      segments: [{ startedAt: dayStart(1) + 9 * HOUR, endedAt: dayStart(1) + 11 * HOUR }],
+    }],
+    earnings,
+  });
+  const earning = (extra = {}) => ({
+    id: "e1", projectId: "p1", taskId: null, kind: "piece", cents: 300_000, currency: "USD",
+    at: dayStart(2) + 12 * HOUR, note: "", createdAt: dayStart(2), deletedAt: null, ...extra,
+  });
+
+  it("adds it to the all-time headline and to the card", async () => {
+    // Left out, this understated the headline by more than half on a ledger
+    // where most of the work was paid per accepted item.
+    const dom = await boot(seed([earning()]));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".grand-amt").textContent).toBe("$3,200.00");
+    expect(d.querySelector(".card-amt").textContent).toBe("$3,200.00");
+  }, 25_000);
+
+  it("leaves pending money out of both and says so on the card", async () => {
+    const dom = await boot(seed([earning({ status: "pending" })]));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
+    expect(d.querySelector(".card-dur").textContent).toMatch(/\$3,000\.00 pending/);
+  }, 25_000);
+
+  it("counts cancelled money nowhere", async () => {
+    const dom = await boot(seed([earning({ status: "cancelled" })]));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
+  }, 25_000);
+});
