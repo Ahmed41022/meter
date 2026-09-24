@@ -55,6 +55,20 @@ const runningSeed = (lastTickAgoMs) => {
 };
 
 const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test(b.textContent));
+
+/**
+ * The overall view is what the app opens on, so anything that manages projects
+ * switches to the Projects tab first. Idempotent: a no-op when that tab is
+ * already showing, or when a project is open and the tabs are replaced by the
+ * back link.
+ */
+const toProjects = async (d) => {
+  const tab = [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Projects");
+  if (tab && tab.getAttribute("aria-selected") !== "true") {
+    tab.click();
+    await wait(150);
+  }
+};
 const setValue = (win, el, value) => {
   const proto = el.tagName === "SELECT" ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
@@ -142,6 +156,7 @@ describe("a full session, end to end", () => {
     const dom = await boot();
     const { window } = dom, d = window.document;
 
+    await toProjects(d);
     btn(d, /New project/i).click();
     await wait(120);
     const [name, rate] = d.querySelectorAll("input");
@@ -151,6 +166,7 @@ describe("a full session, end to end", () => {
     await wait(180);
     expect(d.querySelector(".card-name").textContent).toContain("Acme");
 
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(150);
     expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
@@ -182,6 +198,7 @@ describe("a full session, end to end", () => {
   it("keeps a recorded session on its original rate when the project rate changes", async () => {
     const dom = await boot();
     const { window } = dom, d = window.document;
+    await toProjects(d);
     btn(d, /New project/i).click();
     await wait(120);
     const [name, rate] = d.querySelectorAll("input");
@@ -189,6 +206,7 @@ describe("a full session, end to end", () => {
     setValue(window, rate, "500");
     btn(d, /Add project/i).click();
     await wait(180);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(150);
     await startMeter(dom);
@@ -210,6 +228,7 @@ describe("a full session, end to end", () => {
   it("undoes a deleted session", async () => {
     const dom = await boot();
     const { window } = dom, d = window.document;
+    await toProjects(d);
     btn(d, /New project/i).click();
     await wait(120);
     const [name, rate] = d.querySelectorAll("input");
@@ -217,6 +236,7 @@ describe("a full session, end to end", () => {
     setValue(window, rate, "450");
     btn(d, /Add project/i).click();
     await wait(180);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(150);
     await startMeter(dom);
@@ -267,6 +287,7 @@ describe("crash recovery in the real UI", () => {
 describe("idle time in the real UI", () => {
   const makeProject = async (dom, rate = "450") => {
     const { window } = dom, d = window.document;
+    await toProjects(d);
     btn(d, /New project/i).click();
     await wait(120);
     const [name, r] = d.querySelectorAll("input");
@@ -274,6 +295,7 @@ describe("idle time in the real UI", () => {
     setValue(window, r, rate);
     btn(d, /Add project/i).click();
     await wait(180);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(150);
   };
@@ -306,6 +328,7 @@ describe("idle time in the real UI", () => {
     btn(d, /All projects/i).click();
     await wait(200);
     // One idle second recorded, zero billed: the headline total must be empty.
+    await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent.trim()).toBe("—");
   }, 20_000);
 
@@ -356,6 +379,7 @@ describe("idle time in the real UI", () => {
       ],
     });
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(200);
 
@@ -379,7 +403,9 @@ describe("idle time in the real UI", () => {
                    closedAt: now - HOUR, deletedAt: null }],
     });
     const d = dom.window.document;
+    await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(200);
     expect(d.querySelector(".row.is-idle")).toBeNull();
@@ -419,6 +445,7 @@ describe("startup is bounded", () => {
     // been achieved by freezing the render loop.
     const dom = await boot(runningSeed(5_000));
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(200);
     const first = d.querySelector(".clock-main").textContent;
@@ -467,6 +494,7 @@ describe("the tab-conflict notice", () => {
 describe("tasks", () => {
   const makeProject = async (dom, rate = "450") => {
     const { window } = dom, d = window.document;
+    await toProjects(d);
     btn(d, /New project/i).click();
     await wait(120);
     const [name, r] = d.querySelectorAll("input");
@@ -474,6 +502,7 @@ describe("tasks", () => {
     setValue(window, r, rate);
     btn(d, /Add project/i).click();
     await wait(180);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(150);
   };
@@ -560,6 +589,7 @@ describe("tasks", () => {
       ],
     });
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
 
@@ -602,6 +632,7 @@ describe("the ledger collapses", () => {
   it("stays open for a short ledger", async () => {
     const dom = await boot(ledgerSeed(3));
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     expect(d.querySelectorAll(".row")).toHaveLength(3);
@@ -610,6 +641,7 @@ describe("the ledger collapses", () => {
   it("starts collapsed once the list gets long, so Settings stays reachable", async () => {
     const dom = await boot(ledgerSeed(12));
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     expect(d.querySelectorAll(".row")).toHaveLength(0);
@@ -621,6 +653,7 @@ describe("the ledger collapses", () => {
   it("expands and collapses on demand, keeping the totals visible either way", async () => {
     const dom = await boot(ledgerSeed(12));
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     const header = () => d.querySelectorAll(".sec-head")[
@@ -656,6 +689,7 @@ describe("re-filing old sessions", () => {
   };
   const open = async (dom) => {
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
@@ -803,6 +837,7 @@ describe("re-filing old sessions", () => {
     const { window } = dom, d = window.document;
     btn(d, /This tab only/i).click();
     await wait(200);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
 
@@ -844,6 +879,7 @@ describe("managing tasks", () => {
   };
   const open = async (dom) => {
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     return d;
@@ -991,6 +1027,7 @@ describe("correcting a forgotten timer", () => {
   };
   const open = async (dom) => {
     const d = dom.window.document;
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
@@ -1080,6 +1117,7 @@ describe("correcting a forgotten timer", () => {
 
     btn(d, /All projects/i).click();
     await wait(250);
+    await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/900\.00/);
   }, 30_000);
 
@@ -1096,8 +1134,474 @@ describe("correcting a forgotten timer", () => {
     const { document: d } = dom.window;
     btn(d, /This tab only/i).click();
     await wait(200);
+    await toProjects(d);
     d.querySelector(".card").click();
     await wait(250);
     expect(btn(d, /^edit$/i)).toBeUndefined(); // stop it first
   }, 30_000);
+});
+
+describe("the overall view", () => {
+  const HOUR = 3_600_000;
+  const MIN = 60_000;
+
+  /** Calendar boundaries worked out the way the app works them out, so the
+   *  seeded sessions land inside a known window however this runs. */
+  const dayStart = (daysAgo = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysAgo).getTime();
+  };
+
+  const project = (id, name, rate = 450, currency = "EGP") => ({
+    id, name, currentRate: rate, currency, createdAt: dayStart(30),
+    sessionGoal: null, overallGoal: null, tasks: [],
+  });
+
+  const block = (id, projectId, startedAt, endedAt, extra = {}) => ({
+    id, projectId, kind: "billed", taskId: null, rate: 450, currency: "EGP",
+    createdAt: startedAt, segments: [{ startedAt, endedAt }],
+    closedAt: endedAt, deletedAt: null, ...extra,
+  });
+
+  const tileValue = (d, label) => [...d.querySelectorAll(".tile")]
+    .find((t) => t.querySelector(".eyebrow").textContent === label)
+    .querySelector(".tile-val").textContent;
+
+  it("opens on the overall view, not the project list", async () => {
+    const { document: d } = (await boot()).window;
+    const overview = [...d.querySelectorAll("[role=tab]")]
+      .find((t) => t.textContent === "Overview");
+    expect(overview.getAttribute("aria-selected")).toBe("true");
+    expect([...d.querySelectorAll(".segmented .seg")].map((s) => s.textContent))
+      .toEqual(["Day", "Week", "Month"]);
+  });
+
+  it("switches to the project list and back without losing either view", async () => {
+    const { document: d } = (await boot()).window;
+    await toProjects(d);
+    expect(btn(d, /New project/i)).toBeTruthy();
+    expect(d.querySelector(".segmented")).toBeNull();
+
+    [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Overview").click();
+    await wait(170);
+    expect(d.querySelector(".segmented")).not.toBeNull();
+  });
+
+  it("reports what today earned, in time and in money", async () => {
+    // Two hours at 450 is 900, and it must read the same in both places.
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 3 * HOUR)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/900\.00/);
+    expect(tileValue(d, "Billed")).toBe("2h 00m");
+  }, 20_000);
+
+  it("counts a session that ran past midnight in both days, not once in either", async () => {
+    // The figure the whole reporting layer exists to get right. 23:30 to 00:30
+    // is half an hour of yesterday and half an hour of today, and filing it
+    // whole under either day would move money onto the wrong date.
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [block("s1", "p1", dayStart(1) + 23 * HOUR + 30 * MIN, dayStart() + 30 * MIN)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    expect(tileValue(d, "Billed")).toBe("30m");   // today's half
+    d.querySelectorAll(".step")[0].click();        // step back to yesterday
+    await wait(240);
+    expect(tileValue(d, "Billed")).toBe("30m");   // yesterday's half
+  }, 20_000);
+
+  it("steps back through periods and refuses to step into the future", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [block("s1", "p1", dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    const [back, forward] = d.querySelectorAll(".step");
+    expect(forward.disabled).toBe(true);   // nothing is recorded ahead of now
+    expect(d.querySelector(".grand-amt").textContent).toContain("—");
+
+    back.click();
+    await wait(240);
+    expect(d.querySelector(".grand").textContent).toMatch(/Yesterday/);
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
+    expect(d.querySelectorAll(".step")[1].disabled).toBe(false);
+  }, 20_000);
+
+  it("keeps idle time out of the money while still reporting it", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [
+        block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR),
+        block("s2", "p1", dayStart() + 2 * HOUR, dayStart() + 3 * HOUR, { kind: "idle" }),
+      ],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    // One billed hour only, though two hours were spent at the desk.
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
+    expect(tileValue(d, "Billed")).toBe("1h 00m");
+    expect(tileValue(d, "Idle")).toBe("1h 00m");
+    expect(tileValue(d, "Billed share")).toBe("50%");
+  }, 20_000);
+
+  it("compares against the period before and names it", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [
+        block("s1", "p1", dayStart() + HOUR, dayStart() + 3 * HOUR),     // 2h today
+        block("s2", "p1", dayStart(1) + HOUR, dayStart(1) + 2 * HOUR),   // 1h yesterday
+      ],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    const deltas = [...d.querySelectorAll(".delta")].map((x) => x.textContent);
+    expect(deltas.some((t) => /\+100%/.test(t))).toBe(true);
+    expect(deltas.some((t) => /yesterday/.test(t))).toBe(true);
+  }, 20_000);
+
+  it("draws one trend bar per hour of the day and marks the worked one", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [block("s1", "p1", dayStart() + 9 * HOUR, dayStart() + 10 * HOUR)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    expect(d.querySelectorAll(".tcol")).toHaveLength(24);
+    expect(d.querySelectorAll(".tseg.billed")).toHaveLength(1);
+    // Every bar states its own figure, so identity never rests on colour alone.
+    const filled = [...d.querySelectorAll(".tcol")].find((c) => c.querySelector(".tseg.billed"));
+    expect(filled.getAttribute("aria-label")).toMatch(/1h 00m billed/);
+  }, 20_000);
+
+  it("says so plainly when a period recorded nothing", async () => {
+    const dom = await boot({ projects: [project("p1", "Acme")], sessions: [] });
+    const { document: d } = dom.window;
+    btn(d, /^Week$/).click();
+    await wait(220);
+    expect(d.querySelector(".panel .empty")).not.toBeNull();
+    expect(d.querySelectorAll(".tcol")).toHaveLength(0);
+  }, 20_000);
+
+  it("gives a week seven bars and a month one per day", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Week$/).click();
+    await wait(220);
+    expect(d.querySelectorAll(".tcol")).toHaveLength(7);
+
+    btn(d, /^Month$/).click();
+    await wait(220);
+    const today = new Date();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    expect(d.querySelectorAll(".tcol")).toHaveLength(daysInMonth);
+  }, 25_000);
+
+  it("breaks the period down by project, busiest first, and opens one on click", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme"), project("p2", "Beta")],
+      sessions: [
+        block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR),                 // 1h
+        block("s2", "p2", dayStart() + 2 * HOUR, dayStart() + 5 * HOUR),             // 3h
+      ],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    const rows = [...d.querySelectorAll(".prow")];
+    expect(rows.map((r) => r.querySelector(".prow-name").textContent)).toEqual(["Beta", "Acme"]);
+    expect(rows[0].querySelector(".prow-amt").textContent).toMatch(/1,350\.00/); // 3h at 450
+
+    rows[0].click();
+    await wait(260);
+    // Opening a project from the overall view lands on that project's meter.
+    expect(d.querySelector(".plate-name").textContent).toBe("Beta");
+  }, 20_000);
+
+  it("keeps every project bar inside its track, whatever the idle mix", async () => {
+    // Regression: the rows are ordered by BILLED time, so the first row is not
+    // necessarily the longest overall. Scaling every bar to it let a row below
+    // with more idle time compute a width above 100% and overrun its track.
+    const dom = await boot({
+      projects: [project("p1", "Mostly billed"), project("p2", "Mostly idle")],
+      sessions: [
+        block("s1", "p1", dayStart() + HOUR, dayStart() + 4 * HOUR),                        // 3h billed
+        block("s2", "p2", dayStart() + 4 * HOUR, dayStart() + 6 * HOUR),                    // 2h billed
+        block("s3", "p2", dayStart() + 6 * HOUR, dayStart() + 11 * HOUR, { kind: "idle" }), // 5h idle
+      ],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    const rows = [...d.querySelectorAll(".prow")];
+    expect(rows.map((r) => r.querySelector(".prow-name").textContent))
+      .toEqual(["Mostly billed", "Mostly idle"]);
+
+    for (const row of rows) {
+      const widths = [...row.querySelectorAll(".prow-billed, .prow-idle")]
+        .map((el) => parseFloat(el.style.width));
+      expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(100.01);
+    }
+  }, 20_000);
+
+  it("leaves a project out of the breakdown when it logged nothing this period", async () => {
+    const dom = await boot({
+      projects: [project("p1", "Acme"), project("p2", "Dormant")],
+      sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR)],
+    });
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+    expect([...d.querySelectorAll(".prow-name")].map((n) => n.textContent)).toEqual(["Acme"]);
+  }, 20_000);
+
+  it("counts a session still running up to the current second", async () => {
+    const now = Date.now();
+    const dom = await boot({
+      projects: [project("p1", "Acme")],
+      sessions: [{
+        id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 450, currency: "EGP",
+        createdAt: now - HOUR, segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now }],
+        closedAt: null, deletedAt: null,
+      }],
+    });
+    const { document: d } = dom.window;
+    btn(d, /This tab only/i).click();
+    await wait(220);
+    btn(d, /^Day$/).click();
+    await wait(220);
+    // An hour so far, and it is already in the earned figure.
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.[0-9]/);
+  }, 20_000);
+});
+
+describe("off the clock, in the real UI", () => {
+  const HOUR = 3_600_000;
+
+  const dayStart = (daysAgo = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysAgo).getTime();
+  };
+  const project = (id, name, extra = {}) => ({
+    id, name, currentRate: 100, currency: "USD", createdAt: dayStart(30),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, projectId, startedAt, endedAt, extra = {}) => ({
+    id, projectId, kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: startedAt, segments: [{ startedAt, endedAt }],
+    closedAt: endedAt, deletedAt: null, ...extra,
+  });
+  const tileValue = (d, label) => [...d.querySelectorAll(".tile")]
+    .find((t) => t.querySelector(".eyebrow").textContent === label)
+    .querySelector(".tile-val").textContent;
+
+  /** One hour of paid work and eight hours asleep, on the same day. */
+  const seed = (offClock) => ({
+    projects: [project("p1", "Acme"), project("p2", "Life", { offClock })],
+    sessions: [
+      block("s1", "p1", dayStart() + 8 * HOUR, dayStart() + 9 * HOUR),
+      block("s2", "p2", dayStart() + 9 * HOUR, dayStart() + 17 * HOUR),
+    ],
+  });
+
+  it("keeps off-clock hours out of earnings, billed time and billed share", async () => {
+    const dom = await boot(seed(true));
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/); // the one paid hour
+    expect(tileValue(d, "Billed")).toBe("1h 00m");
+    expect(tileValue(d, "Billed share")).toBe("100%");
+    expect(tileValue(d, "Active hours")).toBe("1");
+  }, 20_000);
+
+  it("is what the rate hack could not do — the same data unflagged inflates everything", async () => {
+    // Left as an ordinary project, those eight hours land in billed time and
+    // in the breakdown no matter how small the rate is. This is the before.
+    const dom = await boot(seed(false));
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    expect(tileValue(d, "Billed")).toBe("9h 00m");
+    expect([...d.querySelectorAll(".prow-name")].map((n) => n.textContent))
+      .toEqual(["Life", "Acme"]);
+  }, 20_000);
+
+  it("reports off-clock time in its own panel instead of dropping it", async () => {
+    const dom = await boot(seed(true));
+    const { document: d } = dom.window;
+    btn(d, /^Day$/).click();
+    await wait(220);
+
+    const heads = [...d.querySelectorAll(".sec-head")].map((h) => h.textContent);
+    expect(heads.some((t) => /Off the clock/.test(t))).toBe(true);
+    const off = d.querySelector(".prow.off");
+    expect(off.querySelector(".prow-name").textContent).toBe("Life");
+    expect(off.querySelector(".prow-amt").textContent).toBe("8h 00m");
+    // and it is not in the work breakdown
+    expect([...d.querySelectorAll(".prow:not(.off) .prow-name")].map((n) => n.textContent))
+      .toEqual(["Acme"]);
+  }, 20_000);
+
+  it("leaves off-clock money out of the lifetime total on the Projects tab", async () => {
+    const dom = await boot(seed(true));
+    const { document: d } = dom.window;
+    await toProjects(d);
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/);
+    // listed, but under its own heading rather than among the work projects
+    expect(d.querySelector(".card.off .card-name").textContent).toContain("Life");
+    expect([...d.querySelectorAll(".card:not(.off) .card-name")].map((n) => n.textContent))
+      .toEqual(["Acme"]);
+  }, 20_000);
+
+  it("shows elapsed time rather than a meaningless zero on the meter face", async () => {
+    const dom = await boot(seed(true));
+    const { document: d } = dom.window;
+    await toProjects(d);
+    d.querySelector(".card.off").click();
+    await wait(250);
+
+    expect(d.querySelector(".plate-name").textContent).toBe("Life");
+    expect(d.querySelector(".plate-rate").textContent).toMatch(/off the clock/i);
+    // the headline figure is a duration, not 0.00
+    expect(d.querySelector(".money-head").textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  }, 20_000);
+
+  it("moves a project off the clock from its settings, and back again", async () => {
+    const dom = await boot(seed(false));
+    const { document: d } = dom.window;
+    await toProjects(d);
+    [...d.querySelectorAll(".card-name")].find((n) => n.textContent.includes("Life"))
+      .closest(".card").click();
+    await wait(250);
+
+    btn(d, /^Open$/i).click();
+    await wait(200);
+    btn(d, /Off the clock/i).click();
+    await wait(250);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.projects.find((p) => p.id === "p2").offClock).toBe(true);
+    // the recorded hours are untouched — only how they are counted changed
+    expect(saved.sessions.find((s) => s.id === "s2").segments)
+      .toEqual(seed(false).sessions[1].segments);
+
+    btn(d, /Paid work/i).click();
+    await wait(250);
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1"))
+      .projects.find((p) => p.id === "p2").offClock).toBe(false);
+  }, 25_000);
+});
+
+describe("off-clock projects speak a different language", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (daysAgo = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysAgo).getTime();
+  };
+  const seed = (offClock) => ({
+    projects: [{
+      id: "p1", name: "Life", currentRate: 0, currency: "USD", createdAt: dayStart(30),
+      sessionGoal: null, overallGoal: null, offClock,
+      tasks: [{ id: "t1", label: "Sleep", createdAt: dayStart(5), rate: null }],
+    }],
+    sessions: [{
+      id: "s1", projectId: "p1", kind: "billed", taskId: "t1", rate: 0, currency: "USD",
+      createdAt: dayStart(1), closedAt: dayStart(1) + 7 * HOUR, deletedAt: null,
+      segments: [{ startedAt: dayStart(1), endedAt: dayStart(1) + 7 * HOUR }],
+    }],
+  });
+  const open = async (offClock) => {
+    const dom = await boot(seed(offClock));
+    const d = dom.window.document;
+    await toProjects(d);
+    d.querySelector(".card").click();
+    await wait(250);
+    return { dom, d };
+  };
+
+  it("calls them activities and entries, not tasks and sessions", async () => {
+    const { d } = await open(true);
+    const text = d.querySelector(".mtr").textContent;
+    expect(text).toMatch(/By activity/);
+    expect(text).toMatch(/History/);
+    expect(text).toMatch(/Start tracking/);
+    expect(text).not.toMatch(/By task/);
+    expect(text).not.toMatch(/Ledger/);
+    expect(text).not.toMatch(/Start the meter/);
+  }, 20_000);
+
+  it("keeps the work wording on an ordinary project", async () => {
+    const { d } = await open(false);
+    const text = d.querySelector(".mtr").textContent;
+    expect(text).toMatch(/By task/);
+    expect(text).toMatch(/Ledger/);
+    expect(text).toMatch(/Start the meter/);
+  }, 20_000);
+
+  it("drops the billing-only controls, which have nothing to bill", async () => {
+    const { d } = await open(true);
+    expect(btn(d, /Start idle/i)).toBeUndefined();
+    expect(d.querySelector(".rail")).toBeNull();      // counts out a billable hour
+    expect(btn(d, /Start tracking/i)).toBeTruthy();
+  }, 20_000);
+
+  it("keeps them on a work project", async () => {
+    const { d } = await open(false);
+    expect(btn(d, /Start idle/i)).toBeTruthy();
+    expect(d.querySelector(".rail")).not.toBeNull();
+  }, 20_000);
+
+  it("shows the elapsed figure once, not twice", async () => {
+    // The headline already is the duration off the clock; the clock row
+    // underneath would otherwise print the identical number again.
+    const { d } = await open(true);
+    expect(d.querySelector(".money-head").textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(d.querySelector(".clock-main")).toBeNull();
+    expect(d.querySelector(".clock-note").textContent).toBe("not tracking");
+  }, 20_000);
+
+  it("offers a choice rather than two full-width buttons for how it counts", async () => {
+    const { d } = await open(true);
+    btn(d, /^Open$/i).click();
+    await wait(200);
+    const seg = [...d.querySelectorAll(".seg-btn")]
+      .filter((b) => /Paid work|Off the clock/.test(b.textContent));
+    expect(seg).toHaveLength(2);
+    expect(seg.find((b) => /Off the clock/.test(b.textContent)).getAttribute("aria-selected"))
+      .toBe("true");
+  }, 20_000);
+
+  it("offers only a time goal, since nothing here can earn", async () => {
+    const { d } = await open(true);
+    btn(d, /^Open$/i).click();
+    await wait(200);
+    const selects = [...d.querySelectorAll("select")];
+    expect(selects.some((s) => [...s.options].some((o) => /Money earned/.test(o.textContent))))
+      .toBe(false);
+  }, 20_000);
 });

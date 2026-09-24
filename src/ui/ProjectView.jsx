@@ -3,6 +3,8 @@ import { elapsedMs, isOpen, isRunning, startedAt } from "../domain/time.js";
 import {
   earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
+import { isOffClock } from "../domain/projects.js";
+import { wordsFor } from "./words.js";
 import { periodStart } from "../domain/goals.js";
 import { isIdle, KIND, utilisation, wasCorrected } from "../domain/sessions.js";
 import {
@@ -41,6 +43,8 @@ export default function ProjectView({
 
   const shownMs = current ? elapsedMs(current, now) : 0;
   const currency = current?.currency ?? project.currency;
+  const offClock = isOffClock(project);
+  const w = wordsFor(offClock);
   const { head, tail } = moneyParts(current ? earningsCents(rateFor(project, current), shownMs) : 0, currency);
 
   const minuteInHour = Math.floor((shownMs % MS_PER_HOUR) / 60_000);
@@ -53,7 +57,11 @@ export default function ProjectView({
   const idleCents = idleSessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
   const share = utilisation(totalMs, idleMs);
 
-  const { sessionGoal, overallGoal } = project;
+  // A goal saved as money before the project moved off the clock would render
+  // a figure that can never move. Off the clock every goal reads as time.
+  const asTime = (goal) => (goal && offClock ? { ...goal, type: "time" } : goal);
+  const sessionGoal = asTime(project.sessionGoal);
+  const overallGoal = asTime(project.overallGoal);
   const periodSessions = overallGoal
     ? sessions.filter((s) => startedAt(s) >= periodStart(overallGoal.period, now))
     : [];
@@ -81,10 +89,12 @@ export default function ProjectView({
           <div>
             <div className="plate-name">{project.name}</div>
             <div className="plate-rate">
-              {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
-              {current && rateFor(project, current) !== current.rate && " · task rate"}
-              {current && rateFor(project, current) === current.rate
-                && current.rate !== project.currentRate && " · rate locked for this session"}
+              {offClock ? "off the clock · not counted as work" : <>
+                {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
+                {current && rateFor(project, current) !== current.rate && " · task rate"}
+                {current && rateFor(project, current) === current.rate
+                  && current.rate !== project.currentRate && " · rate locked for this session"}
+              </>}
             </div>
           </div>
           <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
@@ -92,27 +102,40 @@ export default function ProjectView({
           </span>
         </div>
 
+        {/* An off-clock project has no earnings to show, and a huge 0.00 reads
+            as a broken meter. The elapsed time is the figure that matters. */}
         <div className="money">
-          <span className="money-head">{head}</span>
-          {tail !== null && <span className="money-tail">{tail}</span>}
+          {offClock
+            ? <span className="money-head">{formatDuration(shownMs)}</span>
+            : <>
+                <span className="money-head">{head}</span>
+                {tail !== null && <span className="money-tail">{tail}</span>}
+              </>}
         </div>
 
         {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
 
         {current && (
           <button className="task-chip" onClick={() => setPrompt({ reassign: true })}>
-            Task · {current.taskId ? taskLabel(project, current.taskId) : "none"} · change
+            {w.taskCap} · {current.taskId ? taskLabel(project, current.taskId) : "none"} · change
           </button>
         )}
 
         <div className="clock">
-          <span className="clock-main">{formatDuration(shownMs)}</span>
+          {/* Off the clock the headline figure is already this duration, so
+              repeating it here would just print the same number twice. */}
+          {!offClock && <span className="clock-main">{formatDuration(shownMs)}</span>}
           <span className="clock-note">
-            {current ? `started ${time(startedAt(current))}` : "meter is stopped"}
+            {current
+              ? `started ${time(startedAt(current))}`
+              : offClock ? "not tracking" : "meter is stopped"}
           </span>
         </div>
 
-        {/* Minute rail: one mark per minute of the current billable hour. */}
+        {/* Minute rail: one mark per minute of the current billable hour. It
+            counts out an hour you are going to charge for, so off the clock
+            there is nothing for it to count. */}
+        {!offClock && <>
         <div className="rail" aria-hidden="true">
           {Array.from({ length: 60 }, (_, i) => (
             <span key={i} className={
@@ -131,13 +154,14 @@ export default function ProjectView({
           </span>
           <span className="eyebrow">{minuteInHour}/60</span>
         </div>
+        </>}
 
         {prompt && (
           <TaskPrompt
-            project={project}
+            project={project} words={w}
             initialTaskId={prompt.reassign ? current?.taskId : null}
             confirmLabel={
-              prompt.reassign ? "Save" : prompt.kind === KIND.IDLE ? "Start idle" : "Start the meter"
+              prompt.reassign ? "Save" : prompt.kind === KIND.IDLE ? "Start idle" : w.start
             }
             onCancel={() => setPrompt(null)}
             onConfirm={(pick) => {
@@ -152,18 +176,23 @@ export default function ProjectView({
           {!current && !prompt && (
             <>
               <button className="btn primary" onClick={() => setPrompt({ kind: KIND.BILLED })}>
-                Start the meter
+                {w.start}
               </button>
-              <button className="btn ghost" onClick={() => setPrompt({ kind: KIND.IDLE })}>
-                Start idle
-              </button>
+              {/* Billed against idle is a question about what to invoice.
+                  Off the clock there is nothing to invoice, so the split would
+                  be a distinction without a difference. */}
+              {!offClock && (
+                <button className="btn ghost" onClick={() => setPrompt({ kind: KIND.IDLE })}>
+                  Start idle
+                </button>
+              )}
             </>
           )}
           {running && (
             <>
               <button className="btn ghost" onClick={onPause}>Pause</button>
               <button className="btn primary" onClick={onStop}>
-                {idling ? "Stop idling" : "Stop and save"}
+                {idling ? "Stop idling" : w.stop}
               </button>
             </>
           )}
@@ -172,7 +201,7 @@ export default function ProjectView({
               <button className="btn primary" onClick={onResume}>Resume</button>
               <button className="btn ghost"
                       onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, { taskId: current.taskId })}>
-                New session
+                {offClock ? "New entry" : "New session"}
               </button>
             </>
           )}
@@ -180,7 +209,7 @@ export default function ProjectView({
 
         {/* Switching kind is always explicit. Auto-starting the other timer
             would attribute time to the wrong bucket with no trace of why. */}
-        {running && (
+        {running && !offClock && (
           <div className="controls">
             <button className="btn ghost"
                     onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE, { taskId: current.taskId })}>
@@ -215,12 +244,14 @@ export default function ProjectView({
       {hasTasks && (
         <div className="sec">
           <div className="sec-head">
-            <span className="eyebrow">By task</span>
-            <span className="eyebrow">{taskRows.length} row{taskRows.length === 1 ? "" : "s"}</span>
+            <span className="eyebrow">{w.byTask}</span>
+            <span className="eyebrow">
+              {taskRows.length} {w.task}{taskRows.length === 1 ? "" : "s"}
+            </span>
           </div>
           {editingTask && (
             <div style={{ marginBottom: 12 }}>
-              <TaskEditor
+              <TaskEditor words={w}
                 task={findTask(project, editingTask)}
                 currency={project.currency}
                 projectRate={project.currentRate}
@@ -235,7 +266,7 @@ export default function ProjectView({
               />
             </div>
           )}
-          <TaskBreakdown rows={taskRows} currency={project.currency} active={filterTask}
+          <TaskBreakdown offClock={offClock} rows={taskRows} currency={project.currency} active={filterTask}
                          onEdit={(id) => setEditingTask(id)}
                          onPick={(key) => {
                            setFilterTask(key === filterTask ? null : key);
@@ -245,7 +276,7 @@ export default function ProjectView({
         </div>
       )}
 
-      {share !== null && idleMs > 0 && (
+      {share !== null && idleMs > 0 && !offClock && (
         <div className="sec">
           <div className="sec-head"><span className="eyebrow">Time at the desk</span></div>
           <div className="panel">
@@ -278,11 +309,14 @@ export default function ProjectView({
                   aria-expanded={showLedger}>
             <span className={"chev" + (showLedger ? " open" : "")}>▶</span>
             <span className="eyebrow">
-              Ledger · {ordered.length} session{ordered.length === 1 ? "" : "s"}
+              {w.ledger} · {ordered.length}{offClock
+                ? ` entr${ordered.length === 1 ? "y" : "ies"}`
+                : ` session${ordered.length === 1 ? "" : "s"}`}
             </span>
           </button>
           <span className="eyebrow">
-            {formatMoney(totalCents, project.currency)} · {totalMs ? formatShortDuration(totalMs) : "0m"}
+            {offClock ? "" : `${formatMoney(totalCents, project.currency)} · `}
+            {totalMs ? formatShortDuration(totalMs) : "0m"}
           </span>
         </div>
 
@@ -296,7 +330,7 @@ export default function ProjectView({
           <div className="selbar">
             <span className="selbar-count">{selected.length} selected</span>
             <button className="btn primary" onClick={() => setBulkPrompt(true)}>
-              Assign to task
+              {w.assign}
             </button>
             <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
           </div>
@@ -343,7 +377,7 @@ export default function ProjectView({
         <div className="panel">
           {visible.length === 0 ? (
             <div className="empty">
-              {filterTask ? "No sessions filed under this task yet." : "No sessions yet. Start the meter and this fills in."}
+              {filterTask ? w.emptyFiltered : w.emptyLedger}
             </div>
           ) : visible.map((s) => (
             <div className={"row pick" + (isIdle(s) ? " is-idle" : "") + (selected.includes(s.id) ? " sel" : "")}
@@ -364,14 +398,21 @@ export default function ProjectView({
                   )}
                 </div>
                 <div className="row-meta">
-                  {s.taskId ? `${taskLabel(project, s.taskId)} · ` : "No task · "}
-                  {formatDuration(elapsedMs(s, now))} at{" "}
-                  {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
-                  {rateFor(project, s) !== s.rate && " (task rate)"}
+                  {s.taskId ? `${taskLabel(project, s.taskId)} · ` : `${w.noTask} · `}
+                  {formatDuration(elapsedMs(s, now))}
+                  {!offClock && <>
+                    {" at "}
+                    {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
+                    {rateFor(project, s) !== s.rate && " (task rate)"}
+                  </>}
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
                 </div>
               </div>
-              <span className="row-amt">{formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}</span>
+              <span className="row-amt">
+                {offClock
+                  ? formatShortDuration(elapsedMs(s, now))
+                  : formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}
+              </span>
               <button className="x" aria-label="Remove session" onClick={() => onDeleteSession(s.id)}>×</button>
             </div>
           ))}
