@@ -28,7 +28,12 @@ export default function ProjectsView({
   const life = scope === "life";
   const w = wordsFor(life);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", rate: "", currency: CURRENCIES[0] });
+  const [form, setForm] = useState({
+    name: "", rate: "", perTask: "", currency: CURRENCIES[0],
+  });
+  /** Which price the form is asking for. Not a property of the project so much
+   *  as of the question: a project can end up carrying both. */
+  const [model, setModel] = useState("hourly");
   const [error, setError] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
@@ -67,12 +72,24 @@ export default function ProjectsView({
     objectives.filter((o) => o.projectId === projectId && !isDone(o)).length;
 
   const submit = () => {
-    const problem = validateProject(form, { needsRate: !life });
+    const problem = validateProject(form, { needsRate: !life, model });
     if (problem) return setError(problem);
-    // Off the clock carries no rate, and nothing reads its currency, but the
-    // record keeps the same shape so every accessor stays uniform.
-    onAdd({ ...form, rate: life ? 0 : Number(form.rate), offClock: life });
-    setForm({ name: "", rate: "", currency: form.currency });
+    const piece = !life && model === "perTask";
+    onAdd({
+      ...form,
+      // Off the clock carries no rate, and nothing reads its currency, but the
+      // record keeps the same shape so every accessor stays uniform. Work paid
+      // per item carries no rate either, and for a sharper reason: money is
+      // derived from rate x elapsed, so any rate invented to satisfy this form
+      // would report income that never arrived.
+      rate: life || piece ? 0 : Number(form.rate),
+      offClock: life,
+      perTask: piece ? Number(form.perTask) : null,
+      // Per-item work is, by definition, worth something only once the item is
+      // accepted — so its sessions start pending rather than counted.
+      paysOnAcceptance: piece,
+    });
+    setForm({ name: "", rate: "", perTask: "", currency: form.currency });
     setError("");
     setAdding(false);
   };
@@ -221,20 +238,44 @@ export default function ProjectsView({
                 billed hours and the project breakdown.
               </div>
             ) : (
-              <div className="pair">
-                <label className="field">
-                  <span className="eyebrow">Hourly rate</span>
-                  <input className="inp" type="number" min="0" step="any" value={form.rate}
-                         placeholder="450" onChange={set("rate")}
-                         onKeyDown={(e) => e.key === "Enter" && submit()} />
-                </label>
-                <label className="field">
-                  <span className="eyebrow">Currency</span>
-                  <select className="inp" value={form.currency} onChange={set("currency")}>
-                    {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </label>
-              </div>
+              <>
+                <div className="field">
+                  <span className="eyebrow">How it pays</span>
+                  <div className="seg" role="tablist" aria-label="How this project pays">
+                    {[["hourly", "By the hour"], ["perTask", "Per task"]].map(([key, label]) => (
+                      <button key={key} role="tab" aria-selected={model === key}
+                              className={"seg-btn" + (model === key ? " on" : "")}
+                              onClick={() => { setModel(key); setError(""); }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="pair">
+                  <label className="field">
+                    <span className="eyebrow">
+                      {model === "perTask" ? "Per accepted task" : "Hourly rate"}
+                    </span>
+                    <input className="inp" type="number" min="0" step="any"
+                           value={model === "perTask" ? form.perTask : form.rate}
+                           placeholder={model === "perTask" ? "250" : "450"}
+                           onChange={set(model === "perTask" ? "perTask" : "rate")}
+                           onKeyDown={(e) => e.key === "Enter" && submit()} />
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">Currency</span>
+                    <select className="inp" value={form.currency} onChange={set("currency")}>
+                      {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                </div>
+                {model === "perTask" && (
+                  <div className="hint">
+                    The clock still runs, so you can see what an hour of it came to — but the
+                    money comes from the tasks you log as accepted, not from the time.
+                  </div>
+                )}
+              </>
             )}
             {error && <div className="err">{error}</div>}
             <div className="controls">

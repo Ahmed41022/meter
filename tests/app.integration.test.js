@@ -3545,3 +3545,107 @@ describe("which work was worth the time, and how much rides on one project", () 
     expect(sorters(dom.window.document)).toHaveLength(0);
   }, 25_000);
 });
+
+describe("creating a project that is paid per task", () => {
+  const open = async () => {
+    const dom = await boot({ projects: [], sessions: [] });
+    await wait(200);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    btn(d, /New project/i).click();
+    await wait(200);
+    return { dom, d };
+  };
+  const pick = async (d, label) => {
+    [...d.querySelectorAll('[aria-label="How this project pays"] .seg-btn')]
+      .find((b) => b.textContent.trim() === label).click();
+    await wait(150);
+  };
+  const field = (d, label) => [...d.querySelectorAll(".field")]
+    .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input");
+
+  it("offers the choice up front rather than making you correct it later", async () => {
+    const { d } = await open();
+    expect(d.querySelector('[aria-label="How this project pays"]')).not.toBeNull();
+    expect(field(d, "Hourly rate")).not.toBeNull();
+    await pick(d, "Per task");
+    expect(field(d, "Per accepted task")).not.toBeNull();
+    expect(field(d, "Hourly rate")).toBeUndefined();
+  }, 25_000);
+
+  it("asks what a task pays, not what an hour pays", async () => {
+    const { dom, d } = await open();
+    await pick(d, "Per task");
+    setValue(dom.window, field(d, "Name"), "Batch work");
+    btn(d, /^Add project$/i).click();
+    await wait(200);
+    expect(d.querySelector(".err").textContent).toMatch(/one task pay/i);
+  }, 25_000);
+
+  it("stores the price per item, no hourly rate, and pays on acceptance", async () => {
+    const { dom, d } = await open();
+    await pick(d, "Per task");
+    setValue(dom.window, field(d, "Name"), "Batch work");
+    setValue(dom.window, field(d, "Per accepted task"), "250");
+    await wait(100);
+    btn(d, /^Add project$/i).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.projects).toHaveLength(1);
+    expect(saved.projects[0]).toMatchObject({
+      name: "Batch work", perTask: 250, paysOnAcceptance: true,
+      // Zero, and correct: the clock earns nothing here. A rate invented to
+      // satisfy the form would report income that never arrived.
+      currentRate: 0,
+    });
+  }, 30_000);
+
+  it("leaves an hourly project exactly as it was", async () => {
+    const { dom, d } = await open();
+    setValue(dom.window, field(d, "Name"), "Hourly work");
+    setValue(dom.window, field(d, "Hourly rate"), "20.5");
+    await wait(100);
+    btn(d, /^Add project$/i).click();
+    await wait(300);
+
+    const p = JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0];
+    expect(p.currentRate).toBe(20.5);
+    expect(p).not.toHaveProperty("perTask");
+    expect(p).not.toHaveProperty("paysOnAcceptance");
+  }, 30_000);
+
+  it("prices a batch from the count, and lets the amount be overruled", async () => {
+    const dom = await boot({
+      projects: [{
+        id: "a", name: "Batch", currentRate: 0, currency: "USD", perTask: 250,
+        paysOnAcceptance: true, createdAt: Date.now() - 86_400_000,
+        sessionGoal: null, overallGoal: null, tasks: [],
+      }],
+      sessions: [],
+    });
+    const d = dom.window.document;
+    await wait(200);
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    btn(d, /Add earnings/i).click();
+    await wait(200);
+
+    const units = [...d.querySelectorAll(".ern-form input")]
+      .find((i) => i.step === "1");
+    setValue(dom.window, units, "6");
+    await wait(200);
+    const amount = d.querySelector('.ern-form input[type="number"]');
+    expect(amount.value).toBe("1500"); // 6 x $250
+
+    // overruling it stands: a capped or part-paid batch is exactly that case
+    setValue(dom.window, amount, "1200");
+    await wait(150);
+    btn(d, /^Add$/).click();
+    await wait(300);
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.earnings[0]).toMatchObject({ cents: 120_000, units: 6 });
+  }, 30_000);
+});

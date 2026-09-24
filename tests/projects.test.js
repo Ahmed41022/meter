@@ -180,3 +180,38 @@ describe("finding a project in a long list", () => {
     expect(searchProjects(list, "code").map((x) => x.name)).toEqual(["code_SQL", "code v code"]);
   });
 });
+
+describe("naming a price when the project is created", () => {
+  it("still demands an hourly rate for work paid by the hour", () => {
+    expect(validateProject({ name: "a", rate: "" })).toMatch(/rate/i);
+    expect(validateProject({ name: "a", rate: "0" })).toMatch(/above zero/);
+    expect(validateProject({ name: "a", rate: "20.5" })).toBeNull();
+  });
+
+  it("asks what a task pays instead, for work paid per item", () => {
+    // Demanding an hourly rate here forced every such project to be created
+    // with a made-up number and corrected afterwards.
+    const opts = { model: "perTask" };
+    expect(validateProject({ name: "a", perTask: "" }, opts)).toMatch(/one task pay/i);
+    expect(validateProject({ name: "a", perTask: "0" }, opts)).toMatch(/above zero/);
+    expect(validateProject({ name: "a", perTask: "250" }, opts)).toBeNull();
+    // and it does NOT want an hourly rate
+    expect(validateProject({ name: "a", perTask: "250", rate: "" }, opts)).toBeNull();
+  });
+
+  it("still wants a name whichever price it is", () => {
+    expect(validateProject({ name: " ", perTask: "250" }, { model: "perTask" })).toMatch(/name/i);
+  });
+
+  it("stores a per-item price, and nothing extra when there is none", () => {
+    const withIt = addProject(empty, {
+      name: "Batch", rate: 0, currency: "USD", perTask: 250, paysOnAcceptance: true,
+    }, T, "p1").projects[0];
+    expect(withIt).toMatchObject({ perTask: 250, paysOnAcceptance: true, currentRate: 0 });
+
+    const without = addProject(empty, { name: "Hourly", rate: 20, currency: "USD" }, T, "p2")
+      .projects[0];
+    expect(without).not.toHaveProperty("perTask");
+    expect(without).not.toHaveProperty("paysOnAcceptance");
+  });
+});
