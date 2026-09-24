@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
-import { paysOnAcceptance } from "../domain/earnings.js";
+import { paysOnAcceptance, perTask } from "../domain/earnings.js";
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
@@ -9,6 +9,7 @@ export default function Settings({
   const [name, setName] = useState(project.name);
   const [company, setCompany] = useState(companyOf(project) ?? "");
   const [rate, setRate] = useState(String(project.currentRate));
+  const [each, setEach] = useState(perTask(project) === null ? "" : String(perTask(project)));
   const [sessionGoal, setSessionGoal] = useState(project.sessionGoal || { type: "money", target: "" });
   const [overallGoal, setOverallGoal] = useState(
     project.overallGoal || { type: "money", target: "", period: "week" }
@@ -17,9 +18,13 @@ export default function Settings({
 
   const saveBasics = () => {
     const parsed = Number(rate);
+    const piece = Number(each);
     onPatch({
       name: name.trim() || project.name,
       ...(Number.isFinite(parsed) && parsed > 0 ? { currentRate: parsed } : {}),
+      // Cleared on purpose means cleared: null rather than skipped, so a project
+      // can stop being paid per item.
+      perTask: Number.isFinite(piece) && piece > 0 ? piece : null,
     });
   };
 
@@ -87,6 +92,11 @@ export default function Settings({
             <span className="eyebrow">Hourly rate ({project.currency})</span>
             <input className="inp" type="number" min="0" step="any" value={rate}
                    onChange={(e) => setRate(e.target.value)} onBlur={saveBasics} />
+          </label>
+          <label className="field">
+            <span className="eyebrow">Per accepted task ({project.currency})</span>
+            <input className="inp" type="number" min="0" step="any" placeholder="not paid per task"
+                   value={each} onChange={(e) => setEach(e.target.value)} onBlur={saveBasics} />
           </label>
           <div className="hint">
             A new rate applies to sessions you start from now on. Everything already in the ledger keeps

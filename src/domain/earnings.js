@@ -58,6 +58,30 @@ export const isSettled = (record) => payStateOf(record) === PAY.PAID;
  *  sessions on one start out pending rather than counted. */
 export const paysOnAcceptance = (project) => project?.paysOnAcceptance === true;
 
+/**
+ * What one accepted item pays, in whole currency units like `currentRate`.
+ *
+ * Absent means the project is not paid per item, which is what every project
+ * written before this existed will say. A project can hold both this and an
+ * hourly rate — some work pays by the hour and throws in per-item bonuses — so
+ * neither field implies anything about the other.
+ */
+export const perTask = (project) => {
+  const value = Number(project?.perTask);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+export const isPerTask = (project) => perTask(project) !== null;
+
+/** What `units` accepted items come to, in cents. Null where the project has no
+ *  per-item price to multiply, rather than a confident zero. */
+export const perTaskCents = (project, units) => {
+  const each = perTask(project);
+  const n = Number(units);
+  if (each === null || !Number.isFinite(n) || n <= 0) return null;
+  return Math.round(each * 100 * n);
+};
+
 export const liveEarnings = (state) => (state.earnings ?? []).filter((e) => !e.deletedAt);
 
 export const earningsFor = (state, projectId) =>
