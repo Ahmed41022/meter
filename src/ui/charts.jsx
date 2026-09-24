@@ -1,4 +1,6 @@
+import { useCallback, useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { heatLevel } from "../domain/performance.js";
 
 /**
  * The reporting figures: stat tiles and the trend column chart.
@@ -176,6 +178,133 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
           { label: "Billed", color: SERIES.billed },
           { label: "Idle", color: SERIES.idle },
         ]} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A year of days, shaded by how much time each one carried.
+ *
+ * Two ramps rather than one, because the two registers are not the same
+ * quantity and must not be read against a shared scale: jade for work, and for
+ * off-clock time the same quiet slate the rest of the app gives it. Both start
+ * from the empty-cell colour, so the ramp reads as "more of this" rather than
+ * as a set of categories.
+ *
+ * The boundaries are quantiles of whatever is being shaded (six hours is a full
+ * day of work and a short night's sleep — no fixed scale serves both), which
+ * makes them arbitrary unless they are stated. So the legend spells out every
+ * one of them instead of saying "less" and "more".
+ */
+const RAMP = {
+  work: ["#DCEFE5", "#A5D8C1", "#4FA986", "#0F7B5A"],
+  life: ["#E3E7E3", "#BFC7C1", "#99A49C", "#75827B"],
+};
+const EMPTY_CELL = "var(--line-2)";
+
+const monthName = (t) => new Date(t).toLocaleDateString(undefined, { month: "short" });
+const fullDate = (t) => new Date(t).toLocaleDateString(undefined, {
+  weekday: "short", day: "numeric", month: "short", year: "numeric",
+});
+
+export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun }) {
+  const [hover, setHover] = useState(null);
+  const ramp = RAMP[scale];
+
+  /** Where 53 columns don't fit, open on the end. The recent weeks are the ones
+   *  anyone is looking for, and a calendar that starts a year ago reads as
+   *  empty. Set once on mount so it never fights a reader who has scrolled. */
+  const openAtToday = useCallback((node) => {
+    if (node) node.scrollLeft = node.scrollWidth;
+  }, []);
+
+  /**
+   * A column carries a month label when it is the first column belonging to
+   * that month. Which month a column belongs to is decided by its MIDWEEK day,
+   * not its Monday: the week of 31 Aug – 6 Sep is four-sevenths September, and
+   * going by the Monday would leave September with no label at all while
+   * pushing August's onto a column that is mostly not August.
+   */
+  const monthOf = (week) => new Date(week.days[3].at).getMonth();
+  const labels = weeks.map((week, i) => {
+    // The leading column is a part-month that started before the calendar
+    // does, and labelling it would put two names a single column apart.
+    if (i === 0 || monthOf(week) === monthOf(weeks[i - 1])) return "";
+    return monthName(week.days[3].at);
+  });
+
+  const cells = weeks.flatMap((w) => w.days).filter((d) => !d.future);
+  const active = cells.filter((d) => valueOf(d) > 0).length;
+  const total = cells.reduce((a, d) => a + valueOf(d), 0);
+
+  return (
+    <div className="hm">
+      <div className="hm-top">
+        <span className="eyebrow">{noun} per day</span>
+        {/* The hovered day reads out here rather than in a floating tip. A tip
+            would have to live inside the scroll container, and a container that
+            scrolls on one axis clips the other — so it would be cut off on the
+            top row, which is half the reason to hover in the first place. */}
+        <span className={"eyebrow hm-read" + (hover ? " on" : "")} aria-live="polite">
+          {hover
+            ? `${fullDate(hover.day.at)} · ${hover.ms > 0
+                ? formatShortDuration(hover.ms) : `no ${noun.toLowerCase()}`}`
+            : `${active} active ${active === 1 ? "day" : "days"} · ${formatShortDuration(total)}`}
+        </span>
+      </div>
+
+      <div className="hm-scroll" ref={openAtToday}>
+        <div className="hm-months">
+          {labels.map((label, i) => (
+            <span className="hm-month" key={weeks[i].from}>{label}</span>
+          ))}
+        </div>
+        <div className="hm-body">
+          <div className="hm-days">
+            {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
+              <span className="hm-day" key={i}>{d}</span>
+            ))}
+          </div>
+          <div className="hm-grid" role="img" onMouseLeave={() => setHover(null)}
+               aria-label={`${noun} per day over the last year: ${active} active `
+                 + `${active === 1 ? "day" : "days"}, ${formatShortDuration(total)} in total`}>
+            {weeks.map((week) => (
+              <div className="hm-col" key={week.from}>
+                {week.days.map((day) => {
+                  const ms = valueOf(day);
+                  const level = day.future ? -1 : heatLevel(ms, thresholds);
+                  return (
+                    <span
+                      key={day.at}
+                      data-at={day.at}
+                      data-level={level}
+                      className={"hm-cell" + (day.future ? " future" : "")}
+                      style={day.future ? undefined
+                        : { background: level === 0 ? EMPTY_CELL : ramp[level - 1] }}
+                      onMouseEnter={day.future ? undefined : () => setHover({ day, ms })}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {thresholds.length > 0 ? (
+        <div className="legend hm-legend">
+          {ramp.map((color, i) => (
+            <span className="legend-item" key={color}>
+              <span className="swatch" style={{ background: color }} />
+              {i < thresholds.length
+                ? `to ${formatShortDuration(thresholds[i])}`
+                : `over ${formatShortDuration(thresholds[thresholds.length - 1])}`}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="hm-none">Nothing recorded in the last year.</div>
       )}
     </div>
   );

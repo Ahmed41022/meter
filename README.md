@@ -96,11 +96,13 @@ npm test
 
 ## Reporting performance
 
-The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week** or **Month**; **Projects** is the tab beside it, and opening one from either place drills into its meter and ledger.
+The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week** or **Month**. **Work** and **Life** are the tabs beside it, and opening a project from any of the three drills into its meter and ledger.
 
 Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
 
 Each period shows what it earned, billed and idle time with the change against the period before, the billable share of time at the desk, how many days (or hours) saw work, a column chart of when the work happened, and a breakdown by project.
+
+Two panels on that page deliberately ignore the period control: **Targets** and **the activity calendar**. Both answer questions about *now* rather than about the period on screen.
 
 Figures are derived by **overlap**, not by when a session started. A session running 23:30 → 00:30 is half an hour of one day and half an hour of the next, counted in each for exactly the minutes it spent there. That is what makes the numbers agree with one another: the daily bars always add up to the weekly headline, and no hour is ever counted twice or lost at a boundary. Period boundaries are built from calendar fields, so they stay correct across DST — including in zones where the clocks go forward at midnight and a local 00:00 simply doesn't exist that day.
 
@@ -129,6 +131,20 @@ That is generous early in a period, which is why the **required daily rate** is 
 Goals appear on the **Overview** under *Targets*, sorted by how many days' worth off the line each one is, so whatever needs attention is at the top. That panel deliberately ignores the period control above it: "am I on for this week?" is a question about now, and the answer must not change because you stepped the report back to look at last month.
 
 A **lifetime** goal has no pacing — a target with no end cannot be late. Nor do session goals: a session has no deadline. Off-clock goals are paced on their own page rather than among work targets, because sleep is not a work target.
+
+---
+
+## The activity calendar
+
+A year of days at the foot of the Overview, each shaded by how much time it carried. It answers the question none of the period views can: not what this week was worth, but what the year has actually looked like — the streaks, the gaps, the weeks that quietly went missing.
+
+Work and off-clock time get **separate calendars**, switched with the toggle in the heading, and separate colour ramps: jade for work, the same quiet slate the rest of the app gives time you track but don't work. They are never shaded on one scale, because they are not the same quantity.
+
+The shade boundaries are **quantiles of whatever is being shaded**, not fixed hour marks. Six hours is a full day of work and a short night's sleep, so one fixed scale would render one of the two as a flat wall of colour. That makes the boundaries arbitrary unless they are stated, so the legend spells out every one of them rather than saying "less" and "more". Empty days are left out of the distribution — include them and a single busy week in a blank year sets every boundary by how often you did nothing.
+
+Days are walked as calendar dates, not as 86,400,000ms steps. A week containing a DST shift is 167 or 169 hours long, and stepping by fixed milliseconds would slide the grid by an hour and eventually put a Tuesday in the Monday row. Each column is labelled with the month its **midweek** day falls in: the week of 31 Aug – 6 Sep is four-sevenths September, and going by the Monday leaves September unlabelled.
+
+Like *Targets*, the calendar ignores the period control above it — it is context for everything else on the page, not another reading of the chosen week. Where 53 columns don't fit, it scrolls, opens on the most recent weeks, and keeps the day names pinned.
 
 ---
 
@@ -208,7 +224,7 @@ tests/money.test.js        rounding, drift, formatting fallbacks
 tests/sessions.test.js     the state machine and the rate-snapshot rule
 tests/projects.test.js     creation, validation, cascading removal
 tests/goals.test.js        period boundaries including DST, and pacing
-tests/performance.test.js  window overlap, calendar buckets, period comparison
+tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid
 tests/app.integration.test.js   the built HTML, driven in jsdom
 ```
 

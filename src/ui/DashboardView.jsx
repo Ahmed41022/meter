@@ -4,12 +4,12 @@ import { utilisation } from "../domain/sessions.js";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import { rateFor } from "../domain/tasks.js";
 import {
-  PERIODS, activeBuckets, byProject, currenciesByValue, deltaRatio, performanceIn,
-  periodRange, splitByClock, trendFor,
+  PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
+  heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
-import { Delta, SplitBar, StatTile, TrendChart } from "./charts.jsx";
+import { Delta, Heatmap, SplitBar, StatTile, TrendChart } from "./charts.jsx";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
 
 const NAMES = { day: "Day", week: "Week", month: "Month" };
@@ -36,6 +36,13 @@ const rangeNote = (period, from, to) =>
   period === "day"
     ? day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
+
+/** A year of days for one register, ready to shade. */
+const calendarFor = (sessions, now) => {
+  const { from, to } = heatRange(now);
+  const byDay = dailyTotals(sessions, from, to, now);
+  return { from, to, byDay };
+};
 
 const PERIOD_WORD = { week: "this week", month: "this month" };
 
@@ -87,6 +94,7 @@ export default function DashboardView({
 }) {
   const [period, setPeriod] = useState("week");
   const [offset, setOffset] = useState(0);
+  const [heatScale, setHeatScale] = useState("work");
 
   /** Which rate values a session is the caller's question, and the answer is a
    *  task override when there is one. Rebuilt only when the projects change. */
@@ -110,10 +118,22 @@ export default function DashboardView({
       rows: byProject(workProjects(projects), work, from, to, now, rateOf),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
       targets: targetsFor(workProjects(projects), work, now, rateOf),
+      // A fixed rolling year, like Targets and for the same reason: it is
+      // context for everything above it, not another reading of the period.
+      calendar: { work: calendarFor(work, now), life: calendarFor(offClock, now) },
+      hasOffClock: offClock.length > 0,
     };
   }, [projects, sessions, now, period, offset, rateOf]);
 
   const { from, to, current, previous, trend, rows, offRows, targets } = view;
+  // Off the clock has no billable half, so its calendar shades every tracked
+  // minute; work shades the billed ones, which is what the goals count.
+  const scale = view.hasOffClock ? heatScale : "work";
+  const heat = view.calendar[scale];
+  const heatValue = scale === "work" ? (d) => d.billedMs : (d) => d.billedMs + d.idleMs;
+  const heatWeeks = heatGrid(heat.from, heat.to, heat.byDay, periodBoundary("day", now, 0));
+  const heatCuts = heatThresholds(
+    heatWeeks.flatMap((w) => w.days).filter((d) => !d.future).map(heatValue));
   const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   const earned = currenciesByValue(current.billedCents);
@@ -324,6 +344,30 @@ export default function DashboardView({
           </div>
         </div>
       )}
+
+      <div className="sec">
+        <div className="sec-head">
+          <span className="eyebrow">Activity</span>
+          {view.hasOffClock && (
+            // Named for the section above it, not for the tabs at the top of the
+            // page: a Work/Life pair here would look like navigation and go
+            // nowhere.
+            <div className="segmented small" role="tablist" aria-label="Which time to show">
+              {[["work", "Work"], ["life", "Off the clock"]].map(([key, label]) => (
+                <button key={key} role="tab" aria-selected={scale === key}
+                        className={"seg" + (scale === key ? " on" : "")}
+                        onClick={() => setHeatScale(key)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="panel">
+          <Heatmap weeks={heatWeeks} thresholds={heatCuts} scale={scale}
+                   valueOf={heatValue} noun={scale === "work" ? "Billed" : "Tracked"} />
+        </div>
+      </div>
     </>
   );
 }
