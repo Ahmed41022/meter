@@ -122,6 +122,9 @@ export const CSS = `
 .cyc-lab{flex:1;min-width:0;text-align:center;font-size:10px;color:var(--muted);
   font-family:var(--mono);letter-spacing:.02em;}
 
+.concentration{margin:0 0 10px;font-size:12.5px;color:var(--ink-2);}
+.concentration strong{color:var(--ink);font-weight:700;}
+
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}

@@ -477,3 +477,45 @@ export const streaks = (cells, isActive) => {
 
   return { current, longest, includesToday };
 };
+
+/**
+ * What each project's hour was really worth, best first.
+ *
+ * Not the rate on the project card. On work paid per accepted item the card's
+ * rate and the money that arrived are different numbers, and on this ledger
+ * more than half the income never touched a clock at all — so this divides
+ * everything settled by the hours actually recorded against it, which is the
+ * only figure that answers "which of these was worth my time".
+ *
+ * Rows holding less than `floor` are left out rather than ranked, because a
+ * small denominator is all it takes to top the list. An hour and a half of work
+ * that also collected fifty dollars of untimed money reads as $106/hr, which is
+ * arithmetic rather than a finding — and ranking puts it first, where the eye
+ * goes. Five hours is enough that a single untimed payment cannot dominate.
+ */
+export const RATE_FLOOR_MS = 5 * 3_600_000;
+
+export const worthPerHour = (rows, currency, floor = RATE_FLOOR_MS) =>
+  rows
+    .filter((r) => r.billedMs >= floor && (r.billedCents[currency] ?? 0) > 0)
+    .map((r) => ({ ...r, perHour: effectiveRate(r.billedCents[currency] ?? 0, r.billedMs) }))
+    .sort((a, b) => b.perHour - a.perHour);
+
+/**
+ * The largest single share of the money, and whose it is.
+ *
+ * One project at half of everything is a fact about risk rather than success,
+ * and it is exactly the kind of fact people notice too late. Null across mixed
+ * currencies, for the same reason nothing else here adds them.
+ */
+export const concentration = (rows, currency) => {
+  if (!currency) return null;
+  const total = rows.reduce((a, r) => a + (r.billedCents[currency] ?? 0), 0);
+  if (total <= 0) return null;
+  let top = null;
+  for (const row of rows) {
+    const cents = row.billedCents[currency] ?? 0;
+    if (top === null || cents > top.cents) top = { row, cents };
+  }
+  return top === null || top.cents <= 0 ? null : { ...top, share: top.cents / total, total };
+};

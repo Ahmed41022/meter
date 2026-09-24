@@ -3,7 +3,8 @@ import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
-  byCompany, effectiveRate, firstRecord, revenueShare, soleCurrency, streaks,
+  byCompany, concentration, effectiveRate, firstRecord, revenueShare, soleCurrency,
+  streaks, worthPerHour,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -858,5 +859,57 @@ describe("all time", () => {
     const r = performanceIn(sessions, from, to, now);
     expect(r.billedMs).toBe(9 * HOUR);
     expect(r.billedCents.USD).toBe(90_000); // 9h at 100/hr
+  });
+});
+
+describe("which work was actually worth the time", () => {
+  const row = (name, hours, dollars, extra = {}) => ({
+    project: { id: name, name, currency: "USD" },
+    billedMs: hours * HOUR, idleMs: 0,
+    billedCents: { USD: Math.round(dollars * 100) },
+    pendingCents: {}, timedCents: { USD: Math.round(dollars * 100) },
+    ...extra,
+  });
+
+  it("ranks by what an hour came to, not by how much was earned", () => {
+    // The biggest earner is not the best-paid hour, and only one of those
+    // answers "which of these should I take more of".
+    const rows = [row("big", 300, 16_849), row("small", 23, 2_164)];
+    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["small", "big"]);
+    expect(worthPerHour(rows, "USD")[0].perHour).toBe(Math.round(216_400 / 23));
+  });
+
+  it("leaves out anything too short to mean anything", () => {
+    // Six minutes that happened to pay $50 is $500/hr as arithmetic and noise
+    // as a finding — and ranking would put it first, where the eye goes.
+    const rows = [row("real", 20, 400), row("blip", 0.1, 50)];
+    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["real"]);
+  });
+
+  it("holds the floor high enough that one untimed payment cannot top the list", () => {
+    // Taken from the real ledger: 1h40m of work that also collected $49.93 of
+    // money no clock measured reads as $106/hr and outranks everything.
+    const rows = [row("hopper", 1.67, 176.30), row("hyperion", 291, 16_848)];
+    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["hyperion"]);
+    // and it is a floor on TIME, so a short row still counts if asked for
+    expect(worthPerHour(rows, "USD", HOUR).map((r) => r.project.name)[0]).toBe("hopper");
+  });
+
+  it("leaves out work that earned nothing, which has no rate to rank", () => {
+    const rows = [row("paid", 10, 200), row("unpaid", 10, 0)];
+    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["paid"]);
+  });
+
+  it("names the largest share of the money and how large it is", () => {
+    const rows = [row("hyperion", 291, 16_849), row("a", 40, 3_487), row("b", 23, 2_164)];
+    const c = concentration(rows, "USD");
+    expect(c.row.project.name).toBe("hyperion");
+    expect(Math.round(c.share * 100)).toBe(75);
+  });
+
+  it("says nothing where there is no money, or no one currency", () => {
+    expect(concentration([], "USD")).toBeNull();
+    expect(concentration([row("a", 5, 0)], "USD")).toBeNull();
+    expect(concentration([row("a", 5, 10)], null)).toBeNull();
   });
 });

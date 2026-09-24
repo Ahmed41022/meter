@@ -6,7 +6,8 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, effectiveRate, firstRecord, heatDepth, revenueShare, streaks, untimedShare,
+  byCompany, concentration, effectiveRate, firstRecord, heatDepth, revenueShare, streaks,
+  untimedShare, worthPerHour,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -135,6 +136,7 @@ export default function DashboardView({
   const [offset, setOffset] = useState(0);
   const [heatScale, setHeatScale] = useState("work");
   const [heatBack, setHeatBack] = useState(0);
+  const [projectSort, setProjectSort] = useState("time");
 
   /** Which rate values a session is the caller's question, and the answer is a
    *  task override when there is one. Rebuilt only when the projects change. */
@@ -233,6 +235,14 @@ export default function DashboardView({
    *  row instead would break the moment a row below it had more idle time than
    *  the leader had billed — the rows are ordered by billed time, not total. */
   const widest = Math.max(...rows.map((r) => r.billedMs + r.idleMs), 1);
+
+  // What an hour came to, per project. Answers a different question from the
+  // default order: not "where did the time go" but "which of these was worth
+  // it" — and on work paid per accepted item those have different answers.
+  const ranked = worthPerHour(rows, lead);
+  const byRate = projectSort === "rate" && ranked.length > 1;
+  const shownRows = byRate ? ranked : rows;
+  const top = concentration(rows, lead);
 
   // Today's focus is the same whichever period is on screen: what is left to
   // do now does not change because you are looking at last month.
@@ -445,14 +455,33 @@ export default function DashboardView({
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">By project</span>
-          <span className="eyebrow">{rows.length ? `${rows.length} active` : ""}</span>
+          {ranked.length > 1 ? (
+            <div className="segmented small" role="tablist" aria-label="Order projects by">
+              {[["time", "Time"], ["rate", "An hour"]].map(([key, label]) => (
+                <button key={key} role="tab" aria-selected={projectSort === key}
+                        className={"seg" + (projectSort === key ? " on" : "")}
+                        onClick={() => setProjectSort(key)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="eyebrow">{rows.length ? `${rows.length} active` : ""}</span>
+          )}
         </div>
+        {/* One project carrying most of the income is a fact about risk rather
+            than success, and the kind people notice too late. */}
+        {top && top.share >= 0.3 && (
+          <p className="concentration">
+            <strong>{top.row.project.name}</strong> is {Math.round(top.share * 100)}% of it.
+          </p>
+        )}
         <div className="panel">
-          {rows.length === 0 ? (
+          {shownRows.length === 0 ? (
             <div className="empty">
               No project logged time in this period.
             </div>
-          ) : rows.map(({ project, billedMs, idleMs, billedCents, pendingCents }) => {
+          ) : shownRows.map(({ project, billedMs, idleMs, billedCents, pendingCents, perHour }) => {
             // One colour for every bar. These are projects, not an ordered
             // scale, so shading them by size would double-encode the length.
             const cents = billedCents[project.currency] ?? 0;
@@ -469,6 +498,8 @@ export default function DashboardView({
                         style={{ width: `${(idleMs / widest) * 100}%` }} />
                 </span>
                 <span className="prow-meta">
+                  {byRate && perHour !== null
+                    && <strong>{formatMoney(perHour, project.currency)}/hr · </strong>}
                   {formatShortDuration(billedMs)} billed
                   {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
                   {/* Otherwise a project whose money is all waiting on
