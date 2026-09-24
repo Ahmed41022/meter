@@ -8,6 +8,11 @@ import {
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject } from "../domain/projects.js";
 import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
+import { offClockProjects, workProjects } from "../domain/projects.js";
+import {
+  addObjective, dayKey, focusObjective, liveObjectives, objectivesFor,
+  removeObjective, restoreObjective, toggleObjective, unlinkTask,
+} from "../domain/objectives.js";
 import { CSS } from "./styles.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
@@ -31,7 +36,7 @@ const resolveTaskPick = (project, pick, createTask) => {
   const id = resolveTaskId(project, pick.label, uid());
   return { id, prepare: (s) => createTask(s, id, pick.label) };
 };
-const EMPTY = { projects: [], sessions: [] };
+const EMPTY = { projects: [], sessions: [], objectives: [] };
 
 export default function App({ store: injectedStore }) {
   // Created ONCE. A default parameter (`store = createStore()`) is evaluated on
@@ -124,7 +129,13 @@ export default function App({ store: injectedStore }) {
     URL.revokeObjectURL(url);
   };
 
-  const openProject = (id) => { setOpenProjectId(id); setTab("projects"); };
+  /** Opening a project lands on the tab it belongs to, so the back link
+   *  returns somewhere the project is actually listed. */
+  const openProject = (id) => {
+    const p = stateRef.current.projects.find((x) => x.id === id);
+    setOpenProjectId(id);
+    setTab(p?.offClock ? "life" : "work");
+  };
 
   const importBackup = (file) => {
     const reader = new FileReader();
@@ -160,7 +171,7 @@ export default function App({ store: injectedStore }) {
           {project
             ? <button className="linkbtn" onClick={() => setOpenProjectId(null)}>← All projects</button>
             : <nav className="tabs" role="tablist" aria-label="Views">
-                {[["overview", "Overview"], ["projects", "Projects"]].map(([key, label]) => (
+                {[["overview", "Overview"], ["work", "Work"], ["life", "Life"]].map(([key, label]) => (
                   <button key={key} role="tab" aria-selected={tab === key}
                           className={"tab" + (tab === key ? " on" : "")}
                           onClick={() => setTab(key)}>
@@ -240,9 +251,21 @@ export default function App({ store: injectedStore }) {
               commit((s) => setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate))}
             onDeleteTask={(taskId) => {
               const snapshot = stateRef.current;
-              commit((s) => removeTask(s, project.id, taskId));
+              // Objectives pointing at the task are unfiled with it, so the
+              // intent survives even though the bucket does not.
+              commit((s) => unlinkTask(removeTask(s, project.id, taskId), taskId));
               flash("Task deleted. Its sessions moved to “No task”.", "Undo",
                     () => commit(() => snapshot));
+            }}
+            objectives={objectivesFor(state, project.id)}
+            today={dayKey(now)}
+            onAddObjective={(fields) =>
+              commit((s) => addObjective(s, project.id, fields, Date.now(), uid()))}
+            onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
+            onFocusObjective={(id, key) => commit((s) => focusObjective(s, id, key))}
+            onRemoveObjective={(id) => {
+              commit((s) => removeObjective(s, id, Date.now()));
+              flash("Removed.", "Undo", () => commit((s) => restoreObjective(s, id)));
             }}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onDeleteProject={() => {
@@ -258,15 +281,22 @@ export default function App({ store: injectedStore }) {
             /* Both kinds: the dashboard reports idle time beside billed, and
                `performanceIn` is what keeps the two apart. */
             sessions={liveSessions(state.sessions)}
+            objectives={liveObjectives(state)}
             now={now}
+            today={dayKey(now)}
             onOpenProject={openProject}
+            onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
           />
         ) : (
           <ProjectsView
-            projects={state.projects}
-            sessions={liveSessions(state.sessions).filter(isBilled)}
+            scope={tab}
+            projects={tab === "life" ? offClockProjects(state.projects) : workProjects(state.projects)}
+            sessions={tab === "life"
+              ? liveSessions(state.sessions)
+              : liveSessions(state.sessions).filter(isBilled)}
+            objectives={liveObjectives(state)}
             now={now}
-            onOpen={setOpenProjectId}
+            onOpen={openProject}
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
             onExport={exportBackup} onImport={importBackup}
           />

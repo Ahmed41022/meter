@@ -26,7 +26,7 @@ export const workProjects = (projects) => projects.filter((p) => !isOffClock(p))
 /** Off-clock projects must always be asked for by name. */
 export const offClockProjects = (projects) => projects.filter(isOffClock);
 
-export const addProject = (state, { name, rate, currency }, now, id) => ({
+export const addProject = (state, { name, rate, currency, offClock = false }, now, id) => ({
   ...state,
   projects: [
     ...state.projects,
@@ -38,6 +38,7 @@ export const addProject = (state, { name, rate, currency }, now, id) => ({
       createdAt: now,
       sessionGoal: null,
       overallGoal: null,
+      ...(offClock ? { offClock: true } : {}),
     },
   ],
 });
@@ -54,8 +55,11 @@ export const removeProject = (state, id) => ({
   sessions: state.sessions.filter((s) => s.projectId !== id),
 });
 
-export const validateProject = ({ name, rate }) => {
-  if (!name || !name.trim()) return "Give the project a name.";
+/** `needsRate` is false for something off the clock, which has nothing to
+ *  charge — demanding a rate there is what drove people to type 0.00001. */
+export const validateProject = ({ name, rate }, { needsRate = true } = {}) => {
+  if (!name || !name.trim()) return "Give it a name.";
+  if (!needsRate) return null;
   const parsed = Number(rate);
   if (!Number.isFinite(parsed) || parsed <= 0) return "The rate needs to be a number above zero.";
   return null;

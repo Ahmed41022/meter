@@ -54,10 +54,12 @@ src/
     goals.js       period boundaries, progress
     tasks.js       task records, label matching, per-task totals, re-filing
     performance.js day / week / month windows, overlap splitting, trends
+    objectives.js  what you mean to do, estimates, today's focus
   storage/
     store.js       the only module that knows where data lives
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
+    Objectives     the list, with spent against estimated
     DashboardView  the Overview tab: what a day, week or month was worth
     charts.jsx     stat tiles and the trend columns
 scripts/build.mjs  bundles everything into one HTML file
@@ -103,6 +105,18 @@ Each period shows what it earned, billed and idle time with the change against t
 Figures are derived by **overlap**, not by when a session started. A session running 23:30 → 00:30 is half an hour of one day and half an hour of the next, counted in each for exactly the minutes it spent there. That is what makes the numbers agree with one another: the daily bars always add up to the weekly headline, and no hour is ever counted twice or lost at a boundary. Period boundaries are built from calendar fields, so they stay correct across DST — including in zones where the clocks go forward at midnight and a local 00:00 simply doesn't exist that day.
 
 Money is never mixed across currencies. If you bill in two, each is totalled and shown on its own line.
+
+---
+
+## Objectives
+
+What you mean to get done, beside what it actually took.
+
+Each project carries a list — **Objectives** on a work project, **To-do** off the clock. An item can be linked to a task, and then the row reports **est 2h · spent 3h 10m · 150% of estimate**. That pairing is the reason this lives in a timer rather than a to-do app: a checklist can tell you something is finished, and only this can tell you it took half again as long as you thought.
+
+Objectives are their own records rather than a flag on a task, because the two answer different questions. A task is "which bucket does this time go in" and only exists once there is time to file; an objective is "I intend to do this", which is true before a second has been tracked and sometimes forever ("email the client back"). Deleting a task unfiles its objectives rather than destroying them — the intent outlives the bucket, exactly as a session's hours do.
+
+Star a few as **today** and they gather at the top of the Overview, work and life alike. Today is stored as a local calendar day, not a boolean: a flag would still be set tomorrow morning and would need a nightly job to clear it, which is the same accumulate-versus-derive mistake the timer itself avoids. Ticking an item drops it off today's list, because what is left is the point.
 
 ---
 
@@ -198,6 +212,11 @@ Cases worth knowing about:
 - Moving a project off the clock and back changes only how its hours are counted, never the hours.
 - An off-clock project says activities, history and Start tracking; a work project still says tasks, ledger and Start the meter.
 - Off the clock drops the idle split, the billable-hour rail and the money goal, and prints the elapsed figure once rather than twice.
+- Work and Life are separate tabs; opening a project returns to the tab it belongs to.
+- A life area is created with no rate at all, rather than a rate of zero to be explained away.
+- An objective linked to a task reports hours spent against hours estimated; one with no link says so instead of implying zero.
+- Deleting a task unfiles its objectives and keeps them.
+- Today's focus is a calendar day, so it expires by itself and gathers work and life picks together.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
 - Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
 - A session saved before idle tracking existed still counts as billed.
@@ -209,13 +228,14 @@ Cases worth knowing about:
 Everything lives in browser storage under `meter:v1`, as:
 
 ```js
-Project  { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock? }
+Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock? }
+Objective  { id, projectId, text, done, doneAt, createdAt, focusedOn, estimateMs, taskId, deletedAt }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
 Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
