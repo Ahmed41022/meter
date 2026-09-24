@@ -12,6 +12,7 @@ import { CSS } from "./styles.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
+import DashboardView from "./DashboardView.jsx";
 
 const TICK_MS = 1_000;
 const HEARTBEAT_MS = 60_000;
@@ -43,6 +44,10 @@ export default function App({ store: injectedStore }) {
   const [state, setState] = useState(EMPTY);
   const [ready, setReady] = useState(false);
   const [openProjectId, setOpenProjectId] = useState(null);
+  // The overall view leads, and the project list is a tab of its own. A project
+  // opens as a drill-down from that list, so closing one returns there rather
+  // than to the dashboard the user was not looking at.
+  const [tab, setTab] = useState("overview");
   const [now, setNow] = useState(() => Date.now());
   const [recoveryId, setRecoveryId] = useState(null);
   const [conflict, setConflict] = useState(false);
@@ -119,6 +124,8 @@ export default function App({ store: injectedStore }) {
     URL.revokeObjectURL(url);
   };
 
+  const openProject = (id) => { setOpenProjectId(id); setTab("projects"); };
+
   const importBackup = (file) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -152,9 +159,15 @@ export default function App({ store: injectedStore }) {
           <span className="mark">Meter</span>
           {project
             ? <button className="linkbtn" onClick={() => setOpenProjectId(null)}>← All projects</button>
-            : <span className="eyebrow">
-                {state.projects.length} project{state.projects.length === 1 ? "" : "s"}
-              </span>}
+            : <nav className="tabs" role="tablist" aria-label="Views">
+                {[["overview", "Overview"], ["projects", "Projects"]].map(([key, label]) => (
+                  <button key={key} role="tab" aria-selected={tab === key}
+                          className={"tab" + (tab === key ? " on" : "")}
+                          onClick={() => setTab(key)}>
+                    {label}
+                  </button>
+                ))}
+              </nav>}
         </div>
 
         {store.volatile && (
@@ -238,6 +251,15 @@ export default function App({ store: injectedStore }) {
               setOpenProjectId(null);
               flash("Project removed.", "Undo", () => commit(() => snapshot));
             }}
+          />
+        ) : tab === "overview" ? (
+          <DashboardView
+            projects={state.projects}
+            /* Both kinds: the dashboard reports idle time beside billed, and
+               `performanceIn` is what keeps the two apart. */
+            sessions={liveSessions(state.sessions)}
+            now={now}
+            onOpenProject={openProject}
           />
         ) : (
           <ProjectsView

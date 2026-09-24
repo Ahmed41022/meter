@@ -18,7 +18,7 @@ export const CSS = `
 }
 .mtr *{box-sizing:border-box;}
 .mtr :focus-visible{outline:2px solid var(--jade); outline-offset:2px;}
-.wrap{max-width:660px;margin:0 auto;}
+.wrap{max-width:720px;margin:0 auto;}
 .eyebrow{font-weight:600;text-transform:uppercase;letter-spacing:.1em;
   font-size:10.5px;color:var(--muted);}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums;}
@@ -238,6 +238,118 @@ export const CSS = `
 .grand-amt{font-family:var(--mono);font-size:clamp(32px,8.5vw,46px);color:var(--ink);
   font-variant-numeric:tabular-nums;line-height:1.05;margin-top:8px;letter-spacing:-.035em;}
 .err{color:var(--flag);font-size:12.5px;margin-top:8px;}
+
+/* ── tabs + reporting ─────────────────────────────────────────────────── */
+.tabs{display:flex;gap:4px;background:var(--line-2);padding:3px;border-radius:10px;}
+.tab{font-family:inherit;font-weight:600;font-size:13px;padding:8px 15px;border:0;
+  border-radius:8px;background:none;color:var(--muted);cursor:pointer;
+  transition:background .15s,color .15s;}
+.tab:hover{color:var(--ink-2);}
+.tab.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
+
+.dash-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:24px;flex-wrap:wrap;}
+.segmented{display:flex;gap:3px;background:var(--line-2);padding:3px;border-radius:9px;}
+.seg{font-family:inherit;font-weight:600;font-size:12.5px;padding:7px 14px;border:0;
+  border-radius:7px;background:none;color:var(--muted);cursor:pointer;}
+.seg:hover{color:var(--ink-2);}
+.seg.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
+.stepper{display:flex;gap:4px;}
+.step{font-family:inherit;font-size:17px;line-height:1;width:34px;height:34px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink-2);
+  border-radius:8px;cursor:pointer;}
+.step:hover:not(:disabled){border-color:#CBD6CE;color:var(--jade);}
+.step:disabled{opacity:.35;cursor:not-allowed;}
+
+.grand-alt{font-family:var(--mono);font-size:19px;color:var(--muted);
+  font-variant-numeric:tabular-nums;margin-top:5px;letter-spacing:-.02em;}
+.dash-sub{margin-top:11px;font-size:12.5px;color:var(--muted);display:flex;
+  align-items:center;gap:7px;flex-wrap:wrap;}
+
+/* Deltas read as text, not as a coloured chip — the figure is the point. */
+.delta{font-family:var(--mono);font-size:12.5px;font-weight:500;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+.delta.up{color:var(--jade);}
+.delta.down{color:var(--flag);}
+.delta.flat,.delta.none{color:var(--muted);}
+.delta-vs{color:var(--muted);font-weight:400;}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:10px;}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 17px;}
+/* Proportional figures: tabular-nums makes a display-size number look loose. */
+.tile-val{font-size:25px;font-weight:600;letter-spacing:-.03em;margin-top:9px;
+  line-height:1.1;color:var(--ink);}
+.tile-sub{margin-top:7px;font-size:12px;color:var(--muted);}
+
+/* ── trend columns ───────────────────────────────────────────────────── */
+.trend-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  margin-bottom:16px;}
+/* Height covers the plot only; the axis band sits below it in normal flow, so
+   the labels can never be clipped by a fixed container height. */
+.trend-plot{display:flex;align-items:flex-end;gap:2px;height:132px;
+  border-bottom:1px solid var(--line);}
+.tcol{flex:1 1 0;min-width:0;height:100%;display:flex;align-items:flex-end;
+  justify-content:center;position:relative;cursor:default;}
+.tbar{width:100%;max-width:24px;display:flex;flex-direction:column;
+  justify-content:flex-end;height:100%;}
+.tseg{border-radius:0;}
+.tseg.billed{background:var(--jade);border-radius:4px 4px 0 0;min-height:2px;}
+/* When idle stacks on top, the rounded data-end belongs to the idle segment and
+   the 2px surface gap separates the two fills. */
+.tseg.billed.under{border-radius:0;}
+.tseg.idle{background:var(--amber);border-radius:4px 4px 0 0;min-height:2px;}
+.tseg.idle.stacked{margin-bottom:2px;}
+.tcol:hover .tbar,.tcol:focus-visible .tbar{filter:brightness(1.08);}
+
+.trend-axis{display:flex;gap:2px;margin-top:8px;}
+.tlab{flex:1 1 0;min-width:0;text-align:center;font-family:var(--mono);
+  font-size:10px;color:var(--muted);white-space:nowrap;}
+
+.ttip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:var(--ink);color:#F1F3EF;border-radius:9px;padding:9px 11px;
+  font-size:11.5px;line-height:1.55;white-space:nowrap;z-index:20;
+  display:none;flex-direction:column;box-shadow:0 8px 22px rgba(16,22,19,.22);}
+.ttip strong{font-weight:600;font-size:11px;letter-spacing:.02em;}
+.ttip-idle{color:#E8C98A;}
+.tcol:hover .ttip,.tcol:focus-within .ttip{display:flex;}
+/* The first and last tooltips would otherwise spill off the panel. */
+.tcol:first-child .ttip{left:0;transform:none;}
+.tcol:last-child .ttip{left:auto;right:0;transform:none;}
+
+.legend{display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;}
+.util-note{margin-top:9px;font-size:12px;color:var(--muted);}
+
+/* ── per-project rows ────────────────────────────────────────────────── */
+.prow{display:block;width:100%;text-align:left;background:none;border:0;
+  font-family:inherit;color:inherit;cursor:pointer;padding:15px 0;
+  border-bottom:1px solid var(--line-2);}
+.prow:first-child{padding-top:0;}
+.prow:last-child{border-bottom:0;padding-bottom:0;}
+.prow-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+.prow-name{font-weight:600;font-size:14.5px;}
+.prow:hover .prow-name{color:var(--jade);}
+.prow-amt{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;}
+.prow-bar{display:flex;gap:2px;height:6px;margin-top:10px;border-radius:999px;
+  background:var(--line-2);overflow:hidden;}
+.prow-billed{background:var(--jade);border-radius:999px;}
+.prow-idle{background:var(--amber);border-radius:999px;}
+.prow-meta{display:block;margin-top:8px;font-family:var(--mono);font-size:11.5px;
+  color:var(--muted);}
+
+@media (max-width:420px){
+  .tiles{grid-template-columns:repeat(2,1fr);}
+  .delta-vs{display:none;}
+}
+
+/* Off the clock: a third, deliberately quiet register. Slate rather than a
+   fourth accent — this time is context, not a series competing with the two
+   that carry money. */
+.prow-off{background:var(--muted);border-radius:999px;}
+.prow.off .prow-amt{font-family:var(--mono);color:var(--ink-2);}
+.card.off{background:var(--raise);}
+.card.off .card-amt{color:var(--ink-2);}
+.card.off .card-meta{font-style:normal;}
+.card.off .dot{background:var(--muted);}
 
 @media (prefers-reduced-motion: reduce){
   .mtr *{animation:none !important;transition:none !important;}
