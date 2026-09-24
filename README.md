@@ -114,9 +114,21 @@ What you mean to get done, beside what it actually took.
 
 Each project carries a list — **Objectives** on a work project, **To-do** off the clock. An item can be linked to a task, and then the row reports **est 2h · spent 3h 10m · 150% of estimate**. That pairing is the reason this lives in a timer rather than a to-do app: a checklist can tell you something is finished, and only this can tell you it took half again as long as you thought.
 
+**edit** on an objective changes its text, its estimate and what it tracks under. Linking is editable rather than fixed at creation because the usual order is backwards: you write the objective first and only create the task once you actually start timing it. Link it later and the row immediately reports the hours already on that task.
+
 Objectives are their own records rather than a flag on a task, because the two answer different questions. A task is "which bucket does this time go in" and only exists once there is time to file; an objective is "I intend to do this", which is true before a second has been tracked and sometimes forever ("email the client back"). Deleting a task unfiles its objectives rather than destroying them — the intent outlives the bucket, exactly as a session's hours do.
 
 Star a few as **today** and they gather at the top of the Overview, work and life alike. Today is stored as a local calendar day, not a boolean: a flag would still be set tomorrow morning and would need a nightly job to clear it, which is the same accumulate-versus-derive mistake the timer itself avoids. Ticking an item drops it off today's list, because what is left is the point.
+
+---
+
+## Adding time you didn’t track
+
+**add time** beside the ledger records a block the meter never watched — for the hours you worked and forgot to start it. It previews the duration and the money before committing, takes the rate the project charges now (there is no record of what it charged then; a task rate can still correct it), and leaves a running meter alone: logging Tuesday afternoon is no reason to stop the clock ticking today.
+
+Entries made this way are marked **Added** in the ledger. A block you typed in is different evidence from one the clock measured, and the app rests on being able to tell.
+
+It also checks the window against every other record, on every project. Starting a session closes any other open one precisely because you cannot be in two places at once — but a block entered after the fact can break that rule in a way the timer never could, and two records over the same hour count it twice in both the hours and the money. An overlap is named, listed, and needs an explicit *add it anyway* rather than being silently accepted or flatly refused.
 
 ---
 
@@ -217,6 +229,9 @@ Cases worth knowing about:
 - An objective linked to a task reports hours spent against hours estimated; one with no link says so instead of implying zero.
 - Deleting a task unfiles its objectives and keeps them.
 - Today's focus is a calendar day, so it expires by itself and gathers work and life picks together.
+- An objective can be linked to a task after it was written, and reports that task's hours the moment it is.
+- A block entered by hand is marked as added, snapshots the current rate, and does not stop a meter that is running.
+- Overlapping time is found across every project, ignores blocks that merely meet end to end, skips the gap inside a paused session, and needs explicit confirmation before it is recorded.
 - Idle time never reaches an earnings total, a goal, or the cross-project headline.
 - Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
 - A session saved before idle tracking existed still counts as billed.
@@ -231,11 +246,11 @@ Everything lives in browser storage under `meter:v1`, as:
 Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal, offClock? }
 Objective  { id, projectId, text, done, doneAt, createdAt, focusedOn, estimateMs, taskId, deletedAt }
 Project  { ..., tasks: [{ id, label, createdAt, rate }] }
-Session  { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original? }
+Session    { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original?, manual? }
 Segment  { startedAt, endedAt, lastTick }
 ```
 
-`objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
+`manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
 
 Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
 
@@ -245,7 +260,6 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 
 - **Corrections replace, they don't accumulate.** `original` holds what the meter recorded, and that's it — there's no log of each successive edit or when. Enough to prove a figure was adjusted; not a full audit trail.
 - **No re-filing or repricing history.** A session doesn't record that it was moved between tasks, and a task doesn't record that its rate changed or when.
-- **No manual sessions.** Every session has to start from the timer. If you worked without starting it, there's nothing to correct — you'd have to run the meter briefly and then edit its times.
 - **No archiving.** A task you've finished with stays in the start prompt's dropdown forever. Delete is the only way out, and that unfiles its sessions.
 - **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.

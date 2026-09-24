@@ -1844,3 +1844,269 @@ describe("objectives", () => {
     expect(d.querySelector(".card-meta").textContent).toMatch(/1 to do/);
   }, 20_000);
 });
+
+describe("adding time you didn't track", () => {
+  const HOUR = 3_600_000;
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const seed = (sessions = []) => ({
+    projects: [{
+      id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(30),
+      sessionGoal: null, overallGoal: null,
+      tasks: [{ id: "t1", label: "Task 1", createdAt: dayStart(10), rate: null }],
+    }],
+    sessions,
+  });
+  const block = (id, from, to) => ({
+    id, projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: from, closedAt: to, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: to }],
+  });
+
+  const openForm = async (sessions = []) => {
+    const dom = await boot(seed(sessions));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    btn(d, /add time/i).click();
+    await wait(200);
+    return { dom, d };
+  };
+
+  const setWindow = (dom, d, from, to) => {
+    const [start, end] = d.querySelectorAll('input[type="datetime-local"]');
+    setValue(dom.window, start, stamp(from));
+    setValue(dom.window, end, stamp(to));
+  };
+
+  it("records a block that the meter never watched", async () => {
+    const { dom, d } = await openForm();
+    setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR);
+    await wait(200);
+    expect(d.querySelector(".preview-now").textContent).toMatch(/3h 00m/);
+    expect(d.querySelector(".preview-now").textContent).toMatch(/300\.00/);
+
+    btn(d, /^Add time$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions).toHaveLength(1);
+    expect(saved.sessions[0]).toMatchObject({ manual: true, rate: 100, kind: "billed" });
+    expect(saved.sessions[0].closedAt).toBe(dayStart(1) + 12 * HOUR);
+  }, 25_000);
+
+  it("marks it in the ledger as added rather than measured", async () => {
+    // A block you typed is different evidence from one the clock watched.
+    const { dom, d } = await openForm();
+    setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR);
+    await wait(200);
+    btn(d, /^Add time$/).click();
+    await wait(300);
+    expect([...d.querySelectorAll(".edited")].map((e) => e.textContent)).toContain("Added");
+  }, 25_000);
+
+  it("does not stop a meter that is running now", async () => {
+    const now = Date.now();
+    const dom = await boot(seed([{
+      id: "live", projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+      createdAt: now - HOUR, closedAt: null, deletedAt: null,
+      segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now }],
+    }]));
+    const d = dom.window.document;
+    btn(d, /This tab only/i).click();
+    await wait(200);
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    btn(d, /add time/i).click();
+    await wait(200);
+    // a window well clear of the running session
+    setWindow(dom, d, dayStart(3) + 9 * HOUR, dayStart(3) + 10 * HOUR);
+    await wait(200);
+    btn(d, /^Add time$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions.find((s) => s.id === "live").closedAt).toBeNull();
+    expect(d.querySelector(".state").textContent.trim()).toBe("Running");
+  }, 30_000);
+
+  it("refuses to double-count an hour until you say so explicitly", async () => {
+    // The meter cannot produce two overlapping records; this is the only way,
+    // so it is named rather than silently accepted.
+    const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
+    setWindow(dom, d, dayStart(1) + 11 * HOUR, dayStart(1) + 13 * HOUR);
+    await wait(200);
+
+    expect(d.querySelector(".clash")).not.toBeNull();
+    expect(d.querySelector(".clash").textContent).toMatch(/overlaps 1 record/);
+    expect(btn(d, /^Add time$/).disabled).toBe(true);
+
+    d.querySelector(".clash-ok input").click();
+    await wait(200);
+    expect(btn(d, /^Add time$/).disabled).toBe(false);
+    btn(d, /^Add time$/).click();
+    await wait(300);
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions).toHaveLength(2);
+  }, 25_000);
+
+  it("does not complain about blocks that merely meet end to end", async () => {
+    const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
+    setWindow(dom, d, dayStart(1) + 12 * HOUR, dayStart(1) + 13 * HOUR);
+    await wait(200);
+    expect(d.querySelector(".clash")).toBeNull();
+    expect(btn(d, /^Add time$/).disabled).toBe(false);
+  }, 25_000);
+
+  it("re-arms the warning when the window changes again", async () => {
+    const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
+    setWindow(dom, d, dayStart(1) + 10 * HOUR, dayStart(1) + 11 * HOUR);
+    await wait(200);
+    d.querySelector(".clash-ok input").click();
+    await wait(150);
+    expect(btn(d, /^Add time$/).disabled).toBe(false);
+
+    // moving it somewhere else should not inherit the previous confirmation
+    setWindow(dom, d, dayStart(1) + 10 * HOUR, dayStart(1) + 11.5 * HOUR);
+    await wait(200);
+    expect(btn(d, /^Add time$/).disabled).toBe(true);
+  }, 25_000);
+
+  it("files it under a task and counts it toward that task's total", async () => {
+    const { dom, d } = await openForm();
+    setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 11 * HOUR);
+    await wait(200);
+    const taskSelect = d.querySelector(".prompt select");
+    setValue(dom.window, taskSelect, "t1");
+    await wait(150);
+    btn(d, /^Add time$/).click();
+    await wait(300);
+
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0].taskId).toBe("t1");
+    expect(d.querySelector(".trow-time").textContent).toMatch(/2h 00m/);
+  }, 25_000);
+
+  it("can log idle time after the fact too", async () => {
+    const { dom, d } = await openForm();
+    setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR);
+    await wait(200);
+    const selects = [...d.querySelectorAll(".prompt select")];
+    setValue(dom.window, selects[selects.length - 1], "idle");
+    await wait(200);
+    // idle earns nothing, so the preview drops the money
+    expect(d.querySelector(".preview-now").textContent).not.toMatch(/\$/);
+    btn(d, /^Add time$/).click();
+    await wait(300);
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0].kind).toBe("idle");
+  }, 25_000);
+});
+
+describe("linking an objective to a task", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const seed = (tasks, objectives) => ({
+    projects: [{
+      id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(30),
+      sessionGoal: null, overallGoal: null, tasks,
+    }],
+    sessions: [{
+      id: "s1", projectId: "p1", kind: "billed", taskId: "t1", rate: 100, currency: "USD",
+      createdAt: dayStart(), closedAt: dayStart() + 2 * HOUR, deletedAt: null,
+      segments: [{ startedAt: dayStart(), endedAt: dayStart() + 2 * HOUR }],
+    }],
+    objectives,
+  });
+  const objective = (extra = {}) => ({
+    id: "o1", projectId: "p1", text: "Ship it", done: false, doneAt: null,
+    createdAt: dayStart(3), focusedOn: null, estimateMs: null, taskId: null,
+    deletedAt: null, ...extra,
+  });
+  const task = { id: "t1", label: "Task 1", createdAt: dayStart(10), rate: null };
+
+  const open = async (tasks, objectives) => {
+    const dom = await boot(seed(tasks, objectives));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    return { dom, d };
+  };
+
+  it("links an existing objective to a task after the fact", async () => {
+    // The usual order is backwards: you write the objective first and only
+    // create the task when you actually start timing it.
+    const { dom, d } = await open([task], [objective()]);
+    expect(d.querySelector(".obj-meta").textContent).toMatch(/not timed/);
+
+    btn(d, /^edit$/).click();
+    await wait(200);
+    const select = [...d.querySelectorAll(".obj-form select")][0];
+    setValue(dom.window, select, "t1");
+    await wait(150);
+    btn(d, /^Save$/).click();
+    await wait(250);
+
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0].taskId)
+      .toBe("t1");
+    // and it immediately reports the hours already on that task
+    expect(d.querySelector(".obj-meta").textContent).toMatch(/spent 2h 00m/);
+  }, 25_000);
+
+  it("adds an estimate later, turning a plain item into a measured one", async () => {
+    const { dom, d } = await open([task], [objective({ taskId: "t1" })]);
+    btn(d, /^edit$/).click();
+    await wait(200);
+    setValue(dom.window, d.querySelector('.obj-form input[type="number"]'), "1");
+    btn(d, /^Save$/).click();
+    await wait(250);
+
+    expect(d.querySelector(".obj-meta").textContent).toMatch(/est 1h 00m/);
+    expect(d.querySelector(".obj-verdict").textContent).toMatch(/200% of estimate/);
+  }, 25_000);
+
+  it("unlinks again without touching the recorded hours", async () => {
+    const { dom, d } = await open([task], [objective({ taskId: "t1" })]);
+    btn(d, /^edit$/).click();
+    await wait(200);
+    setValue(dom.window, [...d.querySelectorAll(".obj-form select")][0], "");
+    btn(d, /^Save$/).click();
+    await wait(250);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.objectives[0].taskId).toBeNull();
+    expect(saved.sessions[0].segments[0].endedAt).toBe(dayStart() + 2 * HOUR);
+  }, 25_000);
+
+  it("renames it without losing the link or the estimate", async () => {
+    const { dom, d } = await open([task], [objective({ taskId: "t1", estimateMs: HOUR })]);
+    btn(d, /^edit$/).click();
+    await wait(200);
+    setValue(dom.window, d.querySelector('.obj-form input[type="text"], .obj-form .inp'), "Ship it properly");
+    btn(d, /^Save$/).click();
+    await wait(250);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0];
+    expect(saved.text).toBe("Ship it properly");
+    expect(saved.taskId).toBe("t1");
+    expect(saved.estimateMs).toBe(HOUR);
+  }, 25_000);
+
+  it("explains the empty picker when the project has no tasks yet", async () => {
+    // Rather than hiding the field, so it is somewhere you have already looked.
+    const { d } = await open([], [objective()]);
+    btn(d, /^edit$/).click();
+    await wait(200);
+    expect(d.querySelector(".obj-form").textContent).toMatch(/No tasks on this project yet/);
+  }, 25_000);
+});

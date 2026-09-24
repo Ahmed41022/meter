@@ -1,3 +1,4 @@
+import { overlapMs } from "./time.js";
 import { isIdle } from "./sessions.js";
 import { isOffClock } from "./projects.js";
 import { earningsCents } from "./money.js";
@@ -22,16 +23,10 @@ export const PERIODS = ["day", "week", "month"];
 
 const MS_PER_HOUR = 3_600_000;
 
-/** Milliseconds of one segment that fall inside [from, to).
- *
- *  Clamped at 0, which covers both "no overlap at all" and a backwards clock
- *  jump — the same reason `segmentMs` clamps. Reporting must never be able to
- *  subtract time from a bucket. */
-export const segmentMsInWindow = (segment, from, to, now) => {
-  const start = segment.startedAt;
-  const end = segment.endedAt ?? now;
-  return Math.max(0, Math.min(end, to) - Math.max(start, from));
-};
+/** Milliseconds of one segment inside [from, to) — the primitive the whole
+ *  module rests on. Defined in time.js because the one-meter-at-a-time rule
+ *  needs the same arithmetic. */
+export const segmentMsInWindow = overlapMs;
 
 /** Milliseconds a session spent inside [from, to), summed over its segments.
  *  Paused gaps fall between segments, so they are never counted here either. */

@@ -6,7 +6,7 @@ import {
 import { isOffClock } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
 import { periodStart } from "../domain/goals.js";
-import { isIdle, KIND, utilisation, wasCorrected } from "../domain/sessions.js";
+import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
 } from "../domain/tasks.js";
@@ -21,6 +21,7 @@ const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
 import Settings from "./Settings.jsx";
 import Objectives from "./Objectives.jsx";
+import ManualSession from "./ManualSession.jsx";
 
 const MS_PER_HOUR = 3_600_000;
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -30,9 +31,12 @@ export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
-  objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective, onRemoveObjective,
+  objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
+  onRemoveObjective, onEditObjective,
+  findOverlaps, onAddManual,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addingTime, setAddingTime] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
   const [ledgerOpen, setLedgerOpen] = useState(null); // null = follow the default
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
@@ -247,7 +251,7 @@ export default function ProjectView({
         project={project} objectives={objectives} words={w}
         sessions={[...sessions, ...idleSessions]} now={now} today={today}
         onAdd={onAddObjective} onToggle={onToggleObjective}
-        onFocus={onFocusObjective} onRemove={onRemoveObjective} />
+        onFocus={onFocusObjective} onRemove={onRemoveObjective} onEdit={onEditObjective} />
 
       {hasTasks && (
         <div className="sec">
@@ -325,8 +329,21 @@ export default function ProjectView({
           <span className="eyebrow">
             {offClock ? "" : `${formatMoney(totalCents, project.currency)} · `}
             {totalMs ? formatShortDuration(totalMs) : "0m"}
+            {" · "}
+            <button className="linkish" onClick={() => setAddingTime((v) => !v)}>
+              {addingTime ? "cancel" : "add time"}
+            </button>
           </span>
         </div>
+
+        {addingTime && (
+          <div style={{ marginBottom: 14 }}>
+            <ManualSession
+              project={project} offClock={offClock} now={now} findOverlaps={findOverlaps}
+              onCancel={() => setAddingTime(false)}
+              onSave={(entry) => { onAddManual(entry); setAddingTime(false); }} />
+          </div>
+        )}
 
         {filterTask && (
           <button className="chip" style={{ marginBottom: 12 }} onClick={() => setFilterTask(null)}>
@@ -398,6 +415,7 @@ export default function ProjectView({
                   {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
                   {isIdle(s) && <span className="tag">Idle</span>}
                   {wasCorrected(s) && <span className="edited">Edited</span>}
+                  {wasManual(s) && <span className="edited">Added</span>}
                   {!isOpen(s) && (
                     <>
                       {" "}
