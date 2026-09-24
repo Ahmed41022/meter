@@ -7,6 +7,7 @@ import {
   PERIODS, activeBuckets, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, splitByClock, trendFor,
 } from "../domain/performance.js";
+import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { Delta, SplitBar, StatTile, TrendChart } from "./charts.jsx";
 
 const NAMES = { day: "Day", week: "Week", month: "Month" };
@@ -43,7 +44,9 @@ const rangeNote = (period, from, to) =>
  * each other — the daily bars sum to the weekly headline, and a session that ran
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
-export default function DashboardView({ projects, sessions, now, onOpenProject }) {
+export default function DashboardView({
+  projects, sessions, objectives = [], now, today, onOpenProject, onToggleObjective,
+}) {
   const [period, setPeriod] = useState("week");
   const [offset, setOffset] = useState(0);
 
@@ -82,6 +85,12 @@ export default function DashboardView({ projects, sessions, now, onOpenProject }
    *  row instead would break the moment a row below it had more idle time than
    *  the leader had billed — the rows are ordered by billed time, not total. */
   const widest = Math.max(...rows.map((r) => r.billedMs + r.idleMs), 1);
+
+  // Today's focus is the same whichever period is on screen: what is left to
+  // do now does not change because you are looking at last month.
+  const focus = todaysObjectives({ objectives }, today);
+  const finished = doneToday({ objectives }, today);
+  const nameOf = (id) => projects.find((p) => p.id === id)?.name ?? "";
 
   return (
     <>
@@ -122,6 +131,38 @@ export default function DashboardView({ projects, sessions, now, onOpenProject }
           )}
         </div>
       </div>
+
+      {(focus.length > 0 || finished.length > 0) && (
+        <div className="sec" style={{ marginTop: 0, marginBottom: 26 }}>
+          <div className="sec-head">
+            <span className="eyebrow">Today</span>
+            <span className="eyebrow">
+              {finished.length > 0 && `${finished.length} done`}
+              {finished.length > 0 && focus.length > 0 && " · "}
+              {focus.length > 0 && `${focus.length} left`}
+            </span>
+          </div>
+          <div className="panel">
+            {focus.length === 0 ? (
+              <div className="empty">Everything you picked for today is done.</div>
+            ) : focus.map((o) => (
+              <div className="obj" key={o.id}>
+                <label className="obj-check">
+                  <input type="checkbox" checked={false}
+                         onChange={() => onToggleObjective(o.id)}
+                         aria-label={`Mark ${o.text} done`} />
+                  <span className="obj-text">{o.text}</span>
+                </label>
+                <div className="obj-meta">
+                  <button className="linkish" onClick={() => onOpenProject(o.projectId)}>
+                    {nameOf(o.projectId)}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="tiles">
         <StatTile label="Billed" value={formatShortDuration(current.billedMs)}

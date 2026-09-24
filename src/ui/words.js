@@ -26,6 +26,10 @@ const WORK = {
   emptyLedger: "No sessions yet. Start the meter and this fills in.",
   emptyFiltered: "No sessions filed under this task yet.",
   assign: "Assign to task",
+  objectives: "Objectives",
+  newObjective: "New objective",
+  noObjectives: "Nothing planned yet. Add what you mean to get done.",
+  projectNoun: "project",
   deleteTaskWarning: (n) => `${n} session${n === 1 ? "" : "s"} will move to “No task”.`,
 };
 
@@ -44,6 +48,10 @@ const OFF_CLOCK = {
   emptyLedger: "Nothing tracked yet. Start the timer and this fills in.",
   emptyFiltered: "Nothing logged under this activity yet.",
   assign: "Move to activity",
+  objectives: "To-do",
+  newObjective: "New to-do",
+  noObjectives: "Nothing on the list. Add something you want to get to.",
+  projectNoun: "area",
   deleteTaskWarning: (n) => `${n} entr${n === 1 ? "y" : "ies"} will move to “Unsorted”.`,
 };
 

@@ -351,6 +351,29 @@ export const CSS = `
 .card.off .card-meta{font-style:normal;}
 .card.off .dot{background:var(--muted);}
 
+/* ── objectives ──────────────────────────────────────────────────────── */
+.obj{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:baseline;
+  padding:14px 0;border-bottom:1px solid var(--line-2);}
+.obj:first-child{padding-top:0;}
+.obj:last-of-type{border-bottom:0;}
+.obj-check{display:flex;align-items:flex-start;gap:11px;cursor:pointer;margin:0;min-width:0;}
+.obj-check input{width:17px;height:17px;flex:none;margin:1px 0 0;accent-color:var(--jade);
+  cursor:pointer;}
+.obj-text{font-size:14.5px;font-weight:500;line-height:1.45;}
+/* Struck through and faded, so finished work stays visible as a record of the
+   day without competing with what is still outstanding. */
+.obj.done .obj-text{text-decoration:line-through;color:var(--muted);font-weight:400;}
+.obj-meta{grid-column:1;display:flex;gap:12px;flex-wrap:wrap;margin-left:28px;
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+.obj-untimed{opacity:.75;}
+.obj-verdict.over{color:var(--flag);}
+.obj-verdict.under,.obj-verdict.on{color:var(--jade);}
+.obj-actions{grid-row:1;grid-column:2;display:flex;align-items:center;gap:10px;}
+.obj-actions .linkish{font-size:11.5px;}
+.obj-actions .linkish[aria-pressed="true"]{color:var(--jade);font-weight:700;}
+.obj-form{padding-top:16px;border-top:1px solid var(--line-2);margin-top:4px;}
+.obj-add{margin-top:14px;font-size:13px;}
+
 @media (prefers-reduced-motion: reduce){
   .mtr *{animation:none !important;transition:none !important;}
 }

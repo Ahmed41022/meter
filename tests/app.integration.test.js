@@ -62,8 +62,8 @@ const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test(b.t
  * already showing, or when a project is open and the tabs are replaced by the
  * back link.
  */
-const toProjects = async (d) => {
-  const tab = [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Projects");
+const toProjects = async (d, name = "Work") => {
+  const tab = [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === name);
   if (tab && tab.getAttribute("aria-selected") !== "true") {
     tab.click();
     await wait(150);
@@ -1174,6 +1174,9 @@ describe("the overall view", () => {
     expect(overview.getAttribute("aria-selected")).toBe("true");
     expect([...d.querySelectorAll(".segmented .seg")].map((s) => s.textContent))
       .toEqual(["Day", "Week", "Month"]);
+    // Work and Life are places of their own, not sections of one list.
+    expect([...d.querySelectorAll(".tabs [role=tab]")].map((t) => t.textContent))
+      .toEqual(["Overview", "Work", "Life"]);
   });
 
   it("switches to the project list and back without losing either view", async () => {
@@ -1472,16 +1475,16 @@ describe("off the clock, in the real UI", () => {
     const { document: d } = dom.window;
     await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/);
-    // listed, but under its own heading rather than among the work projects
+    // Work lists only work; Life is a tab of its own.
+    expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent)).toEqual(["Acme"]);
+    await toProjects(d, "Life");
     expect(d.querySelector(".card.off .card-name").textContent).toContain("Life");
-    expect([...d.querySelectorAll(".card:not(.off) .card-name")].map((n) => n.textContent))
-      .toEqual(["Acme"]);
   }, 20_000);
 
   it("shows elapsed time rather than a meaningless zero on the meter face", async () => {
     const dom = await boot(seed(true));
     const { document: d } = dom.window;
-    await toProjects(d);
+    await toProjects(d, "Life");
     d.querySelector(".card.off").click();
     await wait(250);
 
@@ -1538,7 +1541,7 @@ describe("off-clock projects speak a different language", () => {
   const open = async (offClock) => {
     const dom = await boot(seed(offClock));
     const d = dom.window.document;
-    await toProjects(d);
+    await toProjects(d, offClock ? "Life" : "Work");
     d.querySelector(".card").click();
     await wait(250);
     return { dom, d };
@@ -1603,5 +1606,241 @@ describe("off-clock projects speak a different language", () => {
     const selects = [...d.querySelectorAll("select")];
     expect(selects.some((s) => [...s.options].some((o) => /Money earned/.test(o.textContent))))
       .toBe(false);
+  }, 20_000);
+});
+
+describe("Work and Life as separate tabs", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const project = (id, name, extra = {}) => ({
+    id, name, currentRate: 100, currency: "USD", createdAt: dayStart(30),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const seed = {
+    projects: [project("p1", "Acme"), project("p2", "Sleep", { offClock: true })],
+    sessions: [
+      { id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 100, currency: "USD",
+        createdAt: dayStart(), closedAt: dayStart() + HOUR, deletedAt: null,
+        segments: [{ startedAt: dayStart(), endedAt: dayStart() + HOUR }] },
+      { id: "s2", projectId: "p2", kind: "billed", taskId: null, rate: 0, currency: "USD",
+        createdAt: dayStart(), closedAt: dayStart() + 8 * HOUR, deletedAt: null,
+        segments: [{ startedAt: dayStart(), endedAt: dayStart() + 8 * HOUR }] },
+    ],
+  };
+
+  it("keeps each list to its own tab", async () => {
+    const { document: d } = (await boot(seed)).window;
+    await toProjects(d, "Work");
+    expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent)).toEqual(["Acme"]);
+    await toProjects(d, "Life");
+    expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent)).toEqual(["Sleep"]);
+  }, 20_000);
+
+  it("asks a different question on each: what it earned, and how long it took", async () => {
+    const { document: d } = (await boot(seed)).window;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".grand").textContent).toMatch(/Earned across everything/);
+    expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/);
+
+    await toProjects(d, "Life");
+    expect(d.querySelector(".grand").textContent).toMatch(/Tracked across everything/);
+    expect(d.querySelector(".grand-amt").textContent).toBe("8h 00m");
+  }, 20_000);
+
+  it("returns from a project to the tab it belongs to", async () => {
+    const { document: d } = (await boot(seed)).window;
+    await toProjects(d, "Life");
+    d.querySelector(".card").click();
+    await wait(250);
+    btn(d, /All projects/i).click();
+    await wait(250);
+    // back on Life, not thrown to Work
+    expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent)).toEqual(["Sleep"]);
+  }, 20_000);
+
+  it("adds a life area with no rate to invent", async () => {
+    // Demanding a rate for something that cannot earn is what produced 0.00001.
+    const dom = await boot(seed);
+    const d = dom.window.document;
+    await toProjects(d, "Life");
+    btn(d, /New area/i).click();
+    await wait(150);
+    expect(d.querySelectorAll("input[type=number]")).toHaveLength(0);
+
+    setValue(dom.window, d.querySelector(".panel input"), "Reading");
+    btn(d, /Add area/i).click();
+    await wait(250);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    const added = saved.projects.find((p) => p.name === "Reading");
+    expect(added.offClock).toBe(true);
+    // and it lands on Life, not among the work projects
+    expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent))
+      .toEqual(["Sleep", "Reading"]);
+  }, 20_000);
+});
+
+describe("objectives", () => {
+  const HOUR = 3_600_000;
+  const dayStart = (n = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n).getTime();
+  };
+  const todayKey = () => {
+    const d = new Date(); const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+  const objective = (id, projectId, text, extra = {}) => ({
+    id, projectId, text, done: false, doneAt: null, createdAt: dayStart(3),
+    focusedOn: null, estimateMs: null, taskId: null, deletedAt: null, ...extra,
+  });
+  const seed = (objectives = []) => ({
+    projects: [
+      { id: "p1", name: "Acme", currentRate: 100, currency: "USD", createdAt: dayStart(30),
+        sessionGoal: null, overallGoal: null,
+        tasks: [{ id: "t1", label: "Task 1", createdAt: dayStart(10), rate: null }] },
+      { id: "p2", name: "Sleep", currentRate: 0, currency: "USD", createdAt: dayStart(30),
+        offClock: true, sessionGoal: null, overallGoal: null, tasks: [] },
+    ],
+    sessions: [{
+      id: "s1", projectId: "p1", kind: "billed", taskId: "t1", rate: 100, currency: "USD",
+      createdAt: dayStart(), closedAt: dayStart() + 3 * HOUR, deletedAt: null,
+      segments: [{ startedAt: dayStart(), endedAt: dayStart() + 3 * HOUR }],
+    }],
+    objectives,
+  });
+  const openAcme = async (objectives) => {
+    const dom = await boot(seed(objectives));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    return { dom, d };
+  };
+
+  it("adds one and keeps it after a reload", async () => {
+    const { dom, d } = await openAcme([]);
+    btn(d, /New objective/i).click();
+    await wait(150);
+    setValue(dom.window, d.querySelector(".obj-form input"), "Finish the report");
+    btn(d, /^Add$/).click();
+    await wait(250);
+
+    expect(d.querySelector(".obj-text").textContent).toBe("Finish the report");
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.objectives).toHaveLength(1);
+    expect(saved.objectives[0]).toMatchObject({ text: "Finish the report", done: false });
+  }, 20_000);
+
+  it("reports what it actually took against what you estimated", async () => {
+    // The whole reason this lives in a timer: 3h against a 2h estimate.
+    const { d } = await openAcme([
+      objective("o1", "p1", "Ship it", { estimateMs: 2 * HOUR, taskId: "t1" }),
+    ]);
+    const meta = d.querySelector(".obj-meta").textContent;
+    expect(meta).toMatch(/est 2h 00m/);
+    expect(meta).toMatch(/spent 3h 00m/);
+    expect(d.querySelector(".obj-verdict").textContent).toMatch(/150% of estimate/);
+    expect(d.querySelector(".obj-verdict").className).toMatch(/over/);
+  }, 20_000);
+
+  it("says nothing about an objective it was never measuring", async () => {
+    const { d } = await openAcme([objective("o1", "p1", "Email the client")]);
+    expect(d.querySelector(".obj-meta").textContent).toMatch(/not timed/);
+    expect(d.querySelector(".obj-verdict")).toBeNull();
+  }, 20_000);
+
+  it("ticks one off and records when", async () => {
+    const { dom, d } = await openAcme([objective("o1", "p1", "Ship it")]);
+    d.querySelector(".obj-check input").click();
+    await wait(250);
+    expect(d.querySelector(".obj").className).toMatch(/done/);
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.objectives[0].done).toBe(true);
+    expect(saved.objectives[0].doneAt).toBeGreaterThan(0);
+  }, 20_000);
+
+  it("picks one for today and shows it on the Overview", async () => {
+    const { dom, d } = await openAcme([objective("o1", "p1", "Ship it")]);
+    btn(d, /^today$/).click();
+    await wait(250);
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0].focusedOn)
+      .toBe(todayKey());
+
+    btn(d, /All projects/i).click();
+    await wait(200);
+    [...d.querySelectorAll(".tabs [role=tab]")].find((t) => t.textContent === "Overview").click();
+    await wait(250);
+
+    const heads = [...d.querySelectorAll(".sec-head")].map((h) => h.textContent);
+    expect(heads.some((t) => /Today/.test(t))).toBe(true);
+    expect(d.querySelector(".obj-text").textContent).toBe("Ship it");
+  }, 25_000);
+
+  it("gathers today's picks from work and life alike", async () => {
+    const key = todayKey();
+    const dom = await boot(seed([
+      objective("o1", "p1", "Ship it", { focusedOn: key }),
+      objective("o2", "p2", "Bed by midnight", { focusedOn: key }),
+      objective("o3", "p1", "Not today"),
+    ]));
+    const d = dom.window.document;
+    await wait(150);
+    expect([...d.querySelectorAll(".obj-text")].map((n) => n.textContent))
+      .toEqual(["Ship it", "Bed by midnight"]);
+  }, 20_000);
+
+  it("drops an item off today once it is ticked, leaving what is left", async () => {
+    const dom = await boot(seed([
+      objective("o1", "p1", "Ship it", { focusedOn: todayKey() }),
+      objective("o2", "p1", "And this", { focusedOn: todayKey() }),
+    ]));
+    const d = dom.window.document;
+    await wait(150);
+    expect(d.querySelectorAll(".obj")).toHaveLength(2);
+    d.querySelector(".obj-check input").click();
+    await wait(250);
+    expect([...d.querySelectorAll(".obj-text")].map((n) => n.textContent)).toEqual(["And this"]);
+  }, 20_000);
+
+  it("calls it a to-do on something off the clock", async () => {
+    const dom = await boot(seed([objective("o1", "p2", "Bed by midnight")]));
+    const d = dom.window.document;
+    await toProjects(d, "Life");
+    d.querySelector(".card").click();
+    await wait(250);
+    const text = d.querySelector(".mtr").textContent;
+    expect(text).toMatch(/To-do/);
+    expect(text).not.toMatch(/Objectives/);
+  }, 20_000);
+
+  it("keeps an objective when its task is deleted, unfiled rather than lost", async () => {
+    const { dom, d } = await openAcme([
+      objective("o1", "p1", "Ship it", { taskId: "t1" }),
+    ]);
+    const editTask = [...d.querySelectorAll(".trow .linkish")].find((b) => /edit/.test(b.textContent));
+    editTask.click();
+    await wait(200);
+    btn(d, /^Delete$/).click();
+    await wait(200);
+    btn(d, /Yes, delete it/i).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.objectives[0].text).toBe("Ship it");
+    expect(saved.objectives[0].taskId).toBeNull();
+  }, 25_000);
+
+  it("counts what is left on the project card", async () => {
+    const dom = await boot(seed([
+      objective("o1", "p1", "One"),
+      objective("o2", "p1", "Two", { done: true, doneAt: Date.now() }),
+    ]));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".card-meta").textContent).toMatch(/1 to do/);
   }, 20_000);
 });
