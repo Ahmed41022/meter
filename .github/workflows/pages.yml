@@ -1,0 +1,61 @@
+# Publishes dist/web to GitHub Pages, so the app has a real https origin.
+#
+# A phone cannot use the single-file build: storage is blocked on file://, and
+# both a service worker and Google OAuth require a same-origin https host. This
+# is that host. Nothing here is served from anyone's own machine, so the site
+# stays up whether or not a PC is switched on.
+#
+# One manual step, once: Settings -> Pages -> Build and deployment -> Source =
+# GitHub Actions. Until that is set, this job fails with "Pages is not enabled".
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never two deploys at once, and never cancel one half-done: a partial deploy
+# would leave the site serving a mixture of two builds.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The tests drive the built file, so a broken app cannot reach the phone.
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/web
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
