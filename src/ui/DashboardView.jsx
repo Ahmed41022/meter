@@ -6,7 +6,7 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, revenueShare, streaks,
+  byCompany, effectiveRate, revenueShare, streaks, untimedShare,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -93,7 +93,8 @@ const targetsFor = (projects, work, now, rateOf) =>
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, objectives = [], now, today, onOpenProject, onToggleObjective,
+  projects, sessions, earnings = [], objectives = [], now, today,
+  onOpenProject, onToggleObjective,
 }) {
   const [period, setPeriod] = useState("week");
   const [offset, setOffset] = useState(0);
@@ -113,21 +114,24 @@ export default function DashboardView({
     // measured on the same clock but must never reach an earnings total, a
     // billable share, or the project breakdown.
     const { work, offClock } = splitByClock(projects, sessions);
+    // Off the clock cannot earn, so a bonus there would be a category error.
+    const offIds = new Set(offClockProjects(projects).map((p) => p.id));
+    const workEarnings = earnings.filter((e) => !offIds.has(e.projectId));
     return {
       from, to,
-      current: performanceIn(work, from, to, now, rateOf),
-      previous: performanceIn(work, before.from, before.to, now, rateOf),
+      current: performanceIn(work, from, to, now, rateOf, workEarnings),
+      previous: performanceIn(work, before.from, before.to, now, rateOf, workEarnings),
       trend: trendFor(period, work, now, offset, rateOf),
-      rows: byProject(workProjects(projects), work, from, to, now, rateOf),
+      rows: byProject(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
       targets: targetsFor(workProjects(projects), work, now, rateOf),
-      companies: byCompany(workProjects(projects), work, from, to, now, rateOf),
+      companies: byCompany(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       // A fixed rolling year, like Targets and for the same reason: it is
       // context for everything above it, not another reading of the period.
       calendar: { work: calendarFor(work, now), life: calendarFor(offClock, now) },
       hasOffClock: offClock.length > 0,
     };
-  }, [projects, sessions, now, period, offset, rateOf]);
+  }, [projects, sessions, earnings, now, period, offset, rateOf]);
 
   const { from, to, current, previous, trend, rows, offRows, targets, companies } = view;
   // A single named client is a label, not a breakdown — the By project panel
@@ -146,9 +150,16 @@ export default function DashboardView({
   const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   const earned = currenciesByValue(current.billedCents);
+  const pending = currenciesByValue(current.pendingCents).filter(([, c]) => c !== 0);
   const share = utilisation(current.billedMs, current.idleMs);
   const active = activeBuckets(trend);
   const lead = earned[0]?.[0] ?? projects[0]?.currency ?? "USD";
+  // What an hour came to, and what an hour of TIMED work came to. On work
+  // paid per accepted item those are different numbers, and quoting only the
+  // first one implies a clock measured money that no clock ever saw.
+  const untimed = untimedShare(current, lead);
+  const blendedRate = effectiveRate(current.billedCents[lead] ?? 0, current.billedMs);
+  const timedRate = effectiveRate(current.timedCents[lead] ?? 0, current.billedMs);
   const vs = PREVIOUS[period];
   /** Bars are scaled to the longest desk time on screen. Scaling to the first
    *  row instead would break the moment a row below it had more idle time than
@@ -199,6 +210,14 @@ export default function DashboardView({
                         label={vs} /></>
           )}
         </div>
+        {/* Money still waiting on someone else's decision. Below the headline
+            rather than inside it: the figure you glance at should be what has
+            actually landed, or a rejected week reads as a good one. */}
+        {pending.length > 0 && (
+          <div className="grand-pending">
+            + {pending.map(([cur, c]) => formatMoney(c, cur)).join(" · ")} pending
+          </div>
+        )}
       </div>
 
       {(focus.length > 0 || finished.length > 0) && (
@@ -270,6 +289,16 @@ export default function DashboardView({
                   sub={share === null ? "no time recorded" : "of time at the desk"} />
         <StatTile label={period === "day" ? "Active hours" : "Active days"}
                   value={active} sub={`of ${trend.length}`} />
+        {/* Both rates, because they answer different questions and only one of
+            them is about the clock. Where nothing untimed was earned they are
+            the same number, so the second line would be noise and is dropped. */}
+        {blendedRate !== null && (
+          <StatTile label="An hour came to"
+                    value={`${formatMoney(blendedRate, lead)}/hr`}
+                    sub={untimed > 0.005
+                      ? `${formatMoney(timedRate, lead)}/hr on timed work · ${Math.round(untimed * 100)}% earned no tracked time`
+                      : "across billed time"} />
+        )}
       </div>
 
       <div className="sec">
@@ -322,7 +351,11 @@ export default function DashboardView({
                         actually came to across every project and task rate. */}
                     {row.rateCents !== null
                       && ` · ${formatMoney(row.rateCents, row.currency)}/hr`}
+                    {row.timedRateCents !== null && row.rateCents !== row.timedRateCents
+                      && ` (${formatMoney(row.timedRateCents, row.currency)}/hr timed)`}
                     {share !== null && ` · ${Math.round(share * 100)}% of revenue`}
+                    {row.currency && (row.pendingCents[row.currency] ?? 0) !== 0
+                      && ` · ${formatMoney(row.pendingCents[row.currency], row.currency)} pending`}
                     {row.projects.length > 1 && ` · ${row.projects.length} projects`}
                   </span>
                 </div>
@@ -342,7 +375,7 @@ export default function DashboardView({
             <div className="empty">
               No project logged time in this period.
             </div>
-          ) : rows.map(({ project, billedMs, idleMs, billedCents }) => {
+          ) : rows.map(({ project, billedMs, idleMs, billedCents, pendingCents }) => {
             // One colour for every bar. These are projects, not an ordered
             // scale, so shading them by size would double-encode the length.
             const cents = billedCents[project.currency] ?? 0;
@@ -361,6 +394,10 @@ export default function DashboardView({
                 <span className="prow-meta">
                   {formatShortDuration(billedMs)} billed
                   {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
+                  {/* Otherwise a project whose money is all waiting on
+                      acceptance reads as having earned nothing. */}
+                  {(pendingCents[project.currency] ?? 0) !== 0
+                    && ` · ${formatMoney(pendingCents[project.currency], project.currency)} pending`}
                 </span>
               </button>
             );

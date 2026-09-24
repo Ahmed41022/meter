@@ -1,6 +1,7 @@
 import { overlapMs } from "./time.js";
 import { isIdle } from "./sessions.js";
 import { companyOf, isOffClock } from "./projects.js";
+import { earningsIn, isCancelled, isPending } from "./earnings.js";
 import { earningsCents } from "./money.js";
 import { periodBoundary } from "./goals.js";
 
@@ -92,21 +93,55 @@ export const bucketsFor = (period, now, offset = 0) => {
  * which rate applies to a session is the caller's question to answer, and a
  * task carrying an override answers it differently from the snapshot.
  */
-export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate) => {
+export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, earnings = []) => {
   const billedCents = {};
   const idleCents = {};
+  const pendingCents = {};
+  // The settled money that DID come from hours. Kept apart from `billedCents`
+  // so a rate can be quoted two ways without either one being a guess: money
+  // per hour across everything, and money per hour across the work that was
+  // actually timed. On a project paid per accepted item those are wildly
+  // different numbers, and only showing one of them misleads.
+  const timedCents = {};
   let billedMs = 0;
   let idleMs = 0;
 
   for (const session of sessions) {
+    // Cancelled work was done and then rejected. The hours happened, so they
+    // stay in the time figures; the money never arrived, so it is in none.
+    if (isCancelled(session)) continue;
     const ms = sessionMsInWindow(session, from, to, now);
     if (ms <= 0) continue;
     const idle = isIdle(session);
-    const into = idle ? idleCents : billedCents;
     if (idle) idleMs += ms; else billedMs += ms;
-    into[session.currency] = (into[session.currency] || 0) + earningsCents(rateOf(session), ms);
+    const cents = earningsCents(rateOf(session), ms);
+    if (idle) {
+      idleCents[session.currency] = (idleCents[session.currency] || 0) + cents;
+    } else if (isPending(session)) {
+      pendingCents[session.currency] = (pendingCents[session.currency] || 0) + cents;
+    } else {
+      billedCents[session.currency] = (billedCents[session.currency] || 0) + cents;
+      timedCents[session.currency] = (timedCents[session.currency] || 0) + cents;
+    }
   }
-  return { billedMs, idleMs, billedCents, idleCents };
+
+  // Money with no hours behind it: it reaches the totals and the rate, but it
+  // can never move a duration.
+  for (const earning of earningsIn(earnings, from, to)) {
+    if (isCancelled(earning)) continue;
+    const into = isPending(earning) ? pendingCents : billedCents;
+    into[earning.currency] = (into[earning.currency] || 0) + earning.cents;
+  }
+
+  return { billedMs, idleMs, billedCents, idleCents, pendingCents, timedCents };
+};
+
+/** The share of settled money that no clock ever measured. Null when there is
+ *  nothing earned to take a share of. */
+export const untimedShare = ({ billedCents, timedCents }, currency) => {
+  const total = billedCents[currency] ?? 0;
+  if (total <= 0) return null;
+  return (total - (timedCents[currency] ?? 0)) / total;
 };
 
 /** Currencies in a cents map, biggest first.
@@ -127,16 +162,21 @@ export const currenciesByValue = (cents) =>
 export const deltaRatio = (current, previous) =>
   previous > 0 ? (current - previous) / previous : null;
 
+const hasMoney = (row) =>
+  Object.values(row.billedCents).some((c) => c !== 0)
+  || Object.values(row.pendingCents).some((c) => c !== 0);
+
 /** Per-project totals for a window, busiest first. Projects with no time in
  *  the window are dropped — a page of zeroes buries the rows that matter. */
-export const byProject = (projects, sessions, from, to, now, rateOf) =>
+export const byProject = (projects, sessions, from, to, now, rateOf, earnings = []) =>
   projects
     .map((project) => ({
       project,
       ...performanceIn(
-        sessions.filter((s) => s.projectId === project.id), from, to, now, rateOf),
+        sessions.filter((s) => s.projectId === project.id), from, to, now, rateOf,
+        earnings.filter((e) => e.projectId === project.id)),
     }))
-    .filter((row) => row.billedMs > 0 || row.idleMs > 0)
+    .filter((row) => row.billedMs > 0 || row.idleMs > 0 || hasMoney(row))
     .sort((a, b) => b.billedMs - a.billedMs || b.idleMs - a.idleMs);
 
 /** Each bucket of a period with its totals attached, for the trend chart. The
@@ -298,19 +338,23 @@ export const effectiveRate = (cents, billedMs) =>
  * Off-clock projects have no client and must not be passed in — sleep is not
  * unassigned revenue.
  */
-export const byCompany = (projects, sessions, from, to, now, rateOf) => {
+export const byCompany = (projects, sessions, from, to, now, rateOf, earnings = []) => {
   const companyById = new Map(projects.map((p) => [p.id, companyOf(p) ?? ""]));
   const grouped = new Map();
+  // Seeded from the projects, not from the sessions: a project whose whole
+  // income was paid per accepted item has money and no session at all, and
+  // grouping off the sessions alone would drop it from the breakdown.
+  for (const [, key] of companyById) if (!grouped.has(key)) grouped.set(key, []);
   for (const session of sessions) {
     if (!companyById.has(session.projectId)) continue;
-    const key = companyById.get(session.projectId);
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push(session);
+    grouped.get(companyById.get(session.projectId)).push(session);
   }
 
   return [...grouped.entries()]
     .map(([key, group]) => {
-      const totals = performanceIn(group, from, to, now, rateOf);
+      const mine = new Set(projects.filter((p) => (companyOf(p) ?? "") === key).map((p) => p.id));
+      const totals = performanceIn(group, from, to, now, rateOf,
+        earnings.filter((e) => mine.has(e.projectId)));
       const currency = soleCurrency(totals.billedCents);
       return {
         company: key || null,
@@ -320,9 +364,12 @@ export const byCompany = (projects, sessions, from, to, now, rateOf) => {
         // Null rather than a figure when the row spans currencies: there is no
         // single unit for "per hour" to be in.
         rateCents: currency ? effectiveRate(totals.billedCents[currency], totals.billedMs) : null,
+        // The same rate across only the money a clock actually measured. Equal
+        // to the one above wherever nothing untimed was earned.
+        timedRateCents: currency ? effectiveRate(totals.timedCents[currency] ?? 0, totals.billedMs) : null,
       };
     })
-    .filter((row) => row.billedMs > 0 || row.idleMs > 0)
+    .filter((row) => row.billedMs > 0 || row.idleMs > 0 || hasMoney(row))
     // Unassigned always sits last: it is a gap to fill, not a client to rank.
     .sort((a, b) => (a.company === null) - (b.company === null)
       || topCents(b.billedCents) - topCents(a.billedCents)
