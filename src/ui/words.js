@@ -56,3 +56,11 @@ const OFF_CLOCK = {
 };
 
 export const wordsFor = (offClock) => (offClock ? OFF_CLOCK : WORK);
+
+/** "today" / "yesterday" / "3 days ago" — nobody says "0 days ago". */
+export const daysWord = (days) =>
+  days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+
+/** How much work is at stake, as a thing rather than a number: "41 records",
+ *  and "1 record" rather than "1 records". */
+export const countWord = (n) => `${n} record${n === 1 ? "" : "s"}`;

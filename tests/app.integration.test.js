@@ -3110,3 +3110,86 @@ describe("all time on the overview", () => {
     expect(d.querySelector(".grand-amt").textContent).toBe("$9,750.00");
   }, 30_000);
 });
+
+describe("nudging the user to keep a copy they hold", () => {
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+  const daysAgo = (n) => Date.now() - n * DAY;
+  const project = (id, extra = {}) => ({
+    id, name: id, currentRate: 100, currency: "USD", createdAt: daysAgo(400),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const block = (id, back, extra = {}) => ({
+    id, projectId: "a", kind: "billed", taskId: null, rate: 100, currency: "USD",
+    createdAt: daysAgo(back), closedAt: daysAgo(back) + HOUR, deletedAt: null,
+    segments: [{ startedAt: daysAgo(back), endedAt: daysAgo(back) + HOUR }],
+    ...extra,
+  });
+  const open = async (seed) => {
+    const dom = await boot(seed);
+    await wait(200);
+    return { dom, d: dom.window.document };
+  };
+  const banner = (d) => [...d.querySelectorAll(".banner")]
+    .find((b) => /backed up/i.test(b.textContent));
+
+  it("asks for a backup once work exists and no file was ever made", async () => {
+    const { d } = await open({ projects: [project("a")], sessions: [block("s1", 3)] });
+    expect(banner(d)).toBeTruthy();
+    expect(banner(d).textContent).toMatch(/Never backed up/i);
+    expect(banner(d).textContent).toMatch(/1 record/);
+  }, 25_000);
+
+  it("says nothing at all on an empty ledger", async () => {
+    // A banner that cries wolf is one people learn to look past.
+    const { d } = await open({ projects: [project("a")], sessions: [] });
+    expect(banner(d)).toBeUndefined();
+  }, 25_000);
+
+  it("stays quiet while the existing file still holds everything", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", 40)],
+      lastBackupAt: daysAgo(30), // long ago, but nothing recorded since
+    });
+    expect(banner(d)).toBeUndefined();
+  }, 25_000);
+
+  it("asks again once new work has piled up on an old backup", async () => {
+    const { d } = await open({
+      projects: [project("a")],
+      sessions: [block("s1", 40), block("s2", 1)],
+      lastBackupAt: daysAgo(30),
+    });
+    expect(banner(d).textContent).toMatch(/Last backed up 30 days ago/i);
+  }, 25_000);
+
+  it("records the backup and drops the nudge once a file is produced", async () => {
+    const { dom, d } = await open({ projects: [project("a")], sessions: [block("s1", 3)] });
+    expect(banner(d)).toBeTruthy();
+    await toProjects(d, "Work");
+    // jsdom implements no blob URLs, so the download throws and the stamp never
+    // lands — which is the RIGHT behaviour (no file handed over, no backup
+    // recorded) but leaves the happy path untestable without this.
+    let handed = null;
+    dom.window.URL.createObjectURL = (blob) => { handed = blob; return "blob:x"; };
+    dom.window.URL.revokeObjectURL = () => {};
+    btn(d, /Export backup/i).click();
+    await wait(300);
+    expect(handed).not.toBeNull();
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(typeof saved.lastBackupAt).toBe("number");
+    // and the file itself does NOT claim to have been backed up already
+    expect(banner(d)).toBeUndefined();
+    expect(d.querySelector(".backup-note").textContent).toMatch(/Last backup today/i);
+  }, 30_000);
+
+  it("states the position even when nothing is overdue", async () => {
+    const { d } = await open({
+      projects: [project("a")], sessions: [block("s1", 40)], lastBackupAt: daysAgo(2),
+    });
+    await toProjects(d, "Work");
+    expect(d.querySelector(".backup-note").textContent).toMatch(/Last backup 2 days ago/i);
+  }, 25_000);
+});
