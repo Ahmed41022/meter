@@ -16,6 +16,7 @@ import {
   busiestStretch, byHourOfDay, byWeekday, shareOf, standsOut, timedOnly,
 } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
+import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
 // and the heading directly under it says "All time" in full.
@@ -131,7 +132,14 @@ export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], now, today,
   onOpenProject, onToggleObjective,
 }) {
-  const [period, setPeriod] = useState("week");
+  // Remembered, because reopening the app to a span you did not choose is a
+  // small daily annoyance and the answer is one string. Validated on read: a
+  // stored value from a future version, or a hand-edited one, must not leave
+  // the Overview showing nothing.
+  const [period, setPeriod] = useState(() => {
+    const saved = loadSetting(SETTING.PERIOD, "week");
+    return PERIODS.includes(saved) ? saved : "week";
+  });
   const [offset, setOffset] = useState(0);
   const [heatScale, setHeatScale] = useState("work");
   const [heatBack, setHeatBack] = useState(0);
@@ -256,7 +264,11 @@ export default function DashboardView({
           {PERIODS.map((p) => (
             <button key={p} role="tab" aria-selected={period === p}
                     className={"seg" + (period === p ? " on" : "")}
-                    onClick={() => { setPeriod(p); setOffset(0); }}>
+                    onClick={() => {
+                      setPeriod(p);
+                      setOffset(0);
+                      saveSetting(SETTING.PERIOD, p);
+                    }}>
               {NAMES[p]}
             </button>
           ))}

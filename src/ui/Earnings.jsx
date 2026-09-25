@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
 import {
-  EARNING, PAY, isCancelled, isPending, isPerTask, perTask, perTaskCents,
+  EARNING, PAY, isCancelled, isPending, isPieceOnly, perTask, perTaskCents,
 } from "../domain/earnings.js";
 
 const KINDS = [
@@ -68,7 +68,7 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
         {/* On a project paid per accepted item, ALL of the money arrives this
             way, so "earned without the clock" describes nothing and reads too
             close to the app's own "off the clock". */}
-        <span className="eyebrow">{isPerTask(project) ? "Accepted work" : "Earned without the clock"}</span>
+        <span className="eyebrow">{isPieceOnly(project) ? "Accepted work" : "Earned without the clock"}</span>
         <span className="eyebrow">
           {formatMoney(settled, project.currency)}
           {pending !== 0 && ` · ${formatMoney(pending, project.currency)} pending`}

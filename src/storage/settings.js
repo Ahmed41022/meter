@@ -17,6 +17,9 @@ export const SETTING = {
    *  theme suits a phone at night and a desktop at noon are different
    *  questions, and syncing the answer would make one of them wrong. */
   THEME: "meter:theme",
+  /** Which span the Overview opens on. A view preference, not work — it does
+   *  not belong in the ledger and does not want merging. */
+  PERIOD: "meter:period",
 };
 
 export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };
