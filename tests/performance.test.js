@@ -592,11 +592,11 @@ describe("grouping by who the work was for", () => {
   });
 
   it("adds up every project belonging to one company", () => {
-    const projects = [project("a", "Outlier"), project("b", "Outlier"), project("c", "Aether", 50)];
+    const projects = [project("a", "Northwind"), project("b", "Northwind"), project("c", "Lumen", 50)];
     const rows = byCompany(projects, [
       sess("s1", "a", 2), sess("s2", "b", 3), sess("s3", "c", 4, 50),
     ], from, to, now);
-    expect(rows.map((r) => r.company)).toEqual(["Outlier", "Aether"]);
+    expect(rows.map((r) => r.company)).toEqual(["Northwind", "Lumen"]);
     expect(rows[0].billedMs).toBe(5 * HOUR);
     expect(rows[0].billedCents.USD).toBe(500_00);
     expect(rows[0].projects.map((p) => p.id)).toEqual(["a", "b"]);
@@ -606,9 +606,9 @@ describe("grouping by who the work was for", () => {
     // Dropping it would make the shares add up to less than the whole while
     // looking like they added up to all of it.
     const rows = byCompany(
-      [project("a", "Outlier"), project("b", null)],
+      [project("a", "Northwind"), project("b", null)],
       [sess("s1", "a", 1), sess("s2", "b", 9)], from, to, now);
-    expect(rows.map((r) => r.company)).toEqual(["Outlier", null]);
+    expect(rows.map((r) => r.company)).toEqual(["Northwind", null]);
     expect(rows[1].billedMs).toBe(9 * HOUR);
   });
 
@@ -621,20 +621,20 @@ describe("grouping by who the work was for", () => {
 
   it("drops a company with no time in the window", () => {
     const rows = byCompany(
-      [project("a", "Outlier"), project("b", "Dormant")], [sess("s1", "a", 1)], from, to, now);
-    expect(rows.map((r) => r.company)).toEqual(["Outlier"]);
+      [project("a", "Northwind"), project("b", "Dormant")], [sess("s1", "a", 1)], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Northwind"]);
   });
 
   it("ignores sessions whose project was not passed in", () => {
     // Off-clock work has no client, and sleep is not unassigned revenue.
-    const rows = byCompany([project("a", "Outlier")],
+    const rows = byCompany([project("a", "Northwind")],
       [sess("s1", "a", 2), sess("s2", "sleep", 8)], from, to, now);
     expect(rows).toHaveLength(1);
     expect(rows[0].billedMs).toBe(2 * HOUR);
   });
 
   it("keeps idle time out of the money but not out of the row", () => {
-    const rows = byCompany([project("a", "Outlier")],
+    const rows = byCompany([project("a", "Northwind")],
       [sess("s1", "a", 2), sess("s2", "a", 1, 100, "USD", KIND.IDLE)], from, to, now);
     expect(rows[0]).toMatchObject({ billedMs: 2 * HOUR, idleMs: HOUR });
     expect(rows[0].billedCents.USD).toBe(200_00);
@@ -889,10 +889,10 @@ describe("which work was actually worth the time", () => {
   it("holds the floor high enough that one untimed payment cannot top the list", () => {
     // Taken from the real ledger: 1h40m of work that also collected $49.93 of
     // money no clock measured reads as $106/hr and outranks everything.
-    const rows = [row("hopper", 1.67, 176.30), row("hyperion", 291, 16_848)];
-    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["hyperion"]);
+    const rows = [row("beacon", 1.67, 176.30), row("orion", 291, 16_848)];
+    expect(worthPerHour(rows, "USD").map((r) => r.project.name)).toEqual(["orion"]);
     // and it is a floor on TIME, so a short row still counts if asked for
-    expect(worthPerHour(rows, "USD", HOUR).map((r) => r.project.name)[0]).toBe("hopper");
+    expect(worthPerHour(rows, "USD", HOUR).map((r) => r.project.name)[0]).toBe("beacon");
   });
 
   it("leaves out work that earned nothing, which has no rate to rank", () => {
@@ -901,9 +901,9 @@ describe("which work was actually worth the time", () => {
   });
 
   it("names the largest share of the money and how large it is", () => {
-    const rows = [row("hyperion", 291, 16_849), row("a", 40, 3_487), row("b", 23, 2_164)];
+    const rows = [row("orion", 291, 16_849), row("a", 40, 3_487), row("b", 23, 2_164)];
     const c = concentration(rows, "USD");
-    expect(c.row.project.name).toBe("hyperion");
+    expect(c.row.project.name).toBe("orion");
     expect(Math.round(c.share * 100)).toBe(75);
   });
 

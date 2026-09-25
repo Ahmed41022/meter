@@ -27,7 +27,7 @@ const col = (csv, name) => {
 
 describe("the ledger as a spreadsheet", () => {
   const state = {
-    projects: [project("p1", { name: "hyperion", company: "Outlier" })],
+    projects: [project("p1", { name: "orion", company: "Northwind" })],
     sessions: [session("s1", 10, 2)],
     earnings: [],
   };
@@ -39,8 +39,8 @@ describe("the ledger as a spreadsheet", () => {
   it("writes one row per session, with the money it earned", () => {
     const c = cells(lines(toCsv(state, NOW))[1]);
     expect(c[CSV_COLUMNS.indexOf("Date")]).toBe("2026-05-10");
-    expect(c[CSV_COLUMNS.indexOf("Project")]).toBe("hyperion");
-    expect(c[CSV_COLUMNS.indexOf("Company")]).toBe("Outlier");
+    expect(c[CSV_COLUMNS.indexOf("Project")]).toBe("orion");
+    expect(c[CSV_COLUMNS.indexOf("Company")]).toBe("Northwind");
     expect(c[CSV_COLUMNS.indexOf("Hours")]).toBe("2.000");
     expect(c[CSV_COLUMNS.indexOf("Amount")]).toBe("40.00");
   });
