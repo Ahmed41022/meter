@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "icons": "python3 scripts/make-icons.py",
     "desktop": "npm run build && node desktop/package.mjs",
-    "check": "npm run lint && npm run test && npm run build"
+    "check": "npm run lint && npm run build && npm run test"
   },
   "dependencies": {
     "react": "^18.3.1",
