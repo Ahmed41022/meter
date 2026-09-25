@@ -30,7 +30,7 @@ export const taskLabel = (project, taskId) =>
 /** Adds a task unless one with the same id or label already exists.
  *  Callers generate the id, so they can reuse an existing task's id when the
  *  label already matches — see resolveTaskId. */
-export const addTask = (state, projectId, { id, label }, now) => {
+export const addTask = (state, projectId, { id, label, rate, factor, price }, now) => {
   const clean = normaliseLabel(label);
   if (!clean) return state;
   return {
@@ -39,9 +39,50 @@ export const addTask = (state, projectId, { id, label }, now) => {
       if (p.id !== projectId) return p;
       const existing = tasksFor(p);
       if (existing.some((t) => t.id === id || key(t.label) === key(clean))) return p;
-      return { ...p, tasks: [...existing, { id, label: clean, createdAt: now }] };
+      // Only fields that were actually given are written. An absent rate means
+      // "as recorded" and an absent price means "the project's" — writing null
+      // would say the same thing more loudly, and writing 0 would lie.
+      const task = { id, label: clean, createdAt: now };
+      if (positive(rate) !== null) task.rate = positive(rate);
+      if (positive(factor) !== null) task.factor = positive(factor);
+      if (positive(price) !== null) task.price = positive(price);
+      return { ...p, tasks: [...existing, task] };
     }),
   };
+};
+
+/** A number that can stand as a rate, a factor or a price, or null. */
+const positive = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/**
+ * What the user typed into a rate box, as either an absolute rate or a
+ * proportion of whatever the session recorded.
+ *
+ * "30%" is not a shorthand for a number — it is a different kind of answer.
+ * Assessments and overtime on some platforms pay a fixed share of the base
+ * rate, so writing the arithmetic down as 4.92 makes it stale the moment the
+ * base moves, and loses the one thing worth keeping: the rule. A factor keeps
+ * tracking the base across every era of a project's history.
+ */
+export const parseTaskRate = (input) => {
+  const text = String(input ?? "").trim();
+  if (!text) return { rate: null, factor: null };
+  if (text.endsWith("%")) {
+    const pct = positive(text.slice(0, -1).trim());
+    return { rate: null, factor: pct === null ? null : pct / 100 };
+  }
+  return { rate: positive(text), factor: null };
+};
+
+/** How a task's rate should be shown in a box the user can edit again. */
+export const taskRateInput = (task) => {
+  if (task?.rate != null) return String(task.rate);
+  if (task?.factor != null) return `${+(task.factor * 100).toFixed(4)}%`;
+  return "";
 };
 
 /**
@@ -54,18 +95,49 @@ export const addTask = (state, projectId, { id, label }, now) => {
  * so a whole task can be repriced after the fact without touching the one
  * thing that is a measurement: the hours.
  */
-export const rateFor = (project, session) =>
-  findTask(project, session.taskId)?.rate ?? session.rate;
+export const rateFor = (project, session) => {
+  const task = findTask(project, session.taskId);
+  if (task?.rate != null) return task.rate;
+  // A proportion applies to the SNAPSHOT, never to the project's current rate.
+  // Anything else would let today's rate change reach back into work already
+  // recorded, which is the one thing the snapshot exists to prevent.
+  if (task?.factor != null) return session.rate * task.factor;
+  return session.rate;
+};
 
-/** Pass null to drop the override and fall back to each session's snapshot. */
+/**
+ * Pass null or "" to drop the override and fall back to each session's
+ * snapshot. Accepts "30%" as readily as a number — see parseTaskRate.
+ *
+ * Setting one clears the other, always. A task holding both an absolute rate
+ * and a proportion would have two answers to one question, and whichever the
+ * resolver picked would surprise somebody.
+ */
 export const setTaskRate = (state, projectId, taskId, rate) => {
-  const parsed = rate === null || rate === "" ? null : Number(rate);
-  const value = parsed !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  const { rate: value, factor } = parseTaskRate(rate);
   return {
     ...state,
     projects: state.projects.map((p) =>
       p.id === projectId
-        ? { ...p, tasks: tasksFor(p).map((t) => (t.id === taskId ? { ...t, rate: value } : t)) }
+        ? {
+          ...p,
+          tasks: tasksFor(p).map((t) =>
+            (t.id === taskId ? { ...t, rate: value, factor } : t)),
+        }
+        : p
+    ),
+  };
+};
+
+/** What one accepted item pays under this task, overriding the project's own
+ *  price the same way a task rate overrides the session snapshot. */
+export const setTaskPrice = (state, projectId, taskId, price) => {
+  const value = positive(price);
+  return {
+    ...state,
+    projects: state.projects.map((p) =>
+      p.id === projectId
+        ? { ...p, tasks: tasksFor(p).map((t) => (t.id === taskId ? { ...t, price: value } : t)) }
         : p
     ),
   };
@@ -121,6 +193,8 @@ export const taskTotals = (project, sessions, now) => {
         taskId: taskId ?? null,
         label: taskId ? taskLabel(project, taskId) : "No task",
         rate: taskId ? findTask(project, taskId)?.rate ?? null : null,
+        factor: taskId ? findTask(project, taskId)?.factor ?? null : null,
+        price: taskId ? findTask(project, taskId)?.price ?? null : null,
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }

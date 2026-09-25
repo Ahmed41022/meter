@@ -73,10 +73,24 @@ export const perTask = (project) => {
 
 export const isPerTask = (project) => perTask(project) !== null;
 
-/** What `units` accepted items come to, in cents. Null where the project has no
- *  per-item price to multiply, rather than a confident zero. */
-export const perTaskCents = (project, units) => {
-  const each = perTask(project);
+/**
+ * What one accepted item pays under a given task.
+ *
+ * A project's `perTask` is the default; a task's own `price` overrides it, the
+ * same way a task rate overrides a session's snapshot. That is what lets one
+ * project hold "1,500 per accepted task" and "300 per accepted CL" at once
+ * instead of forcing two projects for one piece of work.
+ */
+export const priceFor = (project, task) => {
+  const own = Number(task?.price);
+  if (Number.isFinite(own) && own > 0) return own;
+  return perTask(project);
+};
+
+/** What `units` accepted items come to, in cents, under an optional task. Null
+ *  where there is no price to multiply, rather than a confident zero. */
+export const perTaskCents = (project, units, task = null) => {
+  const each = priceFor(project, task);
   const n = Number(units);
   if (each === null || !Number.isFinite(n) || n <= 0) return null;
   return Math.round(each * 100 * n);
@@ -89,10 +103,29 @@ export const earningsFor = (state, projectId) =>
 
 /** Inside a half-open window, by when the money was earned. A single instant,
  *  not a span — there are no hours to overlap. */
+/** Everything a given stretch of tracked time earned. */
+export const earningsForSession = (state, sessionId) =>
+  sessionId ? liveEarnings(state).filter((e) => e.sessionId === sessionId) : [];
+
+/**
+ * What a session earned, from a list of earnings already to hand.
+ *
+ * Pending money counts — it was earned, it just has not landed. Cancelled
+ * money does not, because it never will.
+ */
+export const earnedFrom = (earnings, sessionId) =>
+  !sessionId ? 0 : (earnings ?? [])
+    .filter((e) => e.sessionId === sessionId && !e.deletedAt && !isCancelled(e))
+    .reduce((sum, e) => sum + e.cents, 0);
+
+/** The same, reading the ledger. */
+export const sessionEarnedCents = (state, sessionId) =>
+  earnedFrom(liveEarnings(state), sessionId);
+
 export const earningsIn = (earnings, from, to) =>
   earnings.filter((e) => e.at >= from && e.at < to);
 
-export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskId = null, units = null }, now, id) => {
+export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskId = null, units = null, sessionId = null }, now, id) => {
   const amount = Math.round(cents);
   if (!Number.isFinite(amount) || amount === 0) return state;
   return {
@@ -111,6 +144,11 @@ export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, no
         // How many accepted items this covers, when that is what it is. Kept
         // because "6 tasks at $500" is the fact; "$3,000" is the consequence.
         ...(units ? { units } : {}),
+        // Which stretch of tracked time this money is for. One session can
+        // produce several earnings — a task and a changelist are paid
+        // separately for the same sitting — so the link points this way, from
+        // the many to the one, and no list has to be kept in step.
+        ...(sessionId ? { sessionId } : {}),
         ...(status ? { status } : {}),
         createdAt: now,
         deletedAt: null,
