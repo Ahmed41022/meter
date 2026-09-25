@@ -133,8 +133,19 @@ export const CSS = `
 .concentration{margin:0 0 10px;font-size:12.5px;color:var(--ink-2);}
 .concentration strong{color:var(--ink);font-weight:700;}
 
-.sync-read{margin:0 0 12px;font-size:13px;color:var(--ink-2);line-height:1.5;}
+.sync-read{margin:0;font-size:13px;color:var(--ink-2);line-height:1.5;}
 .sync-bad{color:var(--flag);}
+.sync-note{margin:9px 0 0;font-size:12.5px;color:var(--muted);line-height:1.55;}
+.sync-intro{margin:0 0 12px;font-size:12.5px;color:var(--muted);line-height:1.55;}
+.sync-intro.last{margin-bottom:0;}
+.sync-origin{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 20px;}
+/* Secondary by construction: things done once and then never again should not
+   sit at the same size as the button pressed every day. */
+.sync-more{display:flex;align-items:center;gap:11px;margin-top:16px;}
+.sync-more .linkish{font-size:12.5px;}
+.sync-sep{color:var(--line);font-size:12.5px;}
+.sync-foot{margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line-2);
+  font-size:12px;color:var(--muted);line-height:1.55;}
 .origin{font-family:var(--mono);font-size:12px;background:var(--raise);
   border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--ink);
   user-select:all;word-break:break-all;}
