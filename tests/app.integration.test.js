@@ -153,7 +153,7 @@ describe("the built file", () => {
     // The page chrome behind the app has to move too, or a dark UI sits in a
     // white frame with a white status bar above it.
     expect(html).toMatch(/theme-color" content="#0E1210" media="\(prefers-color-scheme: dark\)"/);
-    expect(html).toMatch(/html,body\{background:#0E1210;\}/);
+    expect(html).toMatch(/html,body\{background:#0E1210;color-scheme:dark;\}/);
   });
 
   it("takes every colour from a token, so one palette can repaint the app", async () => {
@@ -1225,11 +1225,13 @@ describe("the overall view", () => {
     const { document: d } = (await boot()).window;
     await toProjects(d);
     expect(btn(d, /New project/i)).toBeTruthy();
-    expect(d.querySelector(".segmented")).toBeNull();
+    // By its own label, not by ".segmented" — the theme switch in the footer
+    // is one too, and the claim here is about the period control.
+    expect(d.querySelector('[aria-label="Reporting period"]')).toBeNull();
 
     [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Overview").click();
     await wait(170);
-    expect(d.querySelector(".segmented")).not.toBeNull();
+    expect(d.querySelector('[aria-label="Reporting period"]')).not.toBeNull();
   });
 
   it("reports what today earned, in time and in money", async () => {
@@ -3580,6 +3582,191 @@ describe("which work was worth the time, and how much rides on one project", () 
     await wait(250);
     expect(sorters(dom.window.document)).toHaveLength(0);
   }, 25_000);
+});
+
+describe("choosing a theme", () => {
+  const seed = {
+    projects: [{
+      id: "a", name: "Acme", currentRate: 20, currency: "USD", tasks: [],
+      createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null,
+    }],
+    sessions: [],
+  };
+  const root = (d) => d.querySelector(".mtr");
+
+  it("follows the system until told otherwise", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    // No attribute at all, which is what lets the media query decide.
+    expect(root(dom.window.document).hasAttribute("data-theme")).toBe(false);
+  }, 25_000);
+
+  it("can be pinned to light even where the system is dark", async () => {
+    // The case that stranded someone: the OS said dark and the app had no way
+    // back, because the palette shipped before the switch did.
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    btn(d, /^Light$/).click();
+    await wait(250);
+    expect(root(d).getAttribute("data-theme")).toBe("light");
+    expect(dom.window.localStorage.getItem("meter:theme")).toBe("light");
+  }, 25_000);
+
+  it("remembers the choice, and is not in the synced ledger", async () => {
+    const dom = await boot(seed, { "meter:theme": "dark" });
+    await wait(250);
+    expect(root(dom.window.document).getAttribute("data-theme")).toBe("dark");
+    const saved = dom.window.localStorage.getItem("meter:v1");
+    expect(saved === null || !JSON.stringify(JSON.parse(saved)).includes("theme")).toBe(true);
+  }, 25_000);
+
+  it("goes back to following the system", async () => {
+    const dom = await boot(seed, { "meter:theme": "dark" });
+    await wait(250);
+    const d = dom.window.document;
+    btn(d, /^System$/).click();
+    await wait(250);
+    expect(root(d).hasAttribute("data-theme")).toBe(false);
+    expect(dom.window.localStorage.getItem("meter:theme")).toBeNull();
+  }, 25_000);
+});
+
+describe("pricing a task when you create it", () => {
+  const hourly = {
+    projects: [{
+      id: "a", name: "Acme", currentRate: 16.40, currency: "USD", tasks: [],
+      createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null,
+    }],
+    sessions: [],
+  };
+  const field = (d, label) => [...d.querySelectorAll(".field")]
+    .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input");
+
+  const startWith = async (seed, label, pay) => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    btn(d, /Start the meter/i).click();
+    await wait(200);
+    btn(d, /New task/i).click();
+    await wait(150);
+    setValue(dom.window, field(d, "Name it"), label);
+    await wait(120);
+    if (pay !== null) {
+      setValue(dom.window, field(d, "^Rate$|Per accepted item"), pay);
+      await wait(120);
+    }
+    btn(d, /Start the meter/i).click();
+    await wait(300);
+    return { dom, d };
+  };
+
+  it("takes a rate at the moment the task comes into being", async () => {
+    // Before this, the only way to price one task differently was to edit the
+    // project rate, which repriced everything else filed under it.
+    const { dom } = await startWith(hourly, "assessment", "4.92");
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks[0]).toMatchObject({ label: "assessment", rate: 4.92 });
+  }, 30_000);
+
+  it("keeps a percentage as a percentage", async () => {
+    const { dom } = await startWith(hourly, "assessment", "30%");
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    const task = saved.projects[0].tasks[0];
+    expect(task.factor).toBeCloseTo(0.3, 10);
+    expect(task.rate).toBeFalsy();
+  }, 30_000);
+
+  it("writes nothing when the box is left empty", async () => {
+    const { dom } = await startWith(hourly, "plain", null);
+    const task = JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0].tasks[0];
+    expect(task).not.toHaveProperty("rate");
+    expect(task).not.toHaveProperty("factor");
+  }, 30_000);
+});
+
+describe("what a piece-rate session produced", () => {
+  const piece = {
+    projects: [{
+      id: "a", name: "Gateway", currentRate: 0, perTask: 1500, paysOnAcceptance: true,
+      currency: "USD", createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null,
+      tasks: [
+        { id: "t1", label: "task", createdAt: Date.now() - 86_400_000 },
+        { id: "t2", label: "CL", price: 300, createdAt: Date.now() - 86_400_000 },
+      ],
+    }],
+    sessions: [],
+  };
+  const openProject = async () => {
+    const dom = await boot(piece);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    return { dom, d };
+  };
+  const settleRows = (d) => [...d.querySelectorAll(".settle-row")];
+
+  it("shows the price per task on the card, not an hourly zero", async () => {
+    const dom = await boot(piece);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    expect(d.querySelector(".card-meta").textContent).toMatch(/\$1,500\.00 per task/);
+    expect(d.querySelector(".card-meta").textContent).not.toMatch(/\/hr/);
+  }, 30_000);
+
+  it("asks what the sitting earned as soon as the meter stops", async () => {
+    const { dom, d } = await openProject();
+    await startMeter(dom, { existing: "task" });
+    btn(d, /Stop and save/i).click();
+    await wait(400);
+    expect(d.querySelector(".settle-row")).not.toBeNull();
+    expect(d.body.textContent).toMatch(/What did this earn/i);
+  }, 30_000);
+
+  it("records it as pending, against the session that produced it", async () => {
+    // Acceptance is someone else's decision, days away. Filing it as money in
+    // hand would make a month look paid when it is only submitted.
+    const { dom, d } = await openProject();
+    await startMeter(dom, { existing: "task" });
+    btn(d, /Stop and save/i).click();
+    await wait(400);
+    btn(d, /Record it/i).click();
+    await wait(400);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.earnings).toHaveLength(1);
+    expect(saved.earnings[0]).toMatchObject({
+      cents: 150_000, status: "pending", taskId: "t1", units: 1,
+      sessionId: saved.sessions[0].id,
+    });
+  }, 30_000);
+
+  it("prices two different things from one sitting", async () => {
+    // 1,500 for the accepted task and 300 for the accepted changelist.
+    const { dom, d } = await openProject();
+    await startMeter(dom, { existing: "task" });
+    btn(d, /Stop and save/i).click();
+    await wait(400);
+    btn(d, /Add another/i).click();
+    await wait(200);
+    expect(settleRows(d)).toHaveLength(2);
+    setValue(dom.window, settleRows(d)[1].querySelector("select"), "t2");
+    await wait(200);
+    btn(d, /Record it/i).click();
+    await wait(400);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.earnings.map((e) => e.cents).sort((a, b) => a - b)).toEqual([30_000, 150_000]);
+    expect(new Set(saved.earnings.map((e) => e.sessionId)).size).toBe(1);
+  }, 30_000);
 });
 
 describe("creating a project that is paid per task", () => {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { wordsFor } from "./words.js";
 import { tasksFor } from "../domain/tasks.js";
+import { isPerTask, perTask } from "../domain/earnings.js";
+import { formatMoney } from "../domain/money.js";
 
 const NONE = "__none__";
 
@@ -18,11 +20,16 @@ export default function TaskPrompt({
   const [mode, setMode] = useState(tasks.length ? "existing" : "new");
   const [taskId, setTaskId] = useState(initialTaskId ?? NONE);
   const [draft, setDraft] = useState("");
+  // What this task is worth, asked here because here is where the task comes
+  // into existence. Setting it afterwards meant editing the project's rate to
+  // get one task priced differently, which repriced everything else.
+  const [pay, setPay] = useState("");
+  const piece = isPerTask(project);
 
   const confirm = () => {
     if (mode === "new") {
       const clean = draft.trim();
-      return onConfirm(clean ? { label: clean } : { taskId: null });
+      return onConfirm(clean ? { label: clean, pay: pay.trim() } : { taskId: null });
     }
     onConfirm({ taskId: taskId === NONE ? null : taskId });
   };
@@ -66,6 +73,27 @@ export default function TaskPrompt({
           <span className="hint" style={{ marginTop: 8, display: "block" }}>
             Reusing a name you already have keeps it as one task.
           </span>
+        </label>
+      )}
+
+      {mode === "new" && (
+        <label className="field">
+          <span className="eyebrow">{piece ? "Per accepted item" : "Rate"}</span>
+          <input className="inp" value={pay}
+                 placeholder={piece
+                   ? `empty = ${formatMoney(Math.round(perTask(project) * 100), project.currency)}, the project's price`
+                   : `empty = ${formatMoney(Math.round((project.currentRate ?? 0) * 100), project.currency)}/hr · or 30%`}
+                 onChange={(e) => setPay(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === "Enter") confirm();
+                   if (e.key === "Escape") onCancel();
+                 }} />
+          {!piece && (
+            <span className="hint" style={{ marginTop: 8, display: "block" }}>
+              A percentage stays a percentage: work paid at 30% of the base follows
+              the base when it changes, instead of going stale the day it moves.
+            </span>
+          )}
         </label>
       )}
 

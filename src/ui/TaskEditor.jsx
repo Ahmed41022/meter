@@ -1,18 +1,30 @@
 import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
+import { taskRateInput } from "../domain/tasks.js";
 
 /**
  * Rename, reprice or remove one task. The rate field is deliberately optional:
  * empty means "value each session at the rate it recorded", which is the
  * default and the honest one until you know what you're actually being paid.
  */
-export default function TaskEditor({ task, currency, projectRate, sessionCount, onSave, onDelete, onCancel, words = wordsFor(false) }) {
+export default function TaskEditor({
+  task, currency, projectRate, projectPrice = null, sessionCount,
+  onSave, onDelete, onCancel, words = wordsFor(false),
+}) {
   const [label, setLabel] = useState(task.label);
-  const [rate, setRate] = useState(task.rate == null ? "" : String(task.rate));
+  // Shown back as it was meant, so "30%" does not reappear as 4.92 and turn a
+  // rule into a number the next time anyone opens this.
+  const [rate, setRate] = useState(taskRateInput(task));
+  const [price, setPrice] = useState(task.price == null ? "" : String(task.price));
   const [confirming, setConfirming] = useState(false);
+  const piece = projectPrice !== null;
 
-  const save = () => onSave({ label: label.trim() || task.label, rate: rate.trim() === "" ? null : rate });
+  const save = () => onSave({
+    label: label.trim() || task.label,
+    rate: rate.trim() === "" ? null : rate,
+    price: price.trim() === "" ? null : price,
+  });
 
   if (confirming) {
     return (
@@ -41,17 +53,27 @@ export default function TaskEditor({ task, currency, projectRate, sessionCount, 
         <input className="inp" value={label} autoFocus onChange={(e) => setLabel(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && save()} />
       </label>
+      {piece && (
+        <label className="field">
+          <span className="eyebrow">Per accepted item ({currency})</span>
+          <input className="inp" type="number" min="0" step="any" value={price}
+                 placeholder={`empty = ${formatMoney(Math.round(projectPrice * 100), currency)}, the project&apos;s price`}
+                 onChange={(e) => setPrice(e.target.value)}
+                 onKeyDown={(e) => e.key === "Enter" && save()} />
+        </label>
+      )}
       <label className="field">
         <span className="eyebrow">Rate for this task ({currency})</span>
-        <input className="inp" type="number" min="0" step="any" value={rate}
-               placeholder={`empty = as recorded (${formatMoney(Math.round(projectRate * 100), currency)}/hr now)`}
+        <input className="inp" value={rate}
+               placeholder={`empty = as recorded (${formatMoney(Math.round(projectRate * 100), currency)}/hr now) · or 30%`}
                onChange={(e) => setRate(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && save()} />
       </label>
       <div className="hint" style={{ marginBottom: 0 }}>
         Setting a rate reprices every session filed under this task, including ones already
         finished. Useful when the rate you&apos;re actually paid is settled after the work.
-        The recorded hours never change.
+        The recorded hours never change. A percentage — <strong>30%</strong> — stays a
+        percentage, so it keeps following the base rate instead of going stale when it moves.
       </div>
       <div className="controls">
         <button className="btn primary" onClick={save}>Save</button>

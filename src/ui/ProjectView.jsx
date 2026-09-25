@@ -7,7 +7,9 @@ import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/
 import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
-import { PAY, isCancelled, isPending } from "../domain/earnings.js";
+import {
+  PAY, earnedFrom, isCancelled, isPending, isPerTask, perTask, priceFor,
+} from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
   findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
@@ -15,6 +17,7 @@ import {
 import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
 import TaskEditor from "./TaskEditor.jsx";
+import SettlePrompt from "./SettlePrompt.jsx";
 import SessionEditor from "./SessionEditor.jsx";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
@@ -33,7 +36,7 @@ const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", 
 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
-  onStart, onPause, onResume, onStop, onDeleteSession, onPatch, onDeleteProject,
+  onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState,
@@ -44,6 +47,10 @@ export default function ProjectView({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addingTime, setAddingTime] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
+  // Which session is being asked "what did this earn?". Set when a piece-rate
+  // meter stops, and settable again later from any row — acceptance lands days
+  // after the work, so the answer often is not known at stop time.
+  const [settling, setSettling] = useState(null);
   const [ledgerOpen, setLedgerOpen] = useState(null); // null = follow the default
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
@@ -56,6 +63,9 @@ export default function ProjectView({
   const shownMs = current ? elapsedMs(current, now) : 0;
   const currency = current?.currency ?? project.currency;
   const offClock = isOffClock(project);
+  // Paid per accepted item rather than by the hour, which changes what every
+  // money figure on this screen is allowed to say.
+  const piece = isPerTask(project);
   const w = wordsFor(offClock);
   const { head, tail } = moneyParts(current ? earningsCents(rateFor(project, current), shownMs) : 0, currency);
 
@@ -152,9 +162,12 @@ export default function ProjectView({
         </div>
 
         {/* An off-clock project has no earnings to show, and a huge 0.00 reads
-            as a broken meter. The elapsed time is the figure that matters. */}
+            as a broken meter. The elapsed time is the figure that matters.
+            Piece-rate work is the same case for a different reason: the money
+            is not known until an item is accepted, and pretending otherwise
+            would put a confident zero where the truth is "not yet". */}
         {!bare && <div className="money">
-          {offClock
+          {offClock || piece
             ? <span className="money-head">{formatDuration(shownMs)}</span>
             : <>
                 <span className="money-head">{head}</span>
@@ -205,7 +218,16 @@ export default function ProjectView({
         </div>
         </>}
 
-        {prompt && (
+        {settling && (
+          <SettlePrompt
+            project={project}
+            session={[...sessions, ...idleSessions].find((x) => x.id === settling) ?? null}
+            onCancel={() => setSettling(null)}
+            onConfirm={(lines) => { onSettle(settling, lines); setSettling(null); }}
+          />
+        )}
+
+        {prompt && !settling && (
           <TaskPrompt
             project={project} words={w}
             initialTaskId={prompt.reassign ? current?.taskId : null}
@@ -240,7 +262,12 @@ export default function ProjectView({
           {running && (
             <>
               <button className="btn ghost" onClick={onPause}>Pause</button>
-              <button className="btn primary" onClick={onStop}>
+              <button className="btn primary"
+                      onClick={() => {
+                        const id = current?.id ?? null;
+                        onStop();
+                        if (piece && id) setSettling(id);
+                      }}>
                 {idling ? "Stop idling" : w.stop}
               </button>
             </>
@@ -378,6 +405,7 @@ export default function ProjectView({
                 task={findTask(project, editingTask)}
                 currency={project.currency}
                 projectRate={project.currentRate}
+                projectPrice={perTask(project)}
                 sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
                 onCancel={() => setEditingTask(null)}
                 onSave={(patch) => { onSaveTask(editingTask, patch); setEditingTask(null); }}
@@ -545,24 +573,48 @@ export default function ProjectView({
                     <>
                       {" "}
                       <button className="linkish" onClick={() => setEditingSession(s.id)}>edit</button>
+                      {/* The second way in. Acceptance lands days after the
+                          work, so the answer at stop time is often "not yet". */}
+                      {piece && (
+                        <>
+                          {" · "}
+                          <button className="linkish" onClick={() => setSettling(s.id)}>
+                            {earnedFrom(earnings, s.id) > 0 ? "add more" : "what it earned"}
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
                 <div className="row-meta">
                   {s.taskId ? `${taskLabel(project, s.taskId)} · ` : `${w.noTask} · `}
                   {formatDuration(elapsedMs(s, now))}
-                  {!offClock && <>
-                    {" at "}
-                    {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
-                    {rateFor(project, s) !== s.rate && " (task rate)"}
-                  </>}
+                  {!offClock && (piece ? (
+                    // A piece-rate project pays for accepted items, so an
+                    // hourly figure here is a $0.00 that means nothing. What it
+                    // is worth is the price of what this sitting produced.
+                    <>
+                      {" · "}
+                      {priceFor(project, findTask(project, s.taskId)) !== null
+                        ? `${formatMoney(Math.round(priceFor(project, findTask(project, s.taskId)) * 100), currency)} per item`
+                        : "no price set"}
+                    </>
+                  ) : (
+                    <>
+                      {" at "}
+                      {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
+                      {rateFor(project, s) !== s.rate && " (task rate)"}
+                    </>
+                  ))}
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
                 </div>
               </div>
               <span className="row-amt">
                 {offClock
                   ? formatShortDuration(elapsedMs(s, now))
-                  : formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}
+                  : piece
+                    ? formatMoney(earnedFrom(earnings, s.id), currency)
+                    : formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}
               </span>
               <button className="x" aria-label="Remove session" onClick={() => onDeleteSession(s.id)}>×</button>
             </div>
