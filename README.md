@@ -1,74 +1,92 @@
 # Meter
 
-An hourly earnings meter. Start a timer against a project, watch the money accrue in real time, and keep an honest ledger of every session. An **Overview** tab reports any day, week or month across every project at once.
+**An hourly earnings meter.** Start a timer against a project, watch the money
+accrue in real time, and keep an honest ledger of every session.
 
-Built as a single self-contained HTML file — no server, no install, no build step to run it. Open `dist/meter.html` and it works.
+[![CI](https://github.com/Ahmed41022/meter/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahmed41022/meter/actions/workflows/ci.yml)
+[![Pages](https://github.com/Ahmed41022/meter/actions/workflows/pages.yml/badge.svg)](https://github.com/Ahmed41022/meter/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
----
+### [→ Try it in your browser](https://ahmed41022.github.io/meter/)
 
-## Why it's built this way
+Nothing to install, no account, no server. Your data stays in your browser
+unless you switch on sync — and sync goes to a hidden folder in *your* Google
+Drive, not to anyone else's machine.
 
-Most of the design here exists to avoid a specific way of getting the numbers wrong.
+<!-- SCREENSHOTS: drop the four PNGs into docs/images/ and delete these comment
+     markers. See docs/images/README.md for exactly what to capture.
 
-**Elapsed time is derived, never accumulated.** The obvious implementation is `setInterval(() => seconds++, 1000)`. It's also wrong: browsers throttle background tabs to roughly one tick per minute, and a sleeping machine stops ticking entirely. Since you're working while the tab is backgrounded, that's every session. A session instead stores `startedAt` as an epoch integer and computes `now - startedAt` on read. The interval exists only to trigger a re-render — kill it and the stored data is still exact.
+| Overview | A session running |
+| --- | --- |
+| ![The overview tab](docs/images/overview.png) | ![A running meter](docs/images/running.png) |
 
-**Money is derived from time, and summed as integers.** Earnings are `elapsedMs / 3600000 * rate`, computed fresh, rounded once to minor units at the boundary. Nothing accumulates a running float, and no total is ever cached — deleting a session would immediately make a cached total lie.
-
-**Rates are snapshotted onto sessions, and a task can override them.** `project.currentRate` is the default for the *next* session; `session.rate` is what that session recorded. Changing your project rate can't reach back into recorded work. But that snapshot is a *projection* of what you'll be paid, and the real figure is often settled later — at submission, or when the client says so. So a task can carry a rate, and every session filed under it is valued at that rate instead.
-
-The split that makes this safe: **hours are a measurement, rate is a parameter.** `segments` record what you actually worked and stay immutable. The task rate lives on the task, never overwriting `session.rate`, so the original snapshot survives as an audit trail and clearing the override restores it.
-
-**A session is a list of segments, not a start/end pair.** Pause and resume append a new `{startedAt, endedAt}` interval, so the gap between them is never billed. Modelling this up front avoids migrating every record later.
-
-**Time is an argument, never ambient.** No function in `src/domain` calls `Date.now()`. The caller passes `now`. That single constraint is what makes the entire rules layer testable without mocking a clock.
-
-**Crash recovery bills the last heartbeat.** A running session writes a `lastTick` every 60 seconds. If the app reopens and finds a session that claims to be running but stopped checking in, it offers to close it at the last heartbeat rather than silently billing the eleven hours you were asleep.
-
-**Idle time shares the state machine but never the total.** Time at the desk that wasn't worked is a session with `kind: 'idle'` — same segments, same pause/resume, same crash recovery. What keeps it out of your earnings is the accessor shape: `sessionsFor()` returns billed sessions only, and idle time has to be asked for by name. A caller that forgets about kind under-reports idle time, which is harmless, rather than inflating income, which is not. Starting either timer stops the other one, on any project, because one person can't bill two things at once.
-
-**Tasks are records, not strings on a session.** A free-text label splits on a typo — "1234" and "1234 " become two rows with the earnings divided between them, silently. So a task is a record on the project and a session holds its id, matched trimmed and case-insensitively. Starting the meter asks which task first, as an explicit existing-or-new choice, because that is the moment a duplicate would be created.
-
-**A finished session can be corrected, and the original is kept.** Immutability was there to stop records drifting by accident. But a session you forgot to stop is already wrong, and a wrong figure you can't fix is worse than one you can. What deserves protecting isn't that the number never moves — it's that you can always see what the meter actually recorded. So a correction writes the new window into `segments` and stashes the as-recorded ones under `original`, which only the *first* correction fills: edit twice and `original` still holds the measurement, not your previous guess. Reverting restores it exactly.
-
-Corrections preserve pause structure rather than collapsing a session into one start→end block. Collapsing a session with a four-hour break would silently bill the break — so the editor previews the resulting duration, which is rarely just end minus start.
-
-**Re-filing is separate from correcting.** `taskId` is a label on the record rather than part of it, so moving a session between tasks changes which bucket the same hours report under. That needs no `original` and leaves segments, rate, kind and closedAt untouched — there are tests asserting exactly that.
-
-**Deleting a task unfiles its sessions rather than orphaning them.** The hours stay recorded and reappear under "No task", and the delete is undoable.
-
-**Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
-
-**Timestamps are UTC epoch integers; only display is localised.** Goal periods bucket in local time, because "this week" means the user's week — but the boundary is derived from a `Date` rather than wall-clock strings, so it stays correct across a DST transition.
+| A project | On a phone |
+| --- | --- |
+| ![A project's ledger](docs/images/project.png) | ![Installed on Android](docs/images/phone.png) |
+-->
 
 ---
 
-## Layout
+## What it does
 
-```
-src/
-  domain/        Pure rules. No React, no storage, no clock.
-    time.js        elapsed, running vs paused vs stopped, staleness
-    money.js       earnings in minor units, formatting
-    sessions.js    start / pause / resume / stop / recover / delete, billed vs idle
-    projects.js    create, edit, remove, validate, on/off the clock
-    goals.js       period boundaries, progress
-    tasks.js       task records, label matching, per-task totals, re-filing
-    performance.js day / week / month windows, overlap splitting, trends
-    objectives.js  what you mean to do, estimates, today's focus
-  storage/
-    store.js       the only module that knows where data lives
-  ui/              React components; all logic imported from domain/
-    words.js       work vs off-clock wording, the only thing the flag changes
-    Objectives     the list, with spent against estimated
-    DashboardView  the Overview tab: what a day, week or month was worth
-    charts.jsx     stat tiles and the trend columns
-scripts/build.mjs  bundles everything into one HTML file
-tests/             261 tests: unit on domain, integration on the built artifact
-desktop/           optional Electron wrapper for a standalone .exe
-tools/             Windows desktop-shortcut installer
+- **Times a session against a project** and shows the money as it accrues.
+- **Snapshots the rate onto the session**, so changing a project's rate can
+  never reach back into work you already recorded.
+- **Reports any day, week, month, year or all of it** across every project at
+  once — hours, earnings, what an hour actually came to, and how much of your
+  income comes from one client.
+- **Records money the clock never measured** — bonuses, per-item piece rates,
+  rewards — so the ledger matches what you were actually paid.
+- **Tracks pending, paid and cancelled**, because work finished is not money
+  received.
+- **Runs on a phone** as an installed app, offline, and syncs through your own
+  Google Drive.
+- **Exports** a JSON backup or a CSV of every line item.
+
+The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.
+
+---
+
+## How it's built
+
+Three decisions do most of the work, and each one exists to prevent a specific
+wrong number:
+
+- **Elapsed time is derived, never accumulated.** A session stores `startedAt`
+  and computes `now - startedAt` on read. Browsers throttle background tabs to
+  about one tick a minute and a sleeping machine stops ticking entirely — so a
+  counter would quietly lose most of every session.
+- **Money is derived from time, never stored.** No total is ever cached,
+  because deleting a session would immediately make a cached total lie.
+- **Time is an argument, never ambient.** No function in `src/domain` calls
+  `Date.now()`; the caller passes `now`. That single constraint is what makes
+  the whole rules layer testable without mocking a clock.
+
+The reasoning behind every other decision — soft deletes, segments rather than
+start/end pairs, crash recovery, idle time, task rate overrides, schema
+evolution without version numbers — is in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+**Stack:** React 18, esbuild, Vitest. Two runtime dependencies. No framework,
+no state library, no CSS framework.
+
+---
+
+## Tested
+
+Every rule in the domain layer is tested without a browser, and the
+integration tests drive the *built* file in jsdom rather than the source, so
+what ships is what was tested.
+
+Coverage floors are enforced in CI — 85% lines, functions and statements, 80%
+branches — over `src/domain` and `src/storage`. The suite runs on both Linux
+and Windows, because it has twice been green on one and red on the other.
+
+```bash
+npm run check      # lint, build, then test
+npm run coverage   # with the thresholds enforced
 ```
 
-The dependency rule is one-directional: `ui` imports `domain`, `domain` imports nothing. Swap React out and the rules layer is untouched. Swap `storage/store.js` for IndexedDB or an API and nothing above it changes.
+More on what is and isn't tested, and why: [ARCHITECTURE.md](ARCHITECTURE.md#testing).
 
 ---
 
@@ -94,198 +112,7 @@ npm test
 
 ---
 
-## Reporting performance
-
-The app opens on **Overview**, which reports every project at once for a chosen **Day**, **Week**, **Month** or **Year**. **Work** and **Life** are the tabs beside it, and opening a project from any of the three drills into its meter and ledger.
-
-Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
-
-Each period shows what it earned, billed and idle time with the change against the period before, the billable share of time at the desk, how many days (or hours, or months) saw work, a column chart of when the work happened, and a breakdown by project.
-
-A year reads month by month rather than day by day — 365 bars two pixels wide are a texture, not a chart — and each month is one bucket of its own length, so February is never a gap.
-
-Two panels on that page deliberately ignore the period control: **Targets** and **the activity calendar**. Both answer questions about *now* rather than about the period on screen.
-
-Figures are derived by **overlap**, not by when a session started. A session running 23:30 → 00:30 is half an hour of one day and half an hour of the next, counted in each for exactly the minutes it spent there. That is what makes the numbers agree with one another: the daily bars always add up to the weekly headline, and no hour is ever counted twice or lost at a boundary. Period boundaries are built from calendar fields, so they stay correct across DST — including in zones where the clocks go forward at midnight and a local 00:00 simply doesn't exist that day.
-
-Money is never mixed across currencies. If you bill in two, each is totalled and shown on its own line.
-
 ---
-
-## Pacing a goal
-
-A goal with a deadline has two questions, and a progress bar only answers one. Half a weekly target is triumphant on Tuesday and a crisis on Sunday, and the bar looks identical either way.
-
-So every goal that resets — weekly or monthly — also reports where it stands:
-
-```
-Taiga Human pref  this week            $765.00 / $1,260.00
-[==============|==========------------------------------]
-$225.00 ahead · 4 days left · needs $123.75/day
-```
-
-The mark on the bar is where the **finished days** say you should be. The fill either reaches it or falls short of it, so the standing is readable before the sentence is.
-
-Pacing is measured against days that have **ended**, never against the fraction of the period that has physically elapsed. Elapsed-time pacing declares you behind at 09:00 on Monday for not having worked overnight, and makes the verdict depend on what hour you happen to open the app. Today counts as neither gone nor done: it is the first of the days you have left, because it is still yours to use.
-
-That is generous early in a period, which is why the **required daily rate** is always there too. On Monday morning the drift cannot tell you anything — `needs $180/day` can.
-
-Goals appear on the **Overview** under *Targets*, sorted by how many days' worth off the line each one is, so whatever needs attention is at the top. That panel deliberately ignores the period control above it: "am I on for this week?" is a question about now, and the answer must not change because you stepped the report back to look at last month.
-
-A **lifetime** goal has no pacing — a target with no end cannot be late. Nor do session goals: a session has no deadline. Off-clock goals are paced on their own page rather than among work targets, because sleep is not a work target.
-
----
-
-## The activity calendar
-
-A year of days at the foot of the Overview, each shaded by how much time it carried. It answers the question none of the period views can: not what this week was worth, but what the year has actually looked like — the streaks, the gaps, the weeks that quietly went missing.
-
-Its summary line leads with the **streak** — the run of consecutive days with something on them, because it is the one figure there you can still change today. A day that isn't logged yet doesn't break it: the line says *none today* rather than silently reporting a number that hasn't moved, since a live run that hasn't been extended and a broken one are different things to be told.
-
-Work and off-clock time get **separate calendars**, switched with the toggle in the heading, and separate colour ramps: jade for work, the same quiet slate the rest of the app gives time you track but don't work. They are never shaded on one scale, because they are not the same quantity.
-
-The shade boundaries are **quantiles of whatever is being shaded**, not fixed hour marks. Six hours is a full day of work and a short night's sleep, so one fixed scale would render one of the two as a flat wall of colour. That makes the boundaries arbitrary unless they are stated, so the legend spells out every one of them rather than saying "less" and "more". Empty days are left out of the distribution — include them and a single busy week in a blank year sets every boundary by how often you did nothing.
-
-Days are walked as calendar dates, not as 86,400,000ms steps. A week containing a DST shift is 167 or 169 hours long, and stepping by fixed milliseconds would slide the grid by an hour and eventually put a Tuesday in the Monday row. Each column is labelled with the month its **midweek** day falls in: the week of 31 Aug – 6 Sep is four-sevenths September, and going by the Monday leaves September unlabelled.
-
-Where there is more history than one calendar holds, arrows in the heading step back a **whole grid at a time**, so a week belongs to exactly one view instead of straddling two. They stop where your records do rather than walking into empty years, and the heading names the span it is showing.
-
-Like *Targets*, the calendar ignores the period control above it — it is context for everything else on the page, not another reading of the chosen week. Where 53 columns don't fit, it scrolls, opens on the most recent weeks, and keeps the day names pinned.
-
----
-
-## Who the work is for
-
-A project can name the company it's for, and the Overview then totals every project of that client together under **By company**.
-
-```
-BY COMPANY                                   2 companies
-Outlier                                          $602.34
-████████████████████████████████████████████████████
-6h 42m · $90.00/hr · 97% of revenue · 2 projects
-
-Aether Labs                                       $15.87
-██
-2h 07m · $7.50/hr · 3% of revenue
-```
-
-Two figures there aren't available anywhere else. **What an hour came to** is the blend across every project and every task-level rate override for that client — a client who looks busy at $7.50/hr and one who looks quiet at $90/hr are not the same client, and this is what says so. **Share of revenue** is client concentration, the number that tells you how much of your income walks out of the door if one relationship ends.
-
-Projects with no company are kept as their own row rather than dropped. Leaving them out would make the shares add up to less than the whole while looking like they added up to all of it.
-
-The panel appears as soon as it groups anything: several clients, or one client carrying more than a single project — which is what a whole imported history looks like, forty projects under one name. The only case it skips is one company on one project, where it would just be the project's name again. Off-clock projects are never in it: sleep has no client, and it is certainly not unassigned revenue.
-
-The company is free text with suggestions from what you've already typed. It's a name until it needs to carry something, so it isn't a record of its own yet; the suggestion list is what stops *Outlier* and *outlier* becoming two clients. Every figure above is keyed by the name, so it can become a real entity later without touching a single stored project.
-
----
-
-## Paused and done
-
-A project is **running**, **paused** or **done**, set in its settings — never two of those at once, because two checkboxes could express a state that doesn't exist and then every reader has to decide what it means.
-
-Both stopped states leave the **Targets** panel and refuse new time. A goal you aren't working towards is not news, it's a number that can only get worse; and a project you stopped shouldn't quietly resume because a Start button was still there. The refusal lives in the domain rather than only in the hidden button — starting a meter is the one action that *closes* whatever else is open, so a start that shouldn't have happened doesn't merely add a bad session, it ends a good one.
-
-What separates them is what you're saying:
-
-- **Paused** is "not now". The card stays exactly where it is, tagged, for work that's gone quiet for a month.
-- **Done** is "finished". The card moves to a collapsed **Done** group at the bottom of the list, and the project page replaces its goals with a closing summary: what it earned, the hours, what an hour came to across the whole run, whether the goal was met, and the span it actually ran — taken from the work itself, so a project created in March and first worked in June ran from June.
-
-Neither hides a minute of history. Both still appear in By project, By company, the calendar and every earnings total for the periods they actually worked. The hours happened and the money was real.
-
-Whatever is already open can always be finished. Stopping a project refuses *new* time; it never strands a session that was running when you stopped it.
-
----
-
-## Money the clock never measured
-
-Not all work pays by the hour. A task can pay per accepted submission, a month can end with a bonus, a platform can settle an adjustment. That money is real and belongs in the totals — but it has no duration, and this app is built on money being *derived* from time rather than stored.
-
-So it is a separate record rather than a session with the hours left blank. A session means "the meter watched this", and every figure leans on that: elapsed time recomputed from segments, money recomputed from rate × elapsed. A session carrying a stored amount and no segments would be a lie in the one place the app cannot afford one, and every reporting function would have to learn to skip it.
-
-**Earned without the clock** on a project page takes an amount, what it was for (per accepted item, bonus, adjustment), a date, and optionally how many items it covers — because "6 × $500" is the fact and "$3,000" is only the consequence. Negative amounts are allowed; a clawback is a real thing.
-
-### Two rates, because they answer different questions
-
-Once money can arrive without hours, a single "per hour" figure stops meaning one thing. So both are shown:
-
-```
-AN HOUR CAME TO
-$58.30/hr
-$18.97/hr on timed work · 67% earned no tracked time
-```
-
-The first divides everything by the hours recorded. The second divides only the money a clock actually measured. Where nothing untimed was earned they are the same number and the second line is dropped rather than repeated.
-
----
-
-## Pending, paid, cancelled
-
-Work that only pays once someone accepts it is not earnings yet. A project set to pay **once accepted** starts every new session **pending** — from the moment the meter starts, not marked afterwards, because otherwise every figure counts the money first and corrects later.
-
-The Overview leads with what has actually landed, and pending sits on its own line beneath it:
-
-```
-THIS WEEK · EARNED
-$218.41
-Sep 21 – Sep 27 · −92% vs last week
-+ $250.00 pending
-```
-
-Conservative on purpose: the number you glance at should be money you have, or a rejected week reads as a good one.
-
-**Cancelled work keeps its hours and loses its money.** It is dimmed rather than deleted — the hours were still worked, and erasing the record would leave them in the ledger with no account of where their money went.
-
-Absent means settled. Every session recorded before any of this existed counts exactly as it always did, so nothing already stored changed meaning and there is no migration. Only work genuinely waiting on someone else's decision carries a status at all.
-
----
-
-## Objectives
-
-What you mean to get done, beside what it actually took.
-
-Each project carries a list — **Objectives** on a work project, **To-do** off the clock. An item can be linked to a task, and then the row reports **est 2h · spent 3h 10m · 150% of estimate**. That pairing is the reason this lives in a timer rather than a to-do app: a checklist can tell you something is finished, and only this can tell you it took half again as long as you thought.
-
-**edit** on an objective changes its text, its estimate and what it tracks under. Linking is editable rather than fixed at creation because the usual order is backwards: you write the objective first and only create the task once you actually start timing it. Link it later and the row immediately reports the hours already on that task.
-
-Objectives are their own records rather than a flag on a task, because the two answer different questions. A task is "which bucket does this time go in" and only exists once there is time to file; an objective is "I intend to do this", which is true before a second has been tracked and sometimes forever ("email the client back"). Deleting a task unfiles its objectives rather than destroying them — the intent outlives the bucket, exactly as a session's hours do.
-
-Star a few as **today** and they gather at the top of the Overview, work and life alike. Today is stored as a local calendar day, not a boolean: a flag would still be set tomorrow morning and would need a nightly job to clear it, which is the same accumulate-versus-derive mistake the timer itself avoids. Ticking an item drops it off today's list, because what is left is the point.
-
----
-
-## Adding time you didn’t track
-
-**add time** beside the ledger records a block the meter never watched — for the hours you worked and forgot to start it. It previews the duration and the money before committing, takes the rate the project charges now (there is no record of what it charged then; a task rate can still correct it), and leaves a running meter alone: logging Tuesday afternoon is no reason to stop the clock ticking today.
-
-Entries made this way are marked **Added** in the ledger. A block you typed in is different evidence from one the clock measured, and the app rests on being able to tell.
-
-It also checks the window against every other record, on every project. Starting a session closes any other open one precisely because you cannot be in two places at once — but a block entered after the fact can break that rule in a way the timer never could, and two records over the same hour count it twice in both the hours and the money. An overlap is named, listed, and needs an explicit *add it anyway* rather than being silently accepted or flatly refused.
-
----
-
-## Off the clock
-
-Not everything worth timing is work. Sleep, play, time away from the desk — you may want the history without any of it touching what you earned.
-
-Open a project's **Settings** and set it to **Off the clock**. Its hours stay recorded exactly as before; what changes is how they are counted. Off-clock time never enters earnings, billed hours, billable share, active days, or the project breakdown, and it gets its own panel on the Overview reporting the same period. The project keeps its own meter, ledger and tasks, but shows elapsed time where a work project shows money.
-
-An off-clock project also reads differently. "Ledger", "task" and "Stop and save" are accounting words; applied to sleep or an evening of play they invite you to read the panel as money, which is the one thing it isn't. So tasks become **activities**, the ledger becomes **history**, sessions become **entries**, and the meter says **Start tracking**. The billing-only controls go with them: there is no billed-against-idle split to choose, no minute rail counting out an hour you are going to charge for, and no money goal that could never move. Only the labels change — the records, the timer and every figure underneath are identical, which is why it's a lookup in the UI layer (`src/ui/words.js`) and not a second path through the domain.
-
-The flag is absent on every project written before it existed, and absent reads as work — so nothing already recorded moves, and no migration is needed.
-
-This replaces the workaround of giving a project a rate like `0.00001`. That hides the money and nothing else: the hours still land in billed time, in the billable share and in the breakdown, so a night's sleep still reads as a productive night. Setting the rate near zero was always treating the symptom.
-
----
-
-## Reporting time per task
-
-The **By task** panel on a project lists every task with hours and earnings, ordered by earnings, with idle time on its own line. Clicking a row filters the ledger to that task so you can check what's actually in it.
-
-To correct filing: open the ledger, tick the sessions, then **Assign to task**. One session or twenty, onto an existing task or a new one. The running session's task can be changed from the chip on the meter face.
-
-**edit** on a ledger row corrects a finished session's start and end — for the times you leave the meter running. It previews the resulting duration and earnings before you commit, keeps what the meter originally recorded, and marks the row "Edited". Undo is available immediately, and "Undo correction" restores the recorded times at any point later.
-
-**edit** on a task row renames it, sets its rate, or deletes it. Setting a rate reprices every session under that task, finished ones included — for when the rate you're actually paid is settled after the work is done. Leave it empty to value each session at the rate it recorded. Deleting warns how many sessions will move to "No task" and can be undone.
 
 ## Running it
 
@@ -307,87 +134,21 @@ Note that Edge and Chrome grey out "Install as an app" for `file://` pages, sinc
 
 ---
 
-## Testing
-
-```
-tests/time.test.js         elapsed time, clock jumps, staleness
-tests/money.test.js        rounding, drift, formatting fallbacks
-tests/sessions.test.js     the state machine and the rate-snapshot rule
-tests/projects.test.js     creation, validation, cascading removal, status and companies
-tests/goals.test.js        period boundaries including DST, and pacing
-tests/earnings.test.js     money without hours, and whether it has landed
-tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid,
-                           company rollups, effective rate, streaks
-tests/app.integration.test.js   the built HTML, driven in jsdom
-```
-
-The unit tests are fast because the domain layer is pure. The integration tests are slower but catch what unit tests structurally can't: bundling mistakes, event wiring, and CSS that fails silently. They refuse to run against a `dist/` older than `src/` — a failed build leaves the previous bundle in place, and without that check they pass happily against code that doesn't compile. One of them is a regression test for exactly that — project card text was rendering inline because the elements were `<span>`s, so `margin-top` was dropped without any error anywhere.
-
-Cases worth knowing about:
-
-- An 8-hour backgrounded tab still reports exactly 8 hours.
-- A backwards clock jump clamps to zero rather than subtracting billable time.
-- Starting a session closes any other open session on that project.
-- A paused session stays the current session; a stopped one doesn't.
-- Changing a project's rate leaves recorded and running sessions alone.
-- An overnight crash bills 2 hours to the last heartbeat, not the 11-hour gap.
-- Startup reads storage exactly once, and rendering never reads or writes it.
-- Two labels differing only by case or whitespace resolve to one task.
-- A task's idle hours never land in its earned column.
-- Re-filing a session moves its totals between tasks and leaves its hours and rate alone.
-- A batch re-file skips deleted sessions.
-- A task rate reprices finished sessions without touching their hours or their original snapshot.
-- Clearing a task rate restores the recorded rate.
-- Deleting a task keeps its hours and moves them to "No task".
-- Correcting a session with a four-hour break bills 45m, not 5h45m.
-- A second correction still preserves what the meter first recorded.
-- A running session offers no edit link — stop it first.
-- The desktop quit-guard treats a paused session as not running, and resolves any doubt as "safe to close".
-- A long ledger starts collapsed, and its totals stay visible while collapsed.
-- Weeks start Monday at local midnight, including across a DST shift — and including a week containing a day that has no local midnight at all.
-- A session running 23:30 to 00:30 gives each day 30 minutes, and the week the full hour.
-- Every day of a calendar year abuts the next exactly: no window overlaps its neighbour, and no bucket falls in a gap between them.
-- A day that loses or gains an hour to DST is charted with 23 or 25 bars, and they still tile it exactly.
-- The trend bars always sum to the headline figure for the period.
-- Stepping a month back from the 31st lands on the 1st of the previous month, not in the one after it.
-- A period with no predecessor reports no comparison rather than +0%.
-- Off-clock hours never reach earnings, billed time, billable share or the breakdown — while the same data left on the clock inflates all four.
-- A project with no `offClock` flag counts as work, so nothing recorded before the setting existed moves.
-- A session whose project has been deleted counts as work, so reporting fails towards showing time you did record.
-- Moving a project off the clock and back changes only how its hours are counted, never the hours.
-- An off-clock project says activities, history and Start tracking; a work project still says tasks, ledger and Start the meter.
-- Off the clock drops the idle split, the billable-hour rail and the money goal, and prints the elapsed figure once rather than twice.
-- Work and Life are separate tabs; opening a project returns to the tab it belongs to.
-- A life area is created with no rate at all, rather than a rate of zero to be explained away.
-- An objective linked to a task reports hours spent against hours estimated; one with no link says so instead of implying zero.
-- Deleting a task unfiles its objectives and keeps them.
-- Today's focus is a calendar day, so it expires by itself and gathers work and life picks together.
-- An objective can be linked to a task after it was written, and reports that task's hours the moment it is.
-- A block entered by hand is marked as added, snapshots the current rate, and does not stop a meter that is running.
-- Overlapping time is found across every project, ignores blocks that merely meet end to end, skips the gap inside a paused session, and needs explicit confirmation before it is recorded.
-- Idle time never reaches an earnings total, a goal, or the cross-project headline.
-- Starting idle stops the billed meter, so the same wall-clock hour is never counted twice.
-- A session saved before idle tracking existed still counts as billed.
-
 ---
 
-## Data
+## Versioning
 
-Everything lives in browser storage under `meter:v1`, as:
+Meter follows semantic versioning, with the version tied to the one
+compatibility boundary that actually matters here — **the stored ledger**:
 
-```js
-Project    { id, name, currentRate, currency, createdAt, sessionGoal, overallGoal,
-             offClock?, company?, status?, statusAt?, paysOnAcceptance? }
-Earning    { id, projectId, taskId, kind, cents, currency, at, note, units?, status?, createdAt, deletedAt }
-Objective  { id, projectId, text, done, doneAt, createdAt, focusedOn, estimateMs, taskId, deletedAt }
-Project  { ..., tasks: [{ id, label, createdAt, rate }] }
-Session    { id, projectId, kind, taskId, rate, currency, createdAt, segments[], closedAt, deletedAt, original?, manual? }
-Segment  { startedAt, endedAt, lastTick }
-```
+| Bump | Means |
+| --- | --- |
+| **Major** | The stored shape changed such that an older build can no longer read it. |
+| **Minor** | A feature. New fields land here safely, because an absent field always has a defined meaning. |
+| **Patch** | A fix that stores nothing new. |
 
-An `Earning` is money with no duration anywhere on it — no segments, no rate — because it was never paid by the hour. `kind` is `'piece'`, `'bonus'` or `'adjust'`, and `units` records how many accepted items an amount covers. On both sessions and earnings a `status` of `'pending'` or `'cancelled'` says the money has not landed or never will; **absent means settled**, so nothing written before pay states existed changed meaning. `paysOnAcceptance` is absent on ordinary work and `true` where a session should start out pending. `status` is absent on a running project and `'paused'` or `'done'` otherwise — absent reads as running, and one field rather than two flags because a project cannot be both. `statusAt` stamps when it stopped and is cleared on the way back, so a project running again never reports a range that ended. `company` is absent or empty on work with no client named; it is the key every company figure is grouped by, so it can become a record of its own later without a migration. `manual` is absent on anything the meter recorded and `true` on a block entered by hand — absent reads as measured. `objectives` is absent on a store written before they existed and reads as none. `focusedOn` is a local `YYYY-MM-DD` and an objective is today's only while it matches today — so the pick expires on its own rather than needing to be cleared. `estimateMs` and `taskId` are both nullable: an objective with neither is a plain checklist item. `offClock` is absent on a work project and `true` on one you track but don't work — absent reads as work, so nothing written before the setting existed changed meaning. `original` is present only on a corrected session and holds `{ segments, closedAt, correctedAt }` as the meter first recorded them. A task's `rate` is nullable — null means "value each session at the rate it recorded". `taskId` is nullable — sessions without one group under "No task". Projects saved before tasks existed have no `tasks` array and read as having none. `kind` is `'billed'` or `'idle'`. Sessions written before idle tracking existed have no `kind` at all, and that absence reads as billed — no migration needed, because nothing about the existing data changed meaning. The key is versioned so a real schema change can migrate rather than clobber.
-
-Browser storage evaporates — a cleared cache takes your ledger with it. **Export a backup** from the projects screen periodically; it writes plain JSON that Restore reads back.
+Releases are tagged `vX.Y.Z` and carry a built `meter.html` and a packaged
+Windows desktop app. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -402,6 +163,8 @@ Browser storage evaporates — a cleared cache takes your ledger with it. **Expo
 - **Idle time isn't in goals.** Deliberate — a money goal fed by unbilled time is meaningless. If it belongs in goals later, the right shape is a utilisation target, not a second money target.
 - **Fonts load from Google Fonts.** First run with no internet falls back to system faces. Layout is unaffected.
 
+---
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
