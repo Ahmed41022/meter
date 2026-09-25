@@ -3717,6 +3717,19 @@ describe("the sync panel", () => {
     expect(panel(d).textContent).toMatch(/client ID/i);
   }, 25_000);
 
+  it("keeps one action prominent and the rest quiet", async () => {
+    // Three buttons abreast read as three equally likely choices. Signing out
+    // and changing the client ID are each done once; syncing is done daily.
+    const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
+    const d = dom.window.document;
+    await wait(250);
+    await toProjects(d, "Work");
+    expect(panel(d).querySelectorAll(".btn")).toHaveLength(1);
+    expect(panel(d).querySelector(".btn").textContent).toMatch(/Sign in with Google/i);
+    expect([...panel(d).querySelectorAll(".linkish")].map((b) => b.textContent))
+      .toEqual(["Change client ID"]);
+  }, 25_000);
+
   it("says it is working the moment you press it", async () => {
     // jsdom loads no external script, so the real sign-in cannot complete here;
     // what matters is that pressing the button visibly does something instead of
