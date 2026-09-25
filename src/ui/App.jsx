@@ -73,10 +73,11 @@ const payFields = (project, pay) => {
   if (!String(pay ?? "").trim()) return {};
   if (isPerTask(project)) {
     const price = Number(pay);
-    return Number.isFinite(price) && price > 0 ? { price } : {};
+    return Number.isFinite(price) && price >= 0 ? { price } : {};
   }
   const { rate, factor } = parseTaskRate(pay);
-  return { ...(rate ? { rate } : {}), ...(factor ? { factor } : {}) };
+  // `!= null`, not truthiness: zero is a rate somebody meant to type.
+  return { ...(rate != null ? { rate } : {}), ...(factor != null ? { factor } : {}) };
 };
 const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 

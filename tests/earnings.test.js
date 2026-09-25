@@ -308,3 +308,24 @@ describe("money attached to the time that earned it", () => {
     expect(earningsForSession(s, "s1")).toEqual([]);
   });
 });
+
+describe("an unpaid task on a paid project", () => {
+  const piece = { id: "p1", name: "CoAT", currency: "USD", perTask: 70, tasks: [] };
+
+  it("is worth nothing, not the project's price", () => {
+    expect(priceFor(piece, { id: "t1", label: "Onboarding", price: 0 })).toBe(0);
+  });
+
+  it("does not drag other tasks down with it", () => {
+    expect(priceFor(piece, { id: "t2", label: "item" })).toBe(70);
+  });
+
+  it("prices a batch of them at nothing", () => {
+    expect(perTaskCents(piece, 5, { id: "t1", price: 0 })).toBe(0);
+    expect(perTaskCents(piece, 5)).toBe(35_000);
+  });
+
+  it("keeps null meaning inherit", () => {
+    expect(priceFor(piece, { id: "t3", price: null })).toBe(70);
+  });
+});

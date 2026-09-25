@@ -74,6 +74,8 @@ export default function TaskEditor({
         finished. Useful when the rate you&apos;re actually paid is settled after the work.
         The recorded hours never change. A percentage — <strong>30%</strong> — stays a
         percentage, so it keeps following the base rate instead of going stale when it moves.
+        Leave a box empty to use the project&apos;s figure; type <strong>0</strong> to say this
+        task pays nothing, which is a different answer.
       </div>
       <div className="controls">
         <button className="btn primary" onClick={save}>Save</button>

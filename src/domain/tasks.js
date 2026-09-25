@@ -43,19 +43,27 @@ export const addTask = (state, projectId, { id, label, rate, factor, price }, no
       // "as recorded" and an absent price means "the project's" — writing null
       // would say the same thing more loudly, and writing 0 would lie.
       const task = { id, label: clean, createdAt: now };
-      if (positive(rate) !== null) task.rate = positive(rate);
-      if (positive(factor) !== null) task.factor = positive(factor);
-      if (positive(price) !== null) task.price = positive(price);
+      if (amount(rate) !== null) task.rate = amount(rate);
+      if (amount(factor) !== null) task.factor = amount(factor);
+      if (amount(price) !== null) task.price = amount(price);
       return { ...p, tasks: [...existing, task] };
     }),
   };
 };
 
-/** A number that can stand as a rate, a factor or a price, or null. */
-const positive = (value) => {
+/**
+ * A number that can stand as a rate, a factor or a price, or null for "not
+ * given".
+ *
+ * Zero counts. Empty already means "inherit whatever the project says", so
+ * there has to be some way to say "this particular task pays nothing" —
+ * onboarding, training, an unpaid trial — and without one the only route is to
+ * type a number so small it rounds away, which is a lie that reports as income.
+ */
+const amount = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
 /**
@@ -72,10 +80,10 @@ export const parseTaskRate = (input) => {
   const text = String(input ?? "").trim();
   if (!text) return { rate: null, factor: null };
   if (text.endsWith("%")) {
-    const pct = positive(text.slice(0, -1).trim());
+    const pct = amount(text.slice(0, -1).trim());
     return { rate: null, factor: pct === null ? null : pct / 100 };
   }
-  return { rate: positive(text), factor: null };
+  return { rate: amount(text), factor: null };
 };
 
 /** How a task's rate should be shown in a box the user can edit again. */
@@ -132,7 +140,7 @@ export const setTaskRate = (state, projectId, taskId, rate) => {
 /** What one accepted item pays under this task, overriding the project's own
  *  price the same way a task rate overrides the session snapshot. */
 export const setTaskPrice = (state, projectId, taskId, price) => {
-  const value = positive(price);
+  const value = amount(price);
   return {
     ...state,
     projects: state.projects.map((p) =>

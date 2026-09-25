@@ -88,12 +88,11 @@ export default function TaskPrompt({
                    if (e.key === "Enter") confirm();
                    if (e.key === "Escape") onCancel();
                  }} />
-          {!piece && (
-            <span className="hint" style={{ marginTop: 8, display: "block" }}>
-              A percentage stays a percentage: work paid at 30% of the base follows
-              the base when it changes, instead of going stale the day it moves.
-            </span>
-          )}
+          <span className="hint" style={{ marginTop: 8, display: "block" }}>
+            {!piece && <>A percentage stays a percentage: work paid at 30% of the base follows
+              the base when it changes, instead of going stale the day it moves. </>}
+            Empty uses the project&apos;s figure; <strong>0</strong> says this task pays nothing.
+          </span>
         </label>
       )}
 
