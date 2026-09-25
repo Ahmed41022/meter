@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   acceptsTime, activeProjects, addProject, companiesIn, companyOf, finishedProjects,
-  isActive, isDone, isPaused, matchesQuery, patchProject, removeProject, searchProjects,
+  isActive, isDone, isPaused, liveProjects, matchesQuery, patchProject, removeProject,
+  restoreProject, searchProjects,
   setStatus, statusOf, validateProject,
 } from "../src/domain/projects.js";
 import { startSession } from "../src/domain/sessions.js";
@@ -44,16 +45,16 @@ describe("removal", () => {
     s = addProject(s, { name: "B", rate: 900, currency: "EGP" }, T, "p2");
     s = startSession(s, s.projects[0], { now: T, id: "s1" });
     s = startSession(s, s.projects[1], { now: T, id: "s2" });
-    const after = removeProject(s, "p1");
-    expect(after.projects.map((p) => p.id)).toEqual(["p2"]);
-    expect(after.sessions.map((x) => x.id)).toEqual(["s2"]);
+    const after = removeProject(s, "p1", T + 1);
+    expect(liveProjects(after.projects).map((p) => p.id)).toEqual(["p2"]);
+    expect(after.sessions.filter((x) => !x.deletedAt).map((x) => x.id)).toEqual(["s2"]);
   });
 
   it("can be undone by restoring the prior state", () => {
     let s = addProject(empty, { name: "A", rate: 450, currency: "EGP" }, T, "p1");
     s = startSession(s, s.projects[0], { now: T, id: "s1" });
     const snapshot = s;
-    removeProject(s, "p1");
+    removeProject(s, "p1", T + 1);
     expect(snapshot.projects).toHaveLength(1); // reducers never mutate
     expect(snapshot.sessions).toHaveLength(1);
   });
@@ -213,5 +214,56 @@ describe("naming a price when the project is created", () => {
       .projects[0];
     expect(without).not.toHaveProperty("perTask");
     expect(without).not.toHaveProperty("paysOnAcceptance");
+  });
+});
+
+describe("deleting a project is a field, not a removal", () => {
+  const seeded = () => {
+    let s = addProject(empty, { name: "A", rate: 20, currency: "USD" }, T, "p1");
+    s = addProject(s, { name: "B", rate: 30, currency: "USD" }, T, "p2");
+    s = startSession(s, s.projects[0], { now: T, id: "s1" });
+    return {
+      ...s,
+      earnings: [
+        { id: "e1", projectId: "p1", cents: 5000, deletedAt: null },
+        { id: "e2", projectId: "p2", cents: 900, deletedAt: null },
+      ],
+      objectives: [{ id: "o1", projectId: "p1", text: "x", deletedAt: null }],
+      lastBackupAt: 12345,
+    };
+  };
+
+  it("keeps the record, marked", () => {
+    // A record that is simply gone carries no evidence it was deleted, so a
+    // merge reads its absence as "the other device has news" and hands it back.
+    const after = removeProject(seeded(), "p1", T + 1);
+    expect(after.projects.find((p) => p.id === "p1").deletedAt).toBe(T + 1);
+    expect(liveProjects(after.projects).map((p) => p.id)).toEqual(["p2"]);
+  });
+
+  it("stops its money and its hours counting, everywhere at once", () => {
+    const after = removeProject(seeded(), "p1", T + 1);
+    expect(after.sessions.find((x) => x.id === "s1").deletedAt).toBe(T + 1);
+    expect(after.earnings.find((e) => e.id === "e1").deletedAt).toBe(T + 1);
+    expect(after.objectives.find((o) => o.id === "o1").deletedAt).toBe(T + 1);
+  });
+
+  it("leaves every other project's records alone", () => {
+    // The regression this guards is not small: removeProject returned an
+    // object of two keys with no spread, so deleting any project silently
+    // erased every objective and every earning in the whole ledger.
+    const after = removeProject(seeded(), "p1", T + 1);
+    expect(after.earnings.find((e) => e.id === "e2").deletedAt).toBeNull();
+    expect(after.lastBackupAt).toBe(12345);
+  });
+
+  it("comes back with exactly what went with it", () => {
+    let s = seeded();
+    s = { ...s, earnings: s.earnings.map((e) => (e.id === "e1" ? { ...e, deletedAt: T - 5 } : e)) };
+    const back = restoreProject(removeProject(s, "p1", T + 1), "p1");
+    expect(back.projects.find((p) => p.id === "p1").deletedAt).toBeNull();
+    expect(back.sessions.find((x) => x.id === "s1").deletedAt).toBeNull();
+    // Deleted on its own beforehand, so it stays deleted.
+    expect(back.earnings.find((e) => e.id === "e1").deletedAt).toBe(T - 5);
   });
 });

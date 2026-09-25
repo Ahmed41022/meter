@@ -3,7 +3,9 @@ import {
   COLLECTIONS, mergeList, mergeState, overlaps, stampChanges, stampOf,
 } from "../src/domain/merge.js";
 import { KIND, addManualSession, startSession, stopSession } from "../src/domain/sessions.js";
-import { addProject, patchProject } from "../src/domain/projects.js";
+import {
+  addProject, liveProjects, patchProject, removeProject, restoreProject,
+} from "../src/domain/projects.js";
 
 const T = new Date(2026, 8, 25, 12).getTime();
 const HOUR = 3_600_000;
@@ -218,5 +220,52 @@ describe("time counted twice", () => {
       state, state.projects[0], { startedAt: T + 2 * HOUR, endedAt: T + 3 * HOUR }, T, "s2",
     );
     expect(overlaps(state.sessions)).toEqual([]);
+  });
+});
+
+describe("a project deleted on one device stays deleted on both", () => {
+  const T = 1_700_000_000_000;
+  const base = () => ({
+    projects: [
+      { id: "p1", name: "A", currentRate: 20, currency: "USD", tasks: [] },
+      { id: "p2", name: "B", currentRate: 30, currency: "USD", tasks: [] },
+    ],
+    sessions: [], objectives: [], earnings: [],
+  });
+
+  it("does not hand it back on the next sync", () => {
+    // Exactly the reported bug. The phone still has the project, because it
+    // has not synced since. Merging must not read that as news.
+    const phone = base();
+    const desktop = stampChanges(base(), removeProject(base(), "p1", T), T + 1);
+    const merged = mergeState(desktop, phone);
+    expect(merged.projects.find((p) => p.id === "p1").deletedAt).toBe(T);
+    expect(liveProjects(merged.projects).map((p) => p.id)).toEqual(["p2"]);
+  });
+
+  it("holds in both merge directions", () => {
+    // The device that never saw the delete merges too, and must accept it.
+    const phone = base();
+    const desktop = stampChanges(base(), removeProject(base(), "p1", T), T + 1);
+    expect(liveProjects(mergeState(phone, desktop).projects).map((p) => p.id)).toEqual(["p2"]);
+  });
+
+  it("lets an undo on the other device win, because it is later", () => {
+    const deleted = stampChanges(base(), removeProject(base(), "p1", T), T + 1);
+    const undone = stampChanges(deleted, restoreProject(deleted, "p1"), T + 2);
+    expect(liveProjects(mergeState(deleted, undone).projects).map((p) => p.id))
+      .toEqual(["p1", "p2"]);
+  });
+
+  it("carries the tombstones on its sessions and money too", () => {
+    const withWork = {
+      ...base(),
+      sessions: [{ id: "s1", projectId: "p1", deletedAt: null, segments: [] }],
+      earnings: [{ id: "e1", projectId: "p1", cents: 100, deletedAt: null }],
+    };
+    const desktop = stampChanges(withWork, removeProject(withWork, "p1", T), T + 1);
+    const merged = mergeState(desktop, withWork);
+    expect(merged.sessions[0].deletedAt).toBe(T);
+    expect(merged.earnings[0].deletedAt).toBe(T);
   });
 });

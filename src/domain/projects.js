@@ -122,10 +122,55 @@ export const patchProject = (state, id, patch) => ({
 
 /** Removes the project and its sessions together. The caller keeps the prior
  *  state to offer an undo. */
-export const removeProject = (state, id) => ({
-  projects: state.projects.filter((p) => p.id !== id),
-  sessions: state.sessions.filter((s) => s.projectId !== id),
+/**
+ * Deleting a project is a field, not a removal.
+ *
+ * A record that is simply gone carries no evidence that it ever existed, so a
+ * merge cannot tell "this device deleted it" from "that device has something
+ * this one has not seen yet" — and the other copy politely hands it back.
+ * Every other record here has always been deleted this way. The project was
+ * the one that was not, which is exactly why syncing resurrected projects that
+ * had been thrown away.
+ *
+ * Everything belonging to it is tombstoned too — sessions, earnings,
+ * objectives — for the same reason, and so its hours and its money stop
+ * counting everywhere at once rather than lingering in totals under a project
+ * that is no longer listed.
+ */
+export const isDeleted = (project) => project?.deletedAt != null;
+
+export const liveProjects = (projects = []) => projects.filter((p) => !isDeleted(p));
+
+const tombstone = (rows, id, now) => (rows ?? []).map((r) =>
+  (r.projectId === id && !r.deletedAt ? { ...r, deletedAt: now } : r));
+
+export const removeProject = (state, id, now = Date.now()) => ({
+  // Spread, because this used to return an object of two keys and silently
+  // dropped every objective and every earning in the ledger along with them.
+  ...state,
+  projects: state.projects.map((p) => (p.id === id ? { ...p, deletedAt: now } : p)),
+  sessions: tombstone(state.sessions, id, now),
+  earnings: tombstone(state.earnings, id, now),
+  objectives: tombstone(state.objectives, id, now),
 });
+
+/** Brings back a project and the sessions this delete tombstoned with it. */
+export const restoreProject = (state, id) => {
+  const removedAt = (state.projects ?? []).find((p) => p.id === id)?.deletedAt ?? null;
+  // Only what went WITH it, matched on the exact instant. A session deleted on
+  // its own last week is still deleted, and undoing this must not undo that.
+  const revive = (rows) => (rows ?? []).map((r) =>
+    (r.projectId === id && removedAt !== null && r.deletedAt === removedAt
+      ? { ...r, deletedAt: null }
+      : r));
+  return {
+    ...state,
+    projects: (state.projects ?? []).map((p) => (p.id === id ? { ...p, deletedAt: null } : p)),
+    sessions: revive(state.sessions),
+    earnings: revive(state.earnings),
+    objectives: revive(state.objectives),
+  };
+};
 
 /** `needsRate` is false for something off the clock, which has nothing to
  *  charge — demanding a rate there is what drove people to type 0.00001. */

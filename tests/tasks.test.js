@@ -227,9 +227,11 @@ describe("project removal", () => {
   it("takes the project's tasks with it", () => {
     let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
     s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
-    const after = removeProject(s, "p1");
-    expect(after.projects).toHaveLength(0);
-    expect(after.sessions).toHaveLength(0);
+    const after = removeProject(s, "p1", T + 1);
+    // Tombstoned rather than dropped, so a sync carries the deletion instead
+    // of the other device handing the project back.
+    expect(after.projects.filter((p) => !p.deletedAt)).toHaveLength(0);
+    expect(after.sessions.filter((x) => !x.deletedAt)).toHaveLength(0);
   });
 });
 
