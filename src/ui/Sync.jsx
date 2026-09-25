@@ -23,7 +23,7 @@ const ago = (at, now) => {
 
 export default function Sync({
   clientId, draft, onDraft, onSaveClientId, onForget,
-  status, now, onSync, onSignOut, signedIn, canSignIn = true,
+  status, now, onSync, onSignOut, signedIn, canSignIn = true, origin = "",
 }) {
   const configured = Boolean(clientId);
   return (
@@ -57,8 +57,15 @@ export default function Sync({
             </p>
             <p className="hint">
               It needs a client ID from a Google Cloud project of your own: enable the Drive
-              API, add this site as an authorised JavaScript origin, and paste the ID here.
+              API, add the address below as an authorised JavaScript origin, and paste the ID
+              here. Google matches that origin exactly, so each place you run Meter needs its
+              own entry — they can all share one client ID.
             </p>
+            {origin && (
+              <p className="hint">
+                This copy’s origin: <code className="origin">{origin}</code>
+              </p>
+            )}
             <label className="field">
               <span className="eyebrow">Google client ID</span>
               <input className="inp" value={draft} placeholder="…apps.googleusercontent.com"

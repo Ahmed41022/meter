@@ -135,6 +135,9 @@ export const CSS = `
 
 .sync-read{margin:0 0 12px;font-size:13px;color:var(--ink-2);line-height:1.5;}
 .sync-bad{color:var(--flag);}
+.origin{font-family:var(--mono);font-size:12px;background:var(--raise);
+  border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--ink);
+  user-select:all;word-break:break-all;}
 
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
