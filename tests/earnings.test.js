@@ -9,7 +9,7 @@ import { KIND } from "../src/domain/sessions.js";
 
 const T = new Date(2026, 4, 5, 12).getTime();
 const HOUR = 3_600_000;
-const project = { id: "p1", name: "hyperion", currentRate: 20.5, currency: "USD" };
+const project = { id: "p1", name: "orion", currentRate: 20.5, currency: "USD" };
 const empty = { projects: [project], sessions: [], earnings: [] };
 
 describe("money that is not an hour of work", () => {
@@ -168,14 +168,14 @@ describe("reporting money that no clock measured", () => {
   });
 
   it("keeps such a project in the company breakdown too", () => {
-    const withCo = { ...project, company: "Outlier" };
+    const withCo = { ...project, company: "Northwind" };
     const rows = byCompany([withCo], [], from, to, now, undefined, [earning("e1", 975_000)]);
-    expect(rows.map((r) => r.company)).toEqual(["Outlier"]);
+    expect(rows.map((r) => r.company)).toEqual(["Northwind"]);
     expect(rows[0].billedCents.USD).toBe(975_000);
   });
 
   it("files each earning under its own project", () => {
-    const other = { id: "p2", name: "aether", currentRate: 7.5, currency: "USD" };
+    const other = { id: "p2", name: "lumen", currentRate: 7.5, currency: "USD" };
     const rows = byProject([project, other], [], from, to, now, undefined,
       [earning("e1", 100_00), { ...earning("e2", 25_00), projectId: "p2" }]);
     const byId = Object.fromEntries(rows.map((r) => [r.project.id, r]));

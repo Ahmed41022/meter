@@ -76,7 +76,7 @@ export const companyOf = (project) => {
 };
 
 /** Every company named so far, for the suggestion list. Case-insensitively
- *  deduplicated so "Outlier" and "outlier" don't become two clients, keeping
+ *  deduplicated so "Northwind" and "northwind" don't become two clients, keeping
  *  whichever spelling was used first. */
 export const companiesIn = (projects) => {
   const seen = new Map();
@@ -152,9 +152,9 @@ export const validateProject = ({ name, rate, perTask }, { needsRate = true, mod
  * Fold a name to what a person typing it means.
  *
  * Separators are not meaningful in these names — the same body of work has been
- * filed as "code v code", "extensions-code-v-code" and "code_SQL" — so spaces,
+ * filed as "pair review", "extensions-pair-review" and "pair_SQL" — so spaces,
  * underscores and hyphens all collapse to one space. Anyone who types
- * "env building" is looking for `hyperion_env_building`, and a plain substring
+ * "env building" is looking for `orion_env_building`, and a plain substring
  * match would not find it.
  */
 const fold = (s) => (s ?? "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
@@ -167,7 +167,7 @@ export const matchesQuery = (project, query) => {
   return fold(project?.name).includes(q) || fold(companyOf(project)).includes(q);
 };
 
-/** The company is searched too: with forty projects under one client, "outlier"
+/** The company is searched too: with forty projects under one client, "northwind"
  *  is a question a reader will actually ask. */
 export const searchProjects = (projects, query) =>
   (projects ?? []).filter((p) => matchesQuery(p, query));
