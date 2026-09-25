@@ -245,7 +245,7 @@ export default function ProjectsView({
               <>
                 <div className="field">
                   <span className="eyebrow">How it pays</span>
-                  <div className="seg" role="tablist" aria-label="How this project pays">
+                  <div className="modes" role="tablist" aria-label="How this project pays">
                     {[["hourly", "By the hour"], ["perTask", "Per task"]].map(([key, label]) => (
                       <button key={key} role="tab" aria-selected={model === key}
                               className={"seg-btn" + (model === key ? " on" : "")}

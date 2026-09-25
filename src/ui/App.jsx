@@ -22,6 +22,7 @@ import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync from "./Sync.jsx";
+import ThemeSwitch from "./ThemeSwitch.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
@@ -563,22 +564,13 @@ export default function App({ store: injectedStore }) {
       </div>
 
       <div className="foot">
-        {/* System is the default and stays the default. The other two exist
-            because "what my OS is set to" and "what I want to look at right
-            now" are not the same question — least of all at 2am. */}
-        <div className="segmented small" role="tablist" aria-label="Theme">
-          {[[THEME.LIGHT, "Light"], [THEME.DARK, "Dark"], [THEME.SYSTEM, "System"]]
-            .map(([key, label]) => (
-              <button key={key} role="tab" aria-selected={theme === key}
-                      className={"seg" + (theme === key ? " on" : "")}
-                      onClick={() => {
-                        setTheme(key);
-                        saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
-                      }}>
-                {label}
-              </button>
-            ))}
-        </div>
+        {/* System is the default and stays it. The other two exist because
+            "what my OS is set to" and "what I want to look at right now" are
+            not the same question — least of all at 2am. */}
+        <ThemeSwitch theme={theme} onChange={(key) => {
+          setTheme(key);
+          saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
+        }} />
         {/* Which build you are looking at. Three copies of this app can be in
             use at once — browser, phone and desktop — and "it works on mine"
             is not answerable without it. */}

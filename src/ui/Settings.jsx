@@ -134,7 +134,7 @@ export default function Settings({
       {/* One choice between two states, so a segmented control — `.btn` grows
           to fill its row, which turned a toggle into two slabs the size of
           Save buttons. */}
-      <div className="seg" role="tablist" aria-label="How this project counts">
+      <div className="modes" role="tablist" aria-label="How this project counts">
         <button role="tab" aria-selected={!isOffClock(project)}
                 className={"seg-btn" + (isOffClock(project) ? "" : " on")}
                 onClick={() => onPatch({ offClock: false })}>
@@ -156,7 +156,7 @@ export default function Settings({
           <div className="sec-head" style={{ marginTop: 22 }}>
             <span className="eyebrow">When it pays</span>
           </div>
-          <div className="seg" role="tablist" aria-label="When this project pays">
+          <div className="modes" role="tablist" aria-label="When this project pays">
             <button role="tab" aria-selected={!paysOnAcceptance(project)}
                     className={"seg-btn" + (paysOnAcceptance(project) ? "" : " on")}
                     onClick={() => onPatch({ paysOnAcceptance: false })}>
@@ -191,7 +191,7 @@ export default function Settings({
       </div>
       {/* Three states, one control — two checkboxes could express "paused and
           done", which is not a thing a project can be. */}
-      <div className="seg" role="tablist" aria-label="Project status">
+      <div className="modes" role="tablist" aria-label="Project status">
         {[["active", "Running"], ["paused", "Paused"], ["done", "Done"]].map(([key, label]) => (
           <button key={key} role="tab" aria-selected={statusOf(project) === key}
                   className={"seg-btn" + (statusOf(project) === key ? " on" : "")}

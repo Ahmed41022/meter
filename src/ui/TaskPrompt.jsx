@@ -38,7 +38,7 @@ export default function TaskPrompt({
     <div className="prompt">
       <span className="eyebrow">{words.whichTask}</span>
 
-      <div className="seg" role="tablist">
+      <div className="modes" role="tablist">
         <button role="tab" aria-selected={mode === "existing"}
                 className={"seg-btn" + (mode === "existing" ? " on" : "")}
                 disabled={!tasks.length}

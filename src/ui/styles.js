@@ -146,7 +146,11 @@ export const CSS = `
   background:var(--raise);}
 .prompt .controls{margin-top:16px;}
 .prompt .field{margin-bottom:0;margin-top:14px;}
-.seg{display:flex;gap:6px;margin-top:12px;}
+/* The container for a row of .seg-btn choices. Named apart from .seg, which
+   is a BUTTON inside .segmented — sharing the name gave every segmented
+   control's buttons this rule's margin-top and made each one 12px taller than
+   it looked like it should be. */
+.modes{display:flex;gap:6px;margin-top:12px;}
 .seg-btn{flex:1;font-family:inherit;font-weight:600;font-size:13px;padding:9px 12px;
   border-radius:8px;border:1px solid var(--line);background:var(--card);
   color:var(--muted);cursor:pointer;}
@@ -224,7 +228,12 @@ export const CSS = `
   .settle-row{flex-wrap:wrap;}
   .settle-what{flex:1 1 100%;}
 }
-.foot{margin-top:30px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.foot{margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:9px;}
+.segmented.theme{gap:2px;padding:2px;border-radius:999px;}
+.seg.icon{display:grid;place-items:center;width:28px;height:28px;padding:0;
+  border-radius:999px;color:var(--muted);transition:color .12s ease,background .12s ease;}
+.seg.icon:hover{color:var(--ink-2);}
+.seg.icon.on{background:var(--pill);color:var(--jade);box-shadow:none;}
 .version{margin:0;text-align:center;font-size:11px;color:var(--muted);letter-spacing:.04em;}
 .sync-foot{margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line-2);
   font-size:12px;color:var(--muted);line-height:1.55;}
@@ -397,8 +406,10 @@ export const CSS = `
 
 .dash-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   margin-bottom:24px;flex-wrap:wrap;}
-.segmented{display:flex;gap:3px;background:var(--line-2);padding:3px;border-radius:9px;}
-.seg{font-family:inherit;font-weight:600;font-size:12.5px;padding:7px 14px;border:0;
+.segmented{display:flex;gap:3px;background:var(--line-2);padding:3px;border-radius:9px;
+  align-items:center;}
+.seg{font-family:inherit;font-weight:600;font-size:12.5px;padding:6px 13px;border:0;
+  line-height:1.35;
   border-radius:7px;background:none;color:var(--muted);cursor:pointer;}
 .seg:hover{color:var(--ink-2);}
 .seg.on{background:var(--pill);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
@@ -494,7 +505,7 @@ export const CSS = `
 }
 
 .segmented.small{padding:3px;}
-.segmented.small .seg{padding:5px 11px;font-size:11.5px;}
+.segmented.small .seg{padding:4px 10px;font-size:11.5px;}
 
 /* money the clock never measured */
 .grand-pending{margin-top:6px;font-family:var(--mono);font-size:13px;color:var(--amber);}
