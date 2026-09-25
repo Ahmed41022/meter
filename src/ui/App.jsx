@@ -7,7 +7,9 @@ import {
   liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
-import { addProject, patchProject, removeProject, setStatus } from "../domain/projects.js";
+import {
+  addProject, liveProjects, patchProject, removeProject, setStatus,
+} from "../domain/projects.js";
 import {
   EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, removeEarning,
   restoreEarning, setPayState,
@@ -322,7 +324,10 @@ export default function App({ store: injectedStore }) {
     return <div className="mtr"><style>{CSS}</style><div className="wrap empty">Loading your ledger…</div></div>;
   }
 
-  const project = state.projects.find((p) => p.id === openProjectId) || null;
+  // Deleted projects are tombstoned rather than removed, so every read of them
+  // goes through here. One place to forget instead of seven.
+  const projects = liveProjects(state.projects);
+  const project = projects.find((p) => p.id === openProjectId) || null;
   const current = project ? currentSession(state, project.id) : null;
   const recovering = recoveryId ? state.sessions.find((s) => s.id === recoveryId) : null;
 
@@ -364,7 +369,7 @@ export default function App({ store: injectedStore }) {
         {recovering && (
           <RecoveryBanner
             session={recovering} now={now}
-            project={state.projects.find((p) => p.id === recovering.projectId)}
+            project={projects.find((p) => p.id === recovering.projectId)}
             onStopAtLastTick={() => { commit((s) => recoverSession(s, recovering.id)); setRecoveryId(null); }}
             onKeepRunning={() => setRecoveryId(null)}
             onDelete={() => { commit((s) => deleteSession(s, recovering.id, Date.now())); setRecoveryId(null); }}
@@ -478,7 +483,7 @@ export default function App({ store: injectedStore }) {
               commit((s) => removeObjective(s, id, Date.now()));
               flash("Removed.", "Undo", () => commit((s) => restoreObjective(s, id)));
             }}
-            projects={state.projects}
+            projects={projects}
             earnings={earningsFor(state, project.id)}
             onAddEarning={(entry) =>
               commit((s) => addEarning(s, project, entry, Date.now(), uid()))}
@@ -497,14 +502,14 @@ export default function App({ store: injectedStore }) {
             }}
             onDeleteProject={() => {
               const snapshot = stateRef.current;
-              commit((s) => removeProject(s, project.id));
+              commit((s) => removeProject(s, project.id, Date.now()));
               setOpenProjectId(null);
               flash("Project removed.", "Undo", () => commit(() => snapshot));
             }}
           />
         ) : tab === "overview" ? (
           <DashboardView
-            projects={state.projects}
+            projects={projects}
             /* Both kinds: the dashboard reports idle time beside billed, and
                `performanceIn` is what keeps the two apart. */
             sessions={liveSessions(state.sessions)}
@@ -518,7 +523,7 @@ export default function App({ store: injectedStore }) {
         ) : (
           <ProjectsView
             scope={tab}
-            projects={tab === "life" ? offClockProjects(state.projects) : workProjects(state.projects)}
+            projects={tab === "life" ? offClockProjects(projects) : workProjects(projects)}
             sessions={tab === "life"
               ? liveSessions(state.sessions)
               : liveSessions(state.sessions).filter(isBilled)}
