@@ -147,6 +147,35 @@ describe("the built file", () => {
     expect(html).not.toMatch(/src="http/); // nothing fetched at runtime
   });
 
+  it("has a dark palette that follows the operating system", async () => {
+    const html = readFileSync(DIST, "utf8");
+    expect(html).toMatch(/@media \(prefers-color-scheme: dark\)/);
+    // The page chrome behind the app has to move too, or a dark UI sits in a
+    // white frame with a white status bar above it.
+    expect(html).toMatch(/theme-color" content="#0E1210" media="\(prefers-color-scheme: dark\)"/);
+    expect(html).toMatch(/html,body\{background:#0E1210;\}/);
+  });
+
+  it("takes every colour from a token, so one palette can repaint the app", async () => {
+    // The invariant dark mode rests on. A literal colour written into a rule
+    // looks right in the theme it was written for and wrong in the other, and
+    // nothing else would notice until someone opened it at night.
+    const html = readFileSync(DIST, "utf8");
+    // The bootstrap <style> is exempt and has to be: it paints the page behind
+    // the app before a single token exists, and it carries its own dark rule.
+    const app = html.replace(/<style>[\s\S]*?<\/style>/g, "");
+    const offenders = [];
+    for (const decl of app.split(/[;{}]/)) {
+      if (!/#[0-9A-Fa-f]{3,8}/.test(decl)) continue;
+      const [prop, ...rest] = decl.split(":");
+      if (!rest.length) continue;                       // not a declaration
+      if (!/^[-a-z]+$/.test(prop.trim())) continue;     // not CSS
+      if (prop.trim().startsWith("--")) continue;       // declaring a token
+      offenders.push(decl.trim().slice(0, 80));
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("stacks card text instead of running it inline", async () => {
     // Regression: card-name and card-meta were <span>s, so margin-top was
     // dropped and the project name ran into the rate on one line.
@@ -2470,14 +2499,14 @@ describe("companies, and projects that have stopped", () => {
   it("totals every project belonging to one company", async () => {
     const { d } = await open({
       projects: [
-        project("a", { name: "Pref", company: "Outlier" }),
-        project("b", { name: "Reviews", company: "Outlier" }),
-        project("c", { name: "Aether", company: "Aether Labs", currentRate: 10 }),
+        project("a", { name: "Pref", company: "Northwind" }),
+        project("b", { name: "Reviews", company: "Northwind" }),
+        project("c", { name: "Lumen", company: "Lumen Labs", currentRate: 10 }),
       ],
       sessions: [block("s1", "a", 2), block("s2", "b", 3), block("s3", "c", 4, 0, 10)],
     });
     const rows = crows(d);
-    expect(rows[0]).toMatch(/Outlier/);
+    expect(rows[0]).toMatch(/Northwind/);
     expect(rows[0]).toMatch(/\$500\.00/);        // 5h at $100
     expect(rows[0]).toMatch(/5h 00m/);
     expect(rows[0]).toMatch(/2 projects/);
@@ -2502,8 +2531,8 @@ describe("companies, and projects that have stopped", () => {
   it("shows unassigned work rather than quietly leaving it out of the shares", async () => {
     const { d } = await open({
       projects: [
-        project("a", { company: "Outlier" }),
-        project("b", { company: "Aether Labs" }),
+        project("a", { company: "Northwind" }),
+        project("b", { company: "Lumen Labs" }),
         project("c", {}),
       ],
       sessions: [block("s1", "a", 5), block("s2", "b", 3), block("s3", "c", 2)],
@@ -2517,7 +2546,7 @@ describe("companies, and projects that have stopped", () => {
   it("does not bother with a breakdown of one client", async () => {
     // The By project panel below already says everything it would.
     const { d } = await open({
-      projects: [project("a", { company: "Outlier" })],
+      projects: [project("a", { company: "Northwind" })],
       sessions: [block("s1", "a", 2)],
     });
     expect(d.querySelector(".crow")).toBeNull();
@@ -2526,8 +2555,8 @@ describe("companies, and projects that have stopped", () => {
   it("never counts sleep as unassigned revenue", async () => {
     const { d } = await open({
       projects: [
-        project("a", { company: "Outlier" }),
-        project("b", { company: "Aether Labs" }),
+        project("a", { company: "Northwind" }),
+        project("b", { company: "Lumen Labs" }),
         project("z", { name: "Sleep", offClock: true }),
       ],
       sessions: [block("s1", "a", 2), block("s2", "b", 2), block("s3", "z", 8)],
@@ -2969,20 +2998,20 @@ describe("the company panel showing up at all", () => {
     // The case a whole imported history lands in: forty projects, one client.
     const d = await open({
       projects: [
-        project("a", { company: "Outlier" }),
-        project("b", { company: "Outlier" }),
+        project("a", { company: "Northwind" }),
+        project("b", { company: "Northwind" }),
       ],
       sessions: [block("s1", "a", 2), block("s2", "b", 3)],
     });
     expect(d.querySelector(".crow")).not.toBeNull();
-    expect(d.querySelector(".crow-name").textContent).toBe("Outlier");
+    expect(d.querySelector(".crow-name").textContent).toBe("Northwind");
     expect([...d.querySelectorAll(".sec-head")].some((h) => /1 company\b/.test(h.textContent)))
       .toBe(true);
   }, 25_000);
 
   it("still skips one company on one project, which is just its name again", async () => {
     const d = await open({
-      projects: [project("a", { company: "Outlier" })],
+      projects: [project("a", { company: "Northwind" })],
       sessions: [block("s1", "a", 2)],
     });
     expect(d.querySelector(".crow")).toBeNull();
@@ -3217,12 +3246,12 @@ describe("finding one project among forty", () => {
    *  a handful live, the rest filed away under one client. */
   const many = {
     projects: [
-      p("Aether"), p("Taiga Human pref"), p("P2P"),
-      p("hyperion_env_building", { company: "Outlier", status: "done" }),
-      p("code v code", { company: "Outlier", status: "done" }),
-      p("extensions-code-v-code", { company: "Outlier", status: "done" }),
-      p("gamebird", { company: "Outlier", status: "done" }),
-      p("Glider Broiler", { company: "Outlier", status: "done" }),
+      p("Lumen"), p("Delta Human Pref"), p("Gateway"),
+      p("orion_env_building", { company: "Northwind", status: "done" }),
+      p("pair review", { company: "Northwind", status: "done" }),
+      p("extensions-pair-review", { company: "Northwind", status: "done" }),
+      p("songbird", { company: "Northwind", status: "done" }),
+      p("Weather Widget", { company: "Northwind", status: "done" }),
     ],
     sessions: [],
   };
@@ -3240,36 +3269,36 @@ describe("finding one project among forty", () => {
   };
 
   it("offers no box on a short list, where nothing can get lost", async () => {
-    const { d } = await open({ projects: [p("Aether"), p("P2P")], sessions: [] });
+    const { d } = await open({ projects: [p("Lumen"), p("Gateway")], sessions: [] });
     expect(find(d)).toBeNull();
   }, 25_000);
 
   it("narrows the list as you type", async () => {
     const { dom, d } = await open(many);
-    await type(dom, d, "gamebird");
-    expect(names(d)).toEqual(["gamebird"]);
+    await type(dom, d, "songbird");
+    expect(names(d)).toEqual(["songbird"]);
   }, 30_000);
 
   it("reaches into the filed-away work, which is where most of it is", async () => {
     // A match inside a collapsed group is a match the reader cannot see, so
     // searching opens it.
     const { dom, d } = await open(many);
-    expect(names(d)).not.toContain("hyperion_env_building");
-    await type(dom, d, "hyperion");
-    expect(names(d)).toContain("hyperion_env_building");
+    expect(names(d)).not.toContain("orion_env_building");
+    await type(dom, d, "orion");
+    expect(names(d)).toContain("orion_env_building");
   }, 30_000);
 
   it("ignores whether you typed spaces, underscores or hyphens", async () => {
     const { dom, d } = await open(many);
     await type(dom, d, "env building");
-    expect(names(d)).toEqual(["hyperion_env_building"]);
-    await type(dom, d, "code-v-code");
-    expect(names(d).sort()).toEqual(["code v code", "extensions-code-v-code"]);
+    expect(names(d)).toEqual(["orion_env_building"]);
+    await type(dom, d, "pair-review");
+    expect(names(d).sort()).toEqual(["extensions-pair-review", "pair review"]);
   }, 30_000);
 
   it("finds every project belonging to a client", async () => {
     const { dom, d } = await open(many);
-    await type(dom, d, "outlier");
+    await type(dom, d, "northwind");
     expect(names(d)).toHaveLength(5);
   }, 30_000);
 
@@ -3284,19 +3313,19 @@ describe("finding one project among forty", () => {
     const { dom, d } = await open({
       ...many,
       sessions: [{
-        id: "s1", projectId: "Aether", kind: "billed", taskId: null, rate: 100,
+        id: "s1", projectId: "Lumen", kind: "billed", taskId: null, rate: 100,
         currency: "USD", createdAt: Date.now() - HOUR, closedAt: Date.now(), deletedAt: null,
         segments: [{ startedAt: Date.now() - HOUR, endedAt: Date.now() }],
       }],
     });
     const before = d.querySelector(".grand-amt").textContent;
-    await type(dom, d, "gamebird");
+    await type(dom, d, "songbird");
     expect(d.querySelector(".grand-amt").textContent).toBe(before);
   }, 30_000);
 
   it("brings the whole list back when cleared", async () => {
     const { dom, d } = await open(many);
-    await type(dom, d, "gamebird");
+    await type(dom, d, "songbird");
     expect(names(d)).toHaveLength(1);
     btn(d, /^Clear$/).click();
     await wait(250);
@@ -3309,7 +3338,7 @@ describe("handing the numbers to a spreadsheet", () => {
   const back = (n) => Date.now() - n * 86_400_000;
   const seed = {
     projects: [{
-      id: "a", name: "hyperion", currentRate: 20, currency: "USD", company: "Outlier",
+      id: "a", name: "orion", currentRate: 20, currency: "USD", company: "Northwind",
       createdAt: back(40), sessionGoal: null, overallGoal: null, tasks: [],
     }],
     sessions: [{
@@ -3351,8 +3380,8 @@ describe("handing the numbers to a spreadsheet", () => {
     const rows = csv.trim().split("\n");
     expect(rows[0]).toMatch(/^"Date","Project","Company"/);
     expect(rows).toHaveLength(3); // header, the session, the piece-rate money
-    expect(csv).toContain('"hyperion"');
-    expect(csv).toContain('"Outlier"');
+    expect(csv).toContain('"orion"');
+    expect(csv).toContain('"Northwind"');
     expect(csv).toContain('"40.00"'); // 2h at $20
     expect(csv).toContain('"3000.00"'); // the money no clock measured
     expect(csv).toMatch(/"6 items"/);
