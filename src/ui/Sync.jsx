@@ -23,17 +23,32 @@ const ago = (at, now) => {
 
 export default function Sync({
   clientId, draft, onDraft, onSaveClientId, onForget,
-  status, now, onSync, onSignOut, signedIn,
+  status, now, onSync, onSignOut, signedIn, canSignIn = true,
 }) {
   const configured = Boolean(clientId);
   return (
     <div className="sec">
       <div className="sec-head">
         <span className="eyebrow">Sync</span>
-        <span className="eyebrow">{STATE_WORDS[status.state] ?? ""}</span>
+        <span className="eyebrow">{canSignIn ? (STATE_WORDS[status.state] ?? "") : "Unavailable here"}</span>
       </div>
       <div className="panel">
-        {!configured ? (
+        {!canSignIn ? (
+          // A page opened from disk has no origin Google will authorise, so the
+          // desktop copy cannot sign in however it is configured. Saying so is
+          // better than a button whose only possible outcome is an error page.
+          <>
+            <p className="hint" style={{ marginTop: 0 }}>
+              This copy runs from a file on disk, and Google only signs in pages served
+              from a web address. Sync works in the browser version; open that and sign
+              in there.
+            </p>
+            <p className="hint">
+              To move this ledger across meanwhile: Export a backup here, then Restore it
+              wherever you want it.
+            </p>
+          </>
+        ) : !configured ? (
           <>
             <p className="hint" style={{ marginTop: 0 }}>
               Sync keeps this ledger in a hidden folder in your own Google Drive, so another
