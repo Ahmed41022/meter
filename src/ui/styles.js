@@ -5,13 +5,26 @@ export const CSS = `
 
 .mtr {
   --paper:#F1F3EF; --card:#FFFFFF; --raise:#F7F9F5;
-  --ink:#101613; --ink-2:#3C4742; --muted:#75827B; --line:#E2E7E0; --line-2:#EDF0EA;
-  --jade:#0F7B5A; --jade-hi:#12946B; --jade-soft:#DCEFE5;
-  --flag:#C2493C; --flag-soft:#FBEAE7;
-  --amber:#A8762A; --amber-soft:#F4EBD8; --amber-line:#E3D3B0;
+  --ink:#101613; --ink-2:#3C4742; --muted:#75827B; --faint:#B4BEB8;
+  --line:#E2E7E0; --line-2:#EDF0EA; --line-hi:#CBD6CE;
+  --jade:#0F7B5A; --jade-hi:#12946B; --jade-soft:#DCEFE5; --jade-soft-hi:#CDE9DC;
+  --on-jade:#FFFFFF;
+  --flag:#C2493C; --flag-soft:#FBEAE7; --flag-line:#EBD7D4;
+  --amber:#A8762A; --amber-hi:#BE8930; --amber-soft:#F4EBD8; --amber-line:#E3D3B0;
+  --warn-line:#E7DCC4; --warn-bg:#FDF8EC;
+  --idle-face:#FCFAF5; --idle-tick:#EBDCBE;
+  /* The activity calendar's four steps, per scale. */
+  --heat-work-1:#DCEFE5; --heat-work-2:#A5D8C1; --heat-work-3:#4FA986; --heat-work-4:#0F7B5A;
+  --heat-life-1:#E3E7E3; --heat-life-2:#BFC7C1; --heat-life-3:#99A49C; --heat-life-4:#75827B;
+  /* Toasts and tooltips sit on a colour opposed to the page, so they need a
+     pair of their own rather than reusing --ink: inverting text colour for a
+     surface breaks the moment the page itself goes dark. */
+  --inverse:#101613; --on-inverse:#F1F3EF;
+  --jade-on-inverse:#8FD9BB; --amber-on-inverse:#E8C98A;
   --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:'DM Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
   --shadow:0 1px 2px rgba(16,22,19,.05), 0 10px 30px rgba(16,22,19,.06);
+  color-scheme:light;
   background:var(--paper); color:var(--ink); font-family:var(--sans);
   min-height:100vh; padding:26px 16px 96px; font-size:15px;
   -webkit-font-smoothing:antialiased;
@@ -38,6 +51,57 @@ export const CSS = `
 .linkbtn:hover{color:var(--jade);}
 
 /* meter face */
+/* Dark.
+ *
+ * Every value below is a redefinition of a token declared above — no rule
+ * outside this block knows which theme is running, which is the whole point of
+ * having spent the effort to tokenise the colours.
+ *
+ * The selector is doubled deliberately. The media query follows the operating
+ * system, and the attribute form is what a manual switch would set later; the
+ * :not() guard means such a switch can override the system rather than fight
+ * it. Adding the switch is then a checkbox and one attribute, not a palette.
+ */
+@media (prefers-color-scheme: dark) {
+  .mtr:not([data-theme="light"]) {
+    --paper:#0E1210; --card:#161A17; --raise:#1C211D;
+    --ink:#E7EDE9; --ink-2:#BCC6C0; --muted:#889288; --faint:#5E6863;
+    --line:#282E2A; --line-2:#20251F; --line-hi:#3A423C;
+    --jade:#18A87A; --jade-hi:#22C08D; --jade-soft:#12332A; --jade-soft-hi:#17402F;
+    --on-jade:#04140E;
+    --flag:#E4796A; --flag-soft:#38211E; --flag-line:#4C2B26;
+    --amber:#D6A54A; --amber-hi:#E8B95E; --amber-soft:#332918; --amber-line:#4A3C22;
+    --warn-line:#463A22; --warn-bg:#241E12;
+    --idle-face:#1B1810; --idle-tick:#4A3C22;
+    --heat-work-1:#14332A; --heat-work-2:#1A6046; --heat-work-3:#1F8F68; --heat-work-4:#2AC294;
+    --heat-life-1:#242A26; --heat-life-2:#3B433D; --heat-life-3:#5C665F; --heat-life-4:#818C84;
+    --inverse:#E7EDE9; --on-inverse:#0E1210;
+    --jade-on-inverse:#0F7B5A; --amber-on-inverse:#8A5F16;
+    /* Shadow does almost no work on a dark surface; depth comes from the
+       borders instead, so this is a whisper rather than the light version. */
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+
+.mtr[data-theme="dark"] {
+  --paper:#0E1210; --card:#161A17; --raise:#1C211D;
+  --ink:#E7EDE9; --ink-2:#BCC6C0; --muted:#889288; --faint:#5E6863;
+  --line:#282E2A; --line-2:#20251F; --line-hi:#3A423C;
+  --jade:#18A87A; --jade-hi:#22C08D; --jade-soft:#12332A; --jade-soft-hi:#17402F;
+  --on-jade:#04140E;
+  --flag:#E4796A; --flag-soft:#38211E; --flag-line:#4C2B26;
+  --amber:#D6A54A; --amber-hi:#E8B95E; --amber-soft:#332918; --amber-line:#4A3C22;
+  --warn-line:#463A22; --warn-bg:#241E12;
+  --idle-face:#1B1810; --idle-tick:#4A3C22;
+  --heat-work-1:#14332A; --heat-work-2:#1A6046; --heat-work-3:#1F8F68; --heat-work-4:#2AC294;
+  --heat-life-1:#242A26; --heat-life-2:#3B433D; --heat-life-3:#5C665F; --heat-life-4:#818C84;
+  --inverse:#E7EDE9; --on-inverse:#0E1210;
+  --jade-on-inverse:#0F7B5A; --amber-on-inverse:#8A5F16;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+
 .face{background:var(--card);border:1px solid var(--line);border-radius:16px;
   padding:26px 24px 22px;box-shadow:var(--shadow);}
 .face-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:22px;}
@@ -50,13 +114,13 @@ export const CSS = `
 
 /* Idle mode repaints the whole face. The money figure sits in the same slot
    but means the opposite thing, so it must never look the same. */
-.face.idle{background:#FCFAF5;border-color:var(--amber-line);}
+.face.idle{background:var(--idle-face);border-color:var(--amber-line);}
 .face.idle .money-head{color:var(--amber);}
 .face.idle .money-tail{color:var(--amber);opacity:.55;}
-.face.idle .tick.filled{background:#EBDCBE;}
+.face.idle .tick.filled{background:var(--idle-tick);}
 .face.idle .tick.head{background:var(--amber);}
 .face.idle .btn.primary{background:var(--amber);border-color:var(--amber);}
-.face.idle .btn.primary:hover{background:#BE8930;border-color:#BE8930;}
+.face.idle .btn.primary:hover{background:var(--amber-hi);border-color:var(--amber-hi);}
 .money-label{margin-top:9px;font-size:12px;color:var(--amber);font-weight:600;}
 
 /* utilisation */
@@ -94,7 +158,7 @@ export const CSS = `
 .chip{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
   background:var(--jade-soft);color:var(--jade);border-radius:999px;padding:5px 12px;
   border:0;cursor:pointer;font-family:inherit;}
-.chip:hover{background:#CDE9DC;}
+.chip:hover{background:var(--jade-soft-hi);}
 .row.sel{background:var(--jade-soft);}
 .row-check{width:18px;height:18px;accent-color:var(--jade);cursor:pointer;flex:none;}
 .row.pick{grid-template-columns:auto 1fr auto auto;}
@@ -144,6 +208,8 @@ export const CSS = `
 .sync-more{display:flex;align-items:center;gap:11px;margin-top:16px;}
 .sync-more .linkish{font-size:12.5px;}
 .sync-sep{color:var(--line);font-size:12.5px;}
+.version{margin:26px 0 0;text-align:center;font-size:11px;color:var(--muted);
+  letter-spacing:.04em;}
 .sync-foot{margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line-2);
   font-size:12px;color:var(--muted);line-height:1.55;}
 .origin{font-family:var(--mono);font-size:12px;background:var(--raise);
@@ -210,11 +276,11 @@ export const CSS = `
 .btn{font-family:inherit;font-weight:600;font-size:14px;padding:12px 20px;border-radius:9px;
   border:1px solid var(--line);background:var(--card);color:var(--ink);
   cursor:pointer;flex:1;min-width:112px;transition:background .15s,border-color .15s,color .15s;}
-.btn:hover{background:var(--raise);border-color:#D3DAD2;}
-.btn.primary{background:var(--jade);color:#fff;border-color:var(--jade);}
+.btn:hover{background:var(--raise);border-color:var(--line-hi);}
+.btn.primary{background:var(--jade);color:var(--on-jade);border-color:var(--jade);}
 .btn.primary:hover{background:var(--jade-hi);border-color:var(--jade-hi);}
 .btn.ghost{background:var(--card);}
-.btn.danger{color:var(--flag);border-color:#EBD7D4;background:var(--card);}
+.btn.danger{color:var(--flag);border-color:var(--flag-line);background:var(--card);}
 .btn.danger:hover{background:var(--flag-soft);border-color:var(--flag);}
 .btn:disabled{opacity:.4;cursor:not-allowed;}
 
@@ -258,7 +324,7 @@ export const CSS = `
 .row-meta{font-size:11.5px;color:var(--muted);margin-top:3px;font-family:var(--mono);}
 .row-amt{font-family:var(--mono);font-size:15px;color:var(--ink);
   font-variant-numeric:tabular-nums;}
-.x{background:none;border:0;color:#B4BEB8;cursor:pointer;font-size:18px;
+.x{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;
   line-height:1;padding:6px 5px;border-radius:6px;}
 .x:hover{color:var(--flag);background:var(--flag-soft);}
 
@@ -267,7 +333,7 @@ export const CSS = `
   text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;
   padding:18px 20px;cursor:pointer;color:inherit;font:inherit;
   box-shadow:var(--shadow);transition:border-color .15s,transform .15s;}
-.card:hover{border-color:#CBD6CE;transform:translateY(-1px);}
+.card:hover{border-color:var(--line-hi);transform:translateY(-1px);}
 .card > span{display:block;min-width:0;}
 .card-name{display:block;font-weight:700;font-size:17px;letter-spacing:-.015em;}
 .card-meta{display:block;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:5px;}
@@ -290,16 +356,16 @@ export const CSS = `
 .empty{text-align:center;padding:34px 16px;color:var(--muted);font-size:13.5px;line-height:1.6;}
 
 /* banners + toast */
-.banner{border:1px solid #E7DCC4;background:#FDF8EC;border-radius:14px;
+.banner{border:1px solid var(--warn-line);background:var(--warn-bg);border-radius:14px;
   padding:18px;margin-bottom:20px;}
 .banner p{margin:9px 0 0;font-size:13.5px;line-height:1.6;color:var(--ink-2);}
 .banner .controls{margin-top:15px;}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:50;
-  background:var(--ink);color:#F1F3EF;border-radius:11px;
+  background:var(--inverse);color:var(--on-inverse);border-radius:11px;
   padding:13px 16px;display:flex;align-items:center;gap:16px;font-size:13.5px;
   box-shadow:0 12px 32px rgba(16,22,19,.22);max-width:calc(100% - 32px);}
-.toast .linkbtn{color:#8FD9BB;}
-.toast .linkbtn:hover{color:#fff;}
+.toast .linkbtn{color:var(--jade-on-inverse);}
+.toast .linkbtn:hover{color:var(--on-jade);}
 .grand{margin-bottom:28px;}
 .grand-amt{font-family:var(--mono);font-size:clamp(32px,8.5vw,46px);color:var(--ink);
   font-variant-numeric:tabular-nums;line-height:1.05;margin-top:8px;letter-spacing:-.035em;}
@@ -324,7 +390,7 @@ export const CSS = `
 .step{font-family:inherit;font-size:17px;line-height:1;width:34px;height:34px;
   border:1px solid var(--line);background:var(--card);color:var(--ink-2);
   border-radius:8px;cursor:pointer;}
-.step:hover:not(:disabled){border-color:#CBD6CE;color:var(--jade);}
+.step:hover:not(:disabled){border-color:var(--line-hi);color:var(--jade);}
 .step:disabled{opacity:.35;cursor:not-allowed;}
 
 .grand-alt{font-family:var(--mono);font-size:19px;color:var(--muted);
@@ -372,11 +438,11 @@ export const CSS = `
   font-size:10px;color:var(--muted);white-space:nowrap;}
 
 .ttip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
-  background:var(--ink);color:#F1F3EF;border-radius:9px;padding:9px 11px;
+  background:var(--inverse);color:var(--on-inverse);border-radius:9px;padding:9px 11px;
   font-size:11.5px;line-height:1.55;white-space:nowrap;z-index:20;
   display:none;flex-direction:column;box-shadow:0 8px 22px rgba(16,22,19,.22);}
 .ttip strong{font-weight:600;font-size:11px;letter-spacing:.02em;}
-.ttip-idle{color:#E8C98A;}
+.ttip-idle{color:var(--amber-on-inverse);}
 .tcol:hover .ttip,.tcol:focus-within .ttip{display:flex;}
 /* The first and last tooltips would otherwise spill off the panel. */
 .tcol:first-child .ttip{left:0;transform:none;}
@@ -524,7 +590,7 @@ export const CSS = `
 
 /* A clash is a warning, not an error — it states what would be double-counted
    and lets you decide, rather than refusing and leaving you stuck. */
-.clash{border:1px solid #E7DCC4;background:#FDF8EC;border-radius:12px;
+.clash{border:1px solid var(--warn-line);background:var(--warn-bg);border-radius:12px;
   padding:15px;margin-top:14px;}
 .clash p{margin:8px 0 0;font-size:13px;line-height:1.55;color:var(--ink-2);}
 .clash ul{margin:10px 0 0;padding-left:18px;font-family:var(--mono);font-size:11.5px;

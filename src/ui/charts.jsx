@@ -199,9 +199,11 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
  * makes them arbitrary unless they are stated. So the legend spells out every
  * one of them instead of saying "less" and "more".
  */
+/* Tokens rather than literals, so the ramp follows the theme. A fixed light
+ * ramp on a dark page is the one chart element that would still glow. */
 const RAMP = {
-  work: ["#DCEFE5", "#A5D8C1", "#4FA986", "#0F7B5A"],
-  life: ["#E3E7E3", "#BFC7C1", "#99A49C", "#75827B"],
+  work: [1, 2, 3, 4].map((n) => `var(--heat-work-${n})`),
+  life: [1, 2, 3, 4].map((n) => `var(--heat-life-${n})`),
 };
 const EMPTY_CELL = "var(--line-2)";
 
