@@ -514,7 +514,7 @@ export default function App({ store: injectedStore }) {
               setSync({ state: "idle", at: null });
             }}
             status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
-            canSignIn={originAllowed()}
+            canSignIn={originAllowed()} origin={window.location.origin}
             onSync={() => runSync({ interactive: true })}
             onSignOut={async () => {
               await authRef.current?.signOut();
