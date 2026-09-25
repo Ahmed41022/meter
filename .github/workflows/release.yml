@@ -1,0 +1,80 @@
+# Turns a `vX.Y.Z` tag into a GitHub Release with something you can download.
+#
+# Two artifacts, because there are two ways to run Meter offline: the single
+# self-contained page, and the packaged Windows app. The hosted version needs
+# nothing from here — it deploys from main on its own.
+#
+# The whole suite runs first. A tag that cannot pass CI should not become a
+# release anybody can install.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Windows, because the desktop app is packaged for Windows and packaging it
+    # anywhere else would produce a build nobody here can run.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run coverage
+
+      # The tag is the source of truth for a release, and package.json is the
+      # source of truth for the app. They disagreeing means one of them was
+      # forgotten, and a release built from the wrong version is worse than one
+      # that did not happen.
+      - name: Check the tag matches package.json
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
+            exit 1
+          fi
+          echo "version $pkg"
+
+      - name: Package the desktop app
+        run: npm run desktop
+
+      - name: Zip the desktop app
+        shell: pwsh
+        run: |
+          Compress-Archive -Path desktop/out/Meter-win32-x64/* `
+                           -DestinationPath Meter-${{ github.ref_name }}-win32-x64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md).
+
+            **Try it without downloading anything:** https://ahmed41022.github.io/meter/
+
+            - `meter.html` — the whole app in one file. Download and open it.
+            - `Meter-*-win32-x64.zip` — the Windows desktop app. Unzip, run `Meter.exe`.
+          files: |
+            dist/meter.html
+            Meter-${{ github.ref_name }}-win32-x64.zip

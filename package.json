@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "An hourly earnings meter — time a session, watch the money accrue, keep an honest ledger per project.",
+  "description": "An hourly earnings meter \u2014 time a session, watch the money accrue, keep an honest ledger per project.",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
