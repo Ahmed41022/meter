@@ -9,15 +9,18 @@ import {
 } from "../domain/sessions.js";
 import { addProject, patchProject, removeProject, setStatus } from "../domain/projects.js";
 import {
-  addEarning, earningsFor, liveEarnings, removeEarning, restoreEarning, setPayState,
+  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, removeEarning,
+  restoreEarning, setPayState,
 } from "../domain/earnings.js";
-import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../domain/tasks.js";
+import {
+  addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskPrice, setTaskRate,
+} from "../domain/tasks.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
-import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
+import { SETTING, THEME, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync from "./Sync.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
@@ -51,7 +54,25 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const resolveTaskPick = (project, pick, createTask) => {
   if (pick?.label === undefined) return { id: pick?.taskId ?? null, prepare: (s) => s };
   const id = resolveTaskId(project, pick.label, uid());
-  return { id, prepare: (s) => createTask(s, id, pick.label) };
+  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay) };
+};
+
+/**
+ * What the one pay box on the task prompt means, which depends on how the
+ * project pays. A piece-rate project reads it as what one accepted item is
+ * worth; an hourly one reads it as a rate, or as a share of the base.
+ *
+ * Nothing is written when the box was left empty, because empty already has a
+ * meaning — inherit — and a stored null would say it less clearly.
+ */
+const payFields = (project, pay) => {
+  if (!String(pay ?? "").trim()) return {};
+  if (isPerTask(project)) {
+    const price = Number(pay);
+    return Number.isFinite(price) && price > 0 ? { price } : {};
+  }
+  const { rate, factor } = parseTaskRate(pay);
+  return { ...(rate ? { rate } : {}), ...(factor ? { factor } : {}) };
 };
 const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 
@@ -151,6 +172,7 @@ export default function App({ store: injectedStore }) {
   const [clientId, setClientId] = useState(() => loadSetting(SETTING.CLIENT_ID));
   const [clientDraft, setClientDraft] = useState("");
   const [sync, setSync] = useState({ state: "idle", at: null });
+  const [theme, setTheme] = useState(() => loadSetting(SETTING.THEME, THEME.SYSTEM));
   const [merged, setMerged] = useState(null);
 
   /**
@@ -304,7 +326,9 @@ export default function App({ store: injectedStore }) {
   const recovering = recoveryId ? state.sessions.find((s) => s.id === recoveryId) : null;
 
   return (
-    <div className="mtr">
+    // The attribute the palette already keys off: absent means follow the
+    // system, and "light" is what overrides a system set to dark.
+    <div className="mtr" data-theme={theme === THEME.SYSTEM ? undefined : theme}>
       <style>{CSS}</style>
       <div className="wrap">
         <div className="topbar">
@@ -392,21 +416,30 @@ export default function App({ store: injectedStore }) {
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
             onStart={(kind, pick) => {
-              const taskId = resolveTaskPick(project, pick, (st, id, label) =>
-                addTask(st, project.id, { id, label }, Date.now()));
+              const taskId = resolveTaskPick(project, pick, (st, id, label, pay) =>
+                addTask(st, project.id, { id, label, ...payFields(project, pay) }, Date.now()));
               commit((s) => startSession(
                 taskId.prepare(s), project, { now: Date.now(), id: uid(), kind, taskId: taskId.id }));
             }}
             onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
             onResume={() => commit((s) => resumeSession(s, current.id, Date.now()))}
             onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
+            onSettle={(sessionId, lines) => commit((s) => lines.reduce(
+              // Pending, not paid. The work is submitted; whether it is
+              // accepted is somebody else's decision and days away.
+              (acc, line) => addEarning(acc, project, {
+                cents: line.cents, kind: EARNING.PIECE, units: line.units,
+                taskId: line.taskId, sessionId, status: PAY.PENDING,
+              }, Date.now(), uid()),
+              s,
+            ))}
             onDeleteSession={(id) => {
               commit((s) => deleteSession(s, id, Date.now()));
               flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
             }}
             onAssign={(sessionIds, pick) => {
-              const chosen = resolveTaskPick(project, pick, (st, id, label) =>
-                addTask(st, project.id, { id, label }, Date.now()));
+              const chosen = resolveTaskPick(project, pick, (st, id, label, pay) =>
+                addTask(st, project.id, { id, label, ...payFields(project, pay) }, Date.now()));
               commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
             }}
             onCorrect={(sessionId, window_) => {
@@ -416,8 +449,10 @@ export default function App({ store: injectedStore }) {
             }}
             onRevertCorrection={(sessionId) =>
               commit((s) => revertCorrection(s, sessionId))}
-            onSaveTask={(taskId, { label, rate }) =>
-              commit((s) => setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate))}
+            onSaveTask={(taskId, { label, rate, price }) =>
+              commit((s) => setTaskPrice(
+                setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
+                project.id, taskId, price))}
             onDeleteTask={(taskId) => {
               const snapshot = stateRef.current;
               // Objectives pointing at the task are unfiled with it, so the
@@ -527,10 +562,28 @@ export default function App({ store: injectedStore }) {
         )}
       </div>
 
-      {/* Which build you are looking at. Three copies of this app can be in
-          use at once — browser, phone and desktop — and "it works on mine" is
-          not answerable without it. */}
-      <p className="version">Meter v{VERSION}</p>
+      <div className="foot">
+        {/* System is the default and stays the default. The other two exist
+            because "what my OS is set to" and "what I want to look at right
+            now" are not the same question — least of all at 2am. */}
+        <div className="segmented small" role="tablist" aria-label="Theme">
+          {[[THEME.LIGHT, "Light"], [THEME.DARK, "Dark"], [THEME.SYSTEM, "System"]]
+            .map(([key, label]) => (
+              <button key={key} role="tab" aria-selected={theme === key}
+                      className={"seg" + (theme === key ? " on" : "")}
+                      onClick={() => {
+                        setTheme(key);
+                        saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
+                      }}>
+                {label}
+              </button>
+            ))}
+        </div>
+        {/* Which build you are looking at. Three copies of this app can be in
+            use at once — browser, phone and desktop — and "it works on mine"
+            is not answerable without it. */}
+        <p className="version">Meter v{VERSION}</p>
+      </div>
 
       {toast && (
         <Toast message={toast.message} action={toast.action}
