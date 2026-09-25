@@ -1426,11 +1426,18 @@ describe("the overall view", () => {
 
   it("counts a session still running up to the current second", async () => {
     const now = Date.now();
+    // An hour ago is YESTERDAY between midnight and 01:00, and the Day window
+    // would then hold only the minutes since midnight — so this asserted 450
+    // and got 277 for anyone who ran the suite just after midnight. The start
+    // is clamped into today, and the expectation is derived from the overlap
+    // the app is actually being asked about.
+    const midnight = new Date(now).setHours(0, 0, 0, 0);
+    const started = Math.max(now - HOUR, midnight + 60_000);
     const dom = await boot({
       projects: [project("p1", "Acme")],
       sessions: [{
         id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 450, currency: "EGP",
-        createdAt: now - HOUR, segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now }],
+        createdAt: started, segments: [{ startedAt: started, endedAt: null, lastTick: now }],
         closedAt: null, deletedAt: null,
       }],
     });
@@ -1439,8 +1446,13 @@ describe("the overall view", () => {
     await wait(220);
     btn(d, /^Day$/).click();
     await wait(220);
-    // An hour so far, and it is already in the earned figure.
-    expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.[0-9]/);
+
+    const shown = Number(d.querySelector(".grand-amt").textContent.replace(/[^0-9.]/g, ""));
+    const expected = 450 * ((now - started) / HOUR);
+    // At least the whole run so far, and no more than a few seconds beyond it:
+    // the meter is still going while the test reads it.
+    expect(shown).toBeGreaterThanOrEqual(expected - 0.01);
+    expect(shown).toBeLessThan(expected + 450 * (10 / 3600));
   }, 20_000);
 });
 
