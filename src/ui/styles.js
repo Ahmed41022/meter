@@ -19,6 +19,7 @@ export const CSS = `
   /* Toasts and tooltips sit on a colour opposed to the page, so they need a
      pair of their own rather than reusing --ink: inverting text colour for a
      surface breaks the moment the page itself goes dark. */
+  --pill:#FFFFFF;
   --inverse:#101613; --on-inverse:#F1F3EF;
   --jade-on-inverse:#8FD9BB; --amber-on-inverse:#E8C98A;
   --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -75,7 +76,9 @@ export const CSS = `
     --idle-face:#1B1810; --idle-tick:#4A3C22;
     --heat-work-1:#14332A; --heat-work-2:#1A6046; --heat-work-3:#1F8F68; --heat-work-4:#2AC294;
     --heat-life-1:#242A26; --heat-life-2:#3B433D; --heat-life-3:#5C665F; --heat-life-4:#818C84;
-    --inverse:#E7EDE9; --on-inverse:#0E1210;
+    --pill:#2C332E;
+    --pill:#2C332E;
+  --inverse:#E7EDE9; --on-inverse:#0E1210;
     --jade-on-inverse:#0F7B5A; --amber-on-inverse:#8A5F16;
     /* Shadow does almost no work on a dark surface; depth comes from the
        borders instead, so this is a whisper rather than the light version. */
@@ -96,6 +99,7 @@ export const CSS = `
   --idle-face:#1B1810; --idle-tick:#4A3C22;
   --heat-work-1:#14332A; --heat-work-2:#1A6046; --heat-work-3:#1F8F68; --heat-work-4:#2AC294;
   --heat-life-1:#242A26; --heat-life-2:#3B433D; --heat-life-3:#5C665F; --heat-life-4:#818C84;
+  --pill:#2C332E;
   --inverse:#E7EDE9; --on-inverse:#0E1210;
   --jade-on-inverse:#0F7B5A; --amber-on-inverse:#8A5F16;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
@@ -208,8 +212,20 @@ export const CSS = `
 .sync-more{display:flex;align-items:center;gap:11px;margin-top:16px;}
 .sync-more .linkish{font-size:12.5px;}
 .sync-sep{color:var(--line);font-size:12.5px;}
-.version{margin:26px 0 0;text-align:center;font-size:11px;color:var(--muted);
-  letter-spacing:.04em;}
+.settle-row{display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;}
+.settle-row .field{margin-bottom:0;}
+.settle-what{flex:1 1 auto;min-width:0;}
+.settle-many{flex:0 0 96px;}
+.settle-sum{font-family:var(--mono);font-size:13px;color:var(--ink-2);
+  padding-bottom:12px;white-space:nowrap;}
+.settle-total{margin:14px 0 0;font-size:13px;color:var(--ink-2);}
+.settle-total strong{font-family:var(--mono);color:var(--ink);}
+@media (max-width:420px){
+  .settle-row{flex-wrap:wrap;}
+  .settle-what{flex:1 1 100%;}
+}
+.foot{margin-top:30px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.version{margin:0;text-align:center;font-size:11px;color:var(--muted);letter-spacing:.04em;}
 .sync-foot{margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line-2);
   font-size:12px;color:var(--muted);line-height:1.55;}
 .origin{font-family:var(--mono);font-size:12px;background:var(--raise);
@@ -385,7 +401,7 @@ export const CSS = `
 .seg{font-family:inherit;font-weight:600;font-size:12.5px;padding:7px 14px;border:0;
   border-radius:7px;background:none;color:var(--muted);cursor:pointer;}
 .seg:hover{color:var(--ink-2);}
-.seg.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
+.seg.on{background:var(--pill);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
 .stepper{display:flex;gap:4px;}
 .step{font-family:inherit;font-size:17px;line-height:1;width:34px;height:34px;
   border:1px solid var(--line);background:var(--card);color:var(--ink-2);
@@ -520,7 +536,12 @@ export const CSS = `
 .hm-head{display:flex;align-items:center;gap:10px;}
 /* 53 columns will not fit a phone. Scrolling keeps the cells legible instead
    of shrinking them to a size nothing can be aimed at. */
-.hm-scroll{overflow-x:auto;padding-bottom:4px;}
+.hm-scroll{overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;
+  scrollbar-color:var(--line-hi) transparent;}
+.hm-scroll::-webkit-scrollbar{height:9px;}
+.hm-scroll::-webkit-scrollbar-track{background:transparent;}
+.hm-scroll::-webkit-scrollbar-thumb{background:var(--line-hi);border-radius:999px;}
+.hm-scroll::-webkit-scrollbar-thumb:hover{background:var(--muted);}
 .hm-months,.hm-body{min-width:calc(var(--hm-pitch) * 53);}
 .hm-months{display:flex;gap:6px;margin-bottom:5px;height:12px;}
 .hm-gutter{position:sticky;left:0;flex:0 0 28px;background:var(--card);z-index:2;}
