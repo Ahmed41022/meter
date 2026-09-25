@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   EARNING, PAY, addEarning, earningTotals, earningsFor, earningsIn, isCancelled,
   isPending, isSettled, liveEarnings, paysOnAcceptance, payStateOf, removeEarning,
-  isPerTask, perTask, perTaskCents, restoreEarning, setPayState,
+  isPerTask, perTask, perTaskCents, priceFor, earningsForSession, sessionEarnedCents,
+  restoreEarning, setPayState,
 } from "../src/domain/earnings.js";
 import { performanceIn, untimedShare, byProject, byCompany } from "../src/domain/performance.js";
 import { KIND } from "../src/domain/sessions.js";
@@ -241,5 +242,69 @@ describe("work priced per accepted item", () => {
     const both = { ...project, currentRate: 20.5, perTask: 500 };
     expect(perTask(both)).toBe(500);
     expect(both.currentRate).toBe(20.5);
+  });
+});
+
+describe("two prices on one project", () => {
+  const piece = { id: "p1", name: "Gateway", currency: "USD", perTask: 1500, tasks: [] };
+  const cl = { id: "t2", label: "CL", price: 300 };
+
+  it("takes the task's price over the project's", () => {
+    // The case this exists for: 1,500 per accepted task and 300 per accepted
+    // CL, on the same project, from the same sitting.
+    expect(priceFor(piece, null)).toBe(1500);
+    expect(priceFor(piece, cl)).toBe(300);
+  });
+
+  it("prices a batch under whichever task it was", () => {
+    expect(perTaskCents(piece, 2)).toBe(300_000);
+    expect(perTaskCents(piece, 2, cl)).toBe(60_000);
+  });
+
+  it("falls back to the project when the task has no price of its own", () => {
+    expect(priceFor(piece, { id: "t3", label: "other" })).toBe(1500);
+    expect(priceFor({ ...piece, perTask: null }, { id: "t3" })).toBeNull();
+  });
+});
+
+describe("money attached to the time that earned it", () => {
+  const piece = { id: "p1", name: "Gateway", currency: "USD", perTask: 1500, tasks: [] };
+  const base = { projects: [piece], sessions: [], earnings: [] };
+
+  it("links an earning to the session it came from", () => {
+    const s = addEarning(base, piece, { cents: 150_000, sessionId: "s1", units: 1 }, T, "e1");
+    expect(earningsForSession(s, "s1").map((e) => e.id)).toEqual(["e1"]);
+  });
+
+  it("lets one session earn more than once", () => {
+    // 1,500 for the task and 300 for the changelist, both for one sitting.
+    let s = addEarning(base, piece, { cents: 150_000, sessionId: "s1" }, T, "e1");
+    s = addEarning(s, piece, { cents: 30_000, sessionId: "s1" }, T, "e2");
+    expect(sessionEarnedCents(s, "s1")).toBe(180_000);
+  });
+
+  it("leaves cancelled money out of what a session earned", () => {
+    let s = addEarning(base, piece, { cents: 150_000, sessionId: "s1" }, T, "e1");
+    s = addEarning(s, piece, { cents: 30_000, sessionId: "s1" }, T, "e2");
+    s = setPayState(s, "e2", PAY.CANCELLED);
+    expect(sessionEarnedCents(s, "s1")).toBe(150_000);
+  });
+
+  it("counts pending money, because it was still earned", () => {
+    const s = addEarning(base, piece, { cents: 150_000, sessionId: "s1", status: PAY.PENDING }, T, "e1");
+    expect(sessionEarnedCents(s, "s1")).toBe(150_000);
+  });
+
+  it("writes no link on money that belongs to no session", () => {
+    const s = addEarning(base, piece, { cents: 5_000 }, T, "e1");
+    expect(s.earnings[0]).not.toHaveProperty("sessionId");
+    expect(earningsForSession(s, "s1")).toEqual([]);
+    expect(sessionEarnedCents(s, null)).toBe(0);
+  });
+
+  it("drops the link when the earning is deleted", () => {
+    let s = addEarning(base, piece, { cents: 150_000, sessionId: "s1" }, T, "e1");
+    s = removeEarning(s, "e1", T + 1);
+    expect(earningsForSession(s, "s1")).toEqual([]);
   });
 });
