@@ -3596,6 +3596,53 @@ describe("which work was worth the time, and how much rides on one project", () 
   }, 25_000);
 });
 
+describe("the span the Overview opens on", () => {
+  const seed = {
+    projects: [{
+      id: "a", name: "Acme", currentRate: 20, currency: "USD", tasks: [],
+      createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null,
+    }],
+    sessions: [],
+  };
+  const chosen = (d) => d.querySelector('[aria-label="Reporting period"] .seg.on')?.textContent;
+
+  it("opens on the week when nothing has been chosen", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    expect(chosen(dom.window.document)).toBe("Week");
+  }, 25_000);
+
+  it("remembers the one you picked", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    btn(d, /^Month$/).click();
+    await wait(200);
+    expect(dom.window.localStorage.getItem("meter:period")).toBe("month");
+  }, 25_000);
+
+  it("opens on it next time", async () => {
+    const dom = await boot(seed, { "meter:period": "year" });
+    await wait(250);
+    expect(chosen(dom.window.document)).toBe("Year");
+  }, 25_000);
+
+  it("ignores a stored value it does not recognise", async () => {
+    // A span from a future version, or a hand-edited one, must not leave the
+    // Overview showing nothing at all.
+    const dom = await boot(seed, { "meter:period": "fortnight" });
+    await wait(250);
+    expect(chosen(dom.window.document)).toBe("Week");
+  }, 25_000);
+
+  it("keeps it out of the ledger, where it would have to be merged", async () => {
+    const dom = await boot(seed, { "meter:period": "month" });
+    await wait(250);
+    const saved = dom.window.localStorage.getItem("meter:v1");
+    expect(saved === null || !saved.includes("\"period\"")).toBe(true);
+  }, 25_000);
+});
+
 describe("choosing a theme", () => {
   const seed = {
     projects: [{

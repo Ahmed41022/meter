@@ -74,6 +74,18 @@ export const perTask = (project) => {
 export const isPerTask = (project) => perTask(project) !== null;
 
 /**
+ * Paid per accepted item AND NOT by the hour.
+ *
+ * A project can be both: ten an hour for the time, seventy more when the item
+ * is accepted. That one is hourly work with a per-item bonus, and it keeps
+ * every hourly figure — the rate on its header, the minute rail, the money
+ * accruing as the meter runs. Only work with no hourly rate at all should have
+ * those hidden, which is what this distinguishes.
+ */
+export const isPieceOnly = (project) =>
+  isPerTask(project) && !(Number(project?.currentRate) > 0);
+
+/**
  * What one accepted item pays under a given task.
  *
  * A project's `perTask` is the default; a task's own `price` overrides it, the
