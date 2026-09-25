@@ -1,0 +1,3402 @@
+{
+  "projects": [
+    {
+      "id": "p1",
+      "name": "search-ranking",
+      "company": "Northwind",
+      "currentRate": 24.5,
+      "currency": "USD",
+      "createdAt": 1778878800000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": [
+        {
+          "id": "t2",
+          "label": "batch 4417",
+          "createdAt": 1778878800000
+        },
+        {
+          "id": "t3",
+          "label": "batch 4502",
+          "createdAt": 1778878800000
+        }
+      ]
+    },
+    {
+      "id": "p4",
+      "name": "docs-review",
+      "company": "Northwind",
+      "currentRate": 18,
+      "currency": "USD",
+      "createdAt": 1778878800000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": [
+        {
+          "id": "t5",
+          "label": "intake",
+          "createdAt": 1778878800000,
+          "rate": 19.5
+        },
+        {
+          "id": "t6",
+          "label": "second pass",
+          "createdAt": 1778878800000
+        }
+      ]
+    },
+    {
+      "id": "p7",
+      "name": "intent_labelling",
+      "company": "Northwind",
+      "currentRate": 16.4,
+      "currency": "USD",
+      "createdAt": 1778878800000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": [
+        {
+          "id": "t8",
+          "label": "standard",
+          "createdAt": 1778878800000
+        },
+        {
+          "id": "t9",
+          "label": "assessment",
+          "createdAt": 1778878800000,
+          "factor": 0.3
+        }
+      ]
+    },
+    {
+      "id": "pa",
+      "name": "prompt-eval",
+      "company": "Bellweather Labs",
+      "currentRate": 31,
+      "currency": "USD",
+      "createdAt": 1778878800000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": []
+    },
+    {
+      "id": "pb",
+      "name": "annotation-queue",
+      "company": "Bellweather Labs",
+      "currentRate": 0,
+      "perTask": 42,
+      "paysOnAcceptance": true,
+      "currency": "USD",
+      "createdAt": 1778878800000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": [
+        {
+          "id": "tc",
+          "label": "item",
+          "createdAt": 1778878800000
+        },
+        {
+          "id": "td",
+          "label": "review note",
+          "price": 9,
+          "createdAt": 1778878800000
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "id": "se",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779016441045,
+      "closedAt": 1779028309057,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779016441045,
+          "endedAt": 1779028309057
+        }
+      ]
+    },
+    {
+      "id": "sg",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779044280383,
+      "closedAt": 1779057519586,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779044280383,
+          "endedAt": 1779057519586
+        }
+      ]
+    },
+    {
+      "id": "si",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779108947242,
+      "closedAt": 1779111818279,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779108947242,
+          "endedAt": 1779111818279
+        }
+      ]
+    },
+    {
+      "id": "sk",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1779089584697,
+      "closedAt": 1779100703193,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779089584697,
+          "endedAt": 1779100703193
+        }
+      ]
+    },
+    {
+      "id": "sl",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779198072535,
+      "closedAt": 1779208518916,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779198072535,
+          "endedAt": 1779208518916
+        }
+      ]
+    },
+    {
+      "id": "sn",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1779185032635,
+      "closedAt": 1779190534070,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779185032635,
+          "endedAt": 1779190534070
+        }
+      ]
+    },
+    {
+      "id": "so",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1779393872143,
+      "closedAt": 1779399361577,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779393872143,
+          "endedAt": 1779399361577
+        }
+      ]
+    },
+    {
+      "id": "sp",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1779483127146,
+      "closedAt": 1779487936066,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779483127146,
+          "endedAt": 1779487936066
+        }
+      ]
+    },
+    {
+      "id": "sq",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1779480984686,
+      "closedAt": 1779486436913,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779480984686,
+          "endedAt": 1779486436913
+        }
+      ]
+    },
+    {
+      "id": "sr",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779656716241,
+      "closedAt": 1779669279715,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779656716241,
+          "endedAt": 1779669279715
+        }
+      ]
+    },
+    {
+      "id": "st",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1779743112009,
+      "closedAt": 1779745276040,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779743112009,
+          "endedAt": 1779745276040
+        }
+      ]
+    },
+    {
+      "id": "su",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1779704844303,
+      "closedAt": 1779711101778,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779704844303,
+          "endedAt": 1779711101778
+        }
+      ]
+    },
+    {
+      "id": "sv",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1779829104979,
+      "closedAt": 1779831921815,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779829104979,
+          "endedAt": 1779831921815
+        }
+      ]
+    },
+    {
+      "id": "sx",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1779912992334,
+      "closedAt": 1779923798790,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779912992334,
+          "endedAt": 1779923798790
+        }
+      ]
+    },
+    {
+      "id": "sy",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1779906750145,
+      "closedAt": 1779919964380,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779906750145,
+          "endedAt": 1779919964380
+        }
+      ]
+    },
+    {
+      "id": "sz",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1779958993442,
+      "closedAt": 1779963684061,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1779958993442,
+          "endedAt": 1779963684061
+        }
+      ]
+    },
+    {
+      "id": "s10",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1780005351951,
+      "closedAt": 1780013165424,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780005351951,
+          "endedAt": 1780013165424
+        }
+      ]
+    },
+    {
+      "id": "s11",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1780093595662,
+      "closedAt": 1780100914916,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780093595662,
+          "endedAt": 1780100914916
+        }
+      ]
+    },
+    {
+      "id": "s12",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780063176747,
+      "closedAt": 1780067349679,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780063176747,
+          "endedAt": 1780067349679
+        }
+      ]
+    },
+    {
+      "id": "s13",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1780147885062,
+      "closedAt": 1780152673405,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780147885062,
+          "endedAt": 1780152673405
+        }
+      ]
+    },
+    {
+      "id": "s14",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780237060654,
+      "closedAt": 1780241956228,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780237060654,
+          "endedAt": 1780241956228
+        }
+      ]
+    },
+    {
+      "id": "s15",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780265220373,
+      "closedAt": 1780271112807,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780265220373,
+          "endedAt": 1780271112807
+        }
+      ]
+    },
+    {
+      "id": "s16",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1780341762327,
+      "closedAt": 1780350751225,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780341762327,
+          "endedAt": 1780350751225
+        }
+      ]
+    },
+    {
+      "id": "s18",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1780434904626,
+      "closedAt": 1780438880880,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780434904626,
+          "endedAt": 1780438880880
+        }
+      ]
+    },
+    {
+      "id": "s19",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780424124444,
+      "closedAt": 1780436278351,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780424124444,
+          "endedAt": 1780436278351
+        }
+      ]
+    },
+    {
+      "id": "s1a",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780525787250,
+      "closedAt": 1780531572518,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780525787250,
+          "endedAt": 1780531572518
+        }
+      ]
+    },
+    {
+      "id": "s1b",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1780510749855,
+      "closedAt": 1780521420590,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780510749855,
+          "endedAt": 1780521420590
+        }
+      ]
+    },
+    {
+      "id": "s1c",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1780599297184,
+      "closedAt": 1780603915201,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780599297184,
+          "endedAt": 1780603915201
+        }
+      ]
+    },
+    {
+      "id": "s1e",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1780645948507,
+      "closedAt": 1780659158492,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780645948507,
+          "endedAt": 1780659158492
+        }
+      ]
+    },
+    {
+      "id": "s1f",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1780694828488,
+      "closedAt": 1780701869368,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780694828488,
+          "endedAt": 1780701869368
+        }
+      ]
+    },
+    {
+      "id": "s1g",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1780769908066,
+      "closedAt": 1780783078186,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780769908066,
+          "endedAt": 1780783078186
+        }
+      ]
+    },
+    {
+      "id": "s1h",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1780872844511,
+      "closedAt": 1780882928018,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780872844511,
+          "endedAt": 1780882928018
+        }
+      ]
+    },
+    {
+      "id": "s1i",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780943166206,
+      "closedAt": 1780953427168,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780943166206,
+          "endedAt": 1780953427168
+        }
+      ]
+    },
+    {
+      "id": "s1j",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1780943634711,
+      "closedAt": 1780949351794,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1780943634711,
+          "endedAt": 1780949351794
+        }
+      ]
+    },
+    {
+      "id": "s1k",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781003972149,
+      "closedAt": 1781015732801,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781003972149,
+          "endedAt": 1781015732801
+        }
+      ]
+    },
+    {
+      "id": "s1l",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1781003166820,
+      "closedAt": 1781011232533,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781003166820,
+          "endedAt": 1781011232533
+        }
+      ]
+    },
+    {
+      "id": "s1n",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781188810277,
+      "closedAt": 1781201404632,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781188810277,
+          "endedAt": 1781201404632
+        }
+      ]
+    },
+    {
+      "id": "s1o",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781213483364,
+      "closedAt": 1781216569719,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781213483364,
+          "endedAt": 1781216569719
+        }
+      ]
+    },
+    {
+      "id": "s1p",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1781381489723,
+      "closedAt": 1781384822353,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781381489723,
+          "endedAt": 1781384822353
+        }
+      ]
+    },
+    {
+      "id": "s1r",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1781381218354,
+      "closedAt": 1781392114065,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781381218354,
+          "endedAt": 1781392114065
+        }
+      ]
+    },
+    {
+      "id": "s1s",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781462298102,
+      "closedAt": 1781470863293,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781462298102,
+          "endedAt": 1781470863293
+        }
+      ]
+    },
+    {
+      "id": "s1t",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1781460179727,
+      "closedAt": 1781464225565,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781460179727,
+          "endedAt": 1781464225565
+        }
+      ]
+    },
+    {
+      "id": "s1u",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781562752531,
+      "closedAt": 1781575312216,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781562752531,
+          "endedAt": 1781575312216
+        }
+      ]
+    },
+    {
+      "id": "s1v",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1781509326691,
+      "closedAt": 1781513179610,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781509326691,
+          "endedAt": 1781513179610
+        }
+      ]
+    },
+    {
+      "id": "s1w",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1781615803381,
+      "closedAt": 1781626057280,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781615803381,
+          "endedAt": 1781626057280
+        }
+      ]
+    },
+    {
+      "id": "s1x",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1781692480474,
+      "closedAt": 1781701529636,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781692480474,
+          "endedAt": 1781701529636
+        }
+      ]
+    },
+    {
+      "id": "s1y",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1781768836907,
+      "closedAt": 1781775386616,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781768836907,
+          "endedAt": 1781775386616
+        }
+      ]
+    },
+    {
+      "id": "s20",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1781861525776,
+      "closedAt": 1781869366819,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1781861525776,
+          "endedAt": 1781869366819
+        }
+      ]
+    },
+    {
+      "id": "s21",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782216456949,
+      "closedAt": 1782224724831,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782216456949,
+          "endedAt": 1782224724831
+        }
+      ]
+    },
+    {
+      "id": "s22",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782242662346,
+      "closedAt": 1782255940502,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782242662346,
+          "endedAt": 1782255940502
+        }
+      ]
+    },
+    {
+      "id": "s24",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1782290134520,
+      "closedAt": 1782302895502,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782290134520,
+          "endedAt": 1782302895502
+        }
+      ]
+    },
+    {
+      "id": "s26",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1782394131191,
+      "closedAt": 1782397696640,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782394131191,
+          "endedAt": 1782397696640
+        }
+      ]
+    },
+    {
+      "id": "s27",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782499578382,
+      "closedAt": 1782509151454,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782499578382,
+          "endedAt": 1782509151454
+        }
+      ]
+    },
+    {
+      "id": "s28",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782568817043,
+      "closedAt": 1782581502810,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782568817043,
+          "endedAt": 1782581502810
+        }
+      ]
+    },
+    {
+      "id": "s29",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1782591452525,
+      "closedAt": 1782596979230,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782591452525,
+          "endedAt": 1782596979230
+        }
+      ]
+    },
+    {
+      "id": "s2b",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1782649654194,
+      "closedAt": 1782652476166,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782649654194,
+          "endedAt": 1782652476166
+        }
+      ]
+    },
+    {
+      "id": "s2d",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1782771419078,
+      "closedAt": 1782780927955,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782771419078,
+          "endedAt": 1782780927955
+        }
+      ]
+    },
+    {
+      "id": "s2e",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1782757861673,
+      "closedAt": 1782761210987,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782757861673,
+          "endedAt": 1782761210987
+        }
+      ]
+    },
+    {
+      "id": "s2f",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782858710932,
+      "closedAt": 1782862582854,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782858710932,
+          "endedAt": 1782862582854
+        }
+      ]
+    },
+    {
+      "id": "s2g",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1782980971552,
+      "closedAt": 1782985361701,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1782980971552,
+          "endedAt": 1782985361701
+        }
+      ]
+    },
+    {
+      "id": "s2i",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1783072335828,
+      "closedAt": 1783083335334,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783072335828,
+          "endedAt": 1783083335334
+        }
+      ]
+    },
+    {
+      "id": "s2j",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1783119272459,
+      "closedAt": 1783131816222,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783119272459,
+          "endedAt": 1783131816222
+        }
+      ]
+    },
+    {
+      "id": "s2k",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1783200096065,
+      "closedAt": 1783212243667,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783200096065,
+          "endedAt": 1783212243667
+        }
+      ]
+    },
+    {
+      "id": "s2l",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1783167886145,
+      "closedAt": 1783175306869,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783167886145,
+          "endedAt": 1783175306869
+        }
+      ]
+    },
+    {
+      "id": "s2m",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1783374431383,
+      "closedAt": 1783386665745,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783374431383,
+          "endedAt": 1783386665745
+        }
+      ]
+    },
+    {
+      "id": "s2n",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1783533612619,
+      "closedAt": 1783538532038,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783533612619,
+          "endedAt": 1783538532038
+        }
+      ]
+    },
+    {
+      "id": "s2o",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1783521246760,
+      "closedAt": 1783526776689,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783521246760,
+          "endedAt": 1783526776689
+        }
+      ]
+    },
+    {
+      "id": "s2p",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1783633280371,
+      "closedAt": 1783637238805,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783633280371,
+          "endedAt": 1783637238805
+        }
+      ]
+    },
+    {
+      "id": "s2q",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1783687918456,
+      "closedAt": 1783694198103,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783687918456,
+          "endedAt": 1783694198103
+        }
+      ]
+    },
+    {
+      "id": "s2s",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1783687728612,
+      "closedAt": 1783690174733,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783687728612,
+          "endedAt": 1783690174733
+        }
+      ]
+    },
+    {
+      "id": "s2t",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1783761470292,
+      "closedAt": 1783773857578,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783761470292,
+          "endedAt": 1783773857578
+        }
+      ]
+    },
+    {
+      "id": "s2u",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1783942028668,
+      "closedAt": 1783951152770,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1783942028668,
+          "endedAt": 1783951152770
+        }
+      ]
+    },
+    {
+      "id": "s2w",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1784065770322,
+      "closedAt": 1784068257849,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784065770322,
+          "endedAt": 1784068257849
+        }
+      ]
+    },
+    {
+      "id": "s2x",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1784024016748,
+      "closedAt": 1784026987802,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784024016748,
+          "endedAt": 1784026987802
+        }
+      ]
+    },
+    {
+      "id": "s2y",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1784143159409,
+      "closedAt": 1784154668826,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784143159409,
+          "endedAt": 1784154668826
+        }
+      ]
+    },
+    {
+      "id": "s2z",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1784202138086,
+      "closedAt": 1784211813212,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784202138086,
+          "endedAt": 1784211813212
+        }
+      ]
+    },
+    {
+      "id": "s30",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1784311320150,
+      "closedAt": 1784321658536,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784311320150,
+          "endedAt": 1784321658536
+        }
+      ]
+    },
+    {
+      "id": "s31",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1784403643015,
+      "closedAt": 1784409940270,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784403643015,
+          "endedAt": 1784409940270
+        }
+      ]
+    },
+    {
+      "id": "s32",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1784573295070,
+      "closedAt": 1784583995310,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784573295070,
+          "endedAt": 1784583995310
+        }
+      ]
+    },
+    {
+      "id": "s34",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1784634826540,
+      "closedAt": 1784646035157,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784634826540,
+          "endedAt": 1784646035157
+        }
+      ]
+    },
+    {
+      "id": "s35",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1784673366108,
+      "closedAt": 1784684557941,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784673366108,
+          "endedAt": 1784684557941
+        }
+      ]
+    },
+    {
+      "id": "s36",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1784746090465,
+      "closedAt": 1784748644897,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784746090465,
+          "endedAt": 1784748644897
+        }
+      ]
+    },
+    {
+      "id": "s37",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1784712521561,
+      "closedAt": 1784725039968,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784712521561,
+          "endedAt": 1784725039968
+        }
+      ]
+    },
+    {
+      "id": "s38",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1784876419669,
+      "closedAt": 1784887044175,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1784876419669,
+          "endedAt": 1784887044175
+        }
+      ]
+    },
+    {
+      "id": "s39",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1785003156725,
+      "closedAt": 1785008883710,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785003156725,
+          "endedAt": 1785008883710
+        }
+      ]
+    },
+    {
+      "id": "s3a",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1785004284865,
+      "closedAt": 1785011872803,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785004284865,
+          "endedAt": 1785011872803
+        }
+      ]
+    },
+    {
+      "id": "s3b",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1785061052432,
+      "closedAt": 1785065973295,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785061052432,
+          "endedAt": 1785065973295
+        }
+      ]
+    },
+    {
+      "id": "s3d",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785158750494,
+      "closedAt": 1785161282730,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785158750494,
+          "endedAt": 1785161282730
+        }
+      ]
+    },
+    {
+      "id": "s3f",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1785232802448,
+      "closedAt": 1785240579833,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785232802448,
+          "endedAt": 1785240579833
+        }
+      ]
+    },
+    {
+      "id": "s3g",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1785262575914,
+      "closedAt": 1785266920824,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785262575914,
+          "endedAt": 1785266920824
+        }
+      ]
+    },
+    {
+      "id": "s3h",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785323277946,
+      "closedAt": 1785328201397,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785323277946,
+          "endedAt": 1785328201397
+        }
+      ]
+    },
+    {
+      "id": "s3j",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1785446313012,
+      "closedAt": 1785452490664,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785446313012,
+          "endedAt": 1785452490664
+        }
+      ]
+    },
+    {
+      "id": "s3k",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1785530196804,
+      "closedAt": 1785536855597,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785530196804,
+          "endedAt": 1785536855597
+        }
+      ]
+    },
+    {
+      "id": "s3l",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1785617849246,
+      "closedAt": 1785622795488,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785617849246,
+          "endedAt": 1785622795488
+        }
+      ]
+    },
+    {
+      "id": "s3m",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785613787211,
+      "closedAt": 1785622983614,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785613787211,
+          "endedAt": 1785622983614
+        }
+      ]
+    },
+    {
+      "id": "s3o",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1785765198934,
+      "closedAt": 1785771754699,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785765198934,
+          "endedAt": 1785771754699
+        }
+      ]
+    },
+    {
+      "id": "s3p",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785786720150,
+      "closedAt": 1785788911192,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785786720150,
+          "endedAt": 1785788911192
+        }
+      ]
+    },
+    {
+      "id": "s3r",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785843979596,
+      "closedAt": 1785856814445,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785843979596,
+          "endedAt": 1785856814445
+        }
+      ]
+    },
+    {
+      "id": "s3t",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1785850153521,
+      "closedAt": 1785858645500,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785850153521,
+          "endedAt": 1785858645500
+        }
+      ]
+    },
+    {
+      "id": "s3u",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1785924353269,
+      "closedAt": 1785937025425,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1785924353269,
+          "endedAt": 1785937025425
+        }
+      ]
+    },
+    {
+      "id": "s3w",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1786008260746,
+      "closedAt": 1786011637493,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786008260746,
+          "endedAt": 1786011637493
+        }
+      ]
+    },
+    {
+      "id": "s3x",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1786093230003,
+      "closedAt": 1786098807715,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786093230003,
+          "endedAt": 1786098807715
+        }
+      ]
+    },
+    {
+      "id": "s3y",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1786223023471,
+      "closedAt": 1786234822615,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786223023471,
+          "endedAt": 1786234822615
+        }
+      ]
+    },
+    {
+      "id": "s3z",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1786176683562,
+      "closedAt": 1786179457310,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786176683562,
+          "endedAt": 1786179457310
+        }
+      ]
+    },
+    {
+      "id": "s40",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1786302953361,
+      "closedAt": 1786308941478,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786302953361,
+          "endedAt": 1786308941478
+        }
+      ]
+    },
+    {
+      "id": "s42",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1786305838197,
+      "closedAt": 1786316481143,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786305838197,
+          "endedAt": 1786316481143
+        }
+      ]
+    },
+    {
+      "id": "s43",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1786370010150,
+      "closedAt": 1786381696704,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786370010150,
+          "endedAt": 1786381696704
+        }
+      ]
+    },
+    {
+      "id": "s45",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1786454194767,
+      "closedAt": 1786463172771,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786454194767,
+          "endedAt": 1786463172771
+        }
+      ]
+    },
+    {
+      "id": "s46",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1786559030255,
+      "closedAt": 1786563208306,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786559030255,
+          "endedAt": 1786563208306
+        }
+      ]
+    },
+    {
+      "id": "s47",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1786528951790,
+      "closedAt": 1786532539767,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786528951790,
+          "endedAt": 1786532539767
+        }
+      ]
+    },
+    {
+      "id": "s48",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1786656432331,
+      "closedAt": 1786661825152,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786656432331,
+          "endedAt": 1786661825152
+        }
+      ]
+    },
+    {
+      "id": "s49",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1786710875506,
+      "closedAt": 1786713883491,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786710875506,
+          "endedAt": 1786713883491
+        }
+      ]
+    },
+    {
+      "id": "s4a",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1786783634706,
+      "closedAt": 1786796255211,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786783634706,
+          "endedAt": 1786796255211
+        }
+      ]
+    },
+    {
+      "id": "s4b",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1786908741131,
+      "closedAt": 1786914909747,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1786908741131,
+          "endedAt": 1786914909747
+        }
+      ]
+    },
+    {
+      "id": "s4d",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1787057327527,
+      "closedAt": 1787064585803,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787057327527,
+          "endedAt": 1787064585803
+        }
+      ]
+    },
+    {
+      "id": "s4e",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1787087186726,
+      "closedAt": 1787091431173,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787087186726,
+          "endedAt": 1787091431173
+        }
+      ]
+    },
+    {
+      "id": "s4g",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1787174706664,
+      "closedAt": 1787181195500,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787174706664,
+          "endedAt": 1787181195500
+        }
+      ]
+    },
+    {
+      "id": "s4h",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1787233141859,
+      "closedAt": 1787240770283,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787233141859,
+          "endedAt": 1787240770283
+        }
+      ]
+    },
+    {
+      "id": "s4j",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1787262300144,
+      "closedAt": 1787270609150,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787262300144,
+          "endedAt": 1787270609150
+        }
+      ]
+    },
+    {
+      "id": "s4k",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1787348216838,
+      "closedAt": 1787361450680,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787348216838,
+          "endedAt": 1787361450680
+        }
+      ]
+    },
+    {
+      "id": "s4l",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1787346761819,
+      "closedAt": 1787356792489,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787346761819,
+          "endedAt": 1787356792489
+        }
+      ]
+    },
+    {
+      "id": "s4m",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1787438810858,
+      "closedAt": 1787443439999,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787438810858,
+          "endedAt": 1787443439999
+        }
+      ]
+    },
+    {
+      "id": "s4n",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1787612334827,
+      "closedAt": 1787615297884,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787612334827,
+          "endedAt": 1787615297884
+        }
+      ]
+    },
+    {
+      "id": "s4o",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1787696344107,
+      "closedAt": 1787703275988,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787696344107,
+          "endedAt": 1787703275988
+        }
+      ]
+    },
+    {
+      "id": "s4p",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1787740489291,
+      "closedAt": 1787744194610,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787740489291,
+          "endedAt": 1787744194610
+        }
+      ]
+    },
+    {
+      "id": "s4r",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1787778824319,
+      "closedAt": 1787782460105,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787778824319,
+          "endedAt": 1787782460105
+        }
+      ]
+    },
+    {
+      "id": "s4t",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1787855511053,
+      "closedAt": 1787863609667,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787855511053,
+          "endedAt": 1787863609667
+        }
+      ]
+    },
+    {
+      "id": "s4u",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1787858712702,
+      "closedAt": 1787864655061,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787858712702,
+          "endedAt": 1787864655061
+        }
+      ]
+    },
+    {
+      "id": "s4w",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1787942817430,
+      "closedAt": 1787949024506,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787942817430,
+          "endedAt": 1787949024506
+        }
+      ]
+    },
+    {
+      "id": "s4x",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1787992310375,
+      "closedAt": 1788004136822,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1787992310375,
+          "endedAt": 1788004136822
+        }
+      ]
+    },
+    {
+      "id": "s4y",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t5",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1788101697227,
+      "closedAt": 1788110242679,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788101697227,
+          "endedAt": 1788110242679
+        }
+      ]
+    },
+    {
+      "id": "s4z",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1788207708430,
+      "closedAt": 1788217778929,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788207708430,
+          "endedAt": 1788217778929
+        }
+      ]
+    },
+    {
+      "id": "s51",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1788181527485,
+      "closedAt": 1788192744149,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788181527485,
+          "endedAt": 1788192744149
+        }
+      ]
+    },
+    {
+      "id": "s52",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1788272667317,
+      "closedAt": 1788280783163,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788272667317,
+          "endedAt": 1788280783163
+        }
+      ]
+    },
+    {
+      "id": "s53",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "td",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1788293464244,
+      "closedAt": 1788296656650,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788293464244,
+          "endedAt": 1788296656650
+        }
+      ]
+    },
+    {
+      "id": "s55",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1788472554392,
+      "closedAt": 1788481120040,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788472554392,
+          "endedAt": 1788481120040
+        }
+      ]
+    },
+    {
+      "id": "s56",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1788518615546,
+      "closedAt": 1788527931867,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788518615546,
+          "endedAt": 1788527931867
+        }
+      ]
+    },
+    {
+      "id": "s57",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1788512417194,
+      "closedAt": 1788525580699,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788512417194,
+          "endedAt": 1788525580699
+        }
+      ]
+    },
+    {
+      "id": "s58",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1788689591956,
+      "closedAt": 1788700744819,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788689591956,
+          "endedAt": 1788700744819
+        }
+      ]
+    },
+    {
+      "id": "s59",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1788804174450,
+      "closedAt": 1788814631223,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788804174450,
+          "endedAt": 1788814631223
+        }
+      ]
+    },
+    {
+      "id": "s5a",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1788812679481,
+      "closedAt": 1788820685665,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788812679481,
+          "endedAt": 1788820685665
+        }
+      ]
+    },
+    {
+      "id": "s5b",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1788877221604,
+      "closedAt": 1788889939745,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788877221604,
+          "endedAt": 1788889939745
+        }
+      ]
+    },
+    {
+      "id": "s5c",
+      "projectId": "pb",
+      "kind": "billed",
+      "taskId": "tc",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1788982677561,
+      "closedAt": 1788985368687,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1788982677561,
+          "endedAt": 1788985368687
+        }
+      ]
+    },
+    {
+      "id": "s5e",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789155870198,
+      "closedAt": 1789159803034,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789155870198,
+          "endedAt": 1789159803034
+        }
+      ]
+    },
+    {
+      "id": "s5f",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t3",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1789159889394,
+      "closedAt": 1789166622163,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789159889394,
+          "endedAt": 1789166622163
+        }
+      ]
+    },
+    {
+      "id": "s5g",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1789243474765,
+      "closedAt": 1789251262511,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789243474765,
+          "endedAt": 1789251262511
+        }
+      ]
+    },
+    {
+      "id": "s5h",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1789203901080,
+      "closedAt": 1789215977126,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789203901080,
+          "endedAt": 1789215977126
+        }
+      ]
+    },
+    {
+      "id": "s5i",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789291313395,
+      "closedAt": 1789294143822,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789291313395,
+          "endedAt": 1789294143822
+        }
+      ]
+    },
+    {
+      "id": "s5j",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789424237169,
+      "closedAt": 1789431166988,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789424237169,
+          "endedAt": 1789431166988
+        }
+      ]
+    },
+    {
+      "id": "s5k",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789509880178,
+      "closedAt": 1789523183542,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789509880178,
+          "endedAt": 1789523183542
+        }
+      ]
+    },
+    {
+      "id": "s5l",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t9",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789585669500,
+      "closedAt": 1789593675202,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789585669500,
+          "endedAt": 1789593675202
+        }
+      ]
+    },
+    {
+      "id": "s5m",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1789595987546,
+      "closedAt": 1789601652071,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789595987546,
+          "endedAt": 1789601652071
+        }
+      ]
+    },
+    {
+      "id": "s5n",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1789671403316,
+      "closedAt": 1789680067911,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789671403316,
+          "endedAt": 1789680067911
+        }
+      ]
+    },
+    {
+      "id": "s5o",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1789674145269,
+      "closedAt": 1789679854886,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789674145269,
+          "endedAt": 1789679854886
+        }
+      ]
+    },
+    {
+      "id": "s5p",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1789740351999,
+      "closedAt": 1789744885223,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789740351999,
+          "endedAt": 1789744885223
+        }
+      ]
+    },
+    {
+      "id": "s5q",
+      "projectId": "p1",
+      "kind": "billed",
+      "taskId": "t2",
+      "rate": 24.5,
+      "currency": "USD",
+      "createdAt": 1789763776329,
+      "closedAt": 1789769110007,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789763776329,
+          "endedAt": 1789769110007
+        }
+      ]
+    },
+    {
+      "id": "s5r",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1789808910157,
+      "closedAt": 1789813675131,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1789808910157,
+          "endedAt": 1789813675131
+        }
+      ]
+    },
+    {
+      "id": "s5s",
+      "projectId": "p7",
+      "kind": "billed",
+      "taskId": "t8",
+      "rate": 16.4,
+      "currency": "USD",
+      "createdAt": 1790026432460,
+      "closedAt": 1790034828186,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790026432460,
+          "endedAt": 1790034828186
+        }
+      ]
+    },
+    {
+      "id": "s5t",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1790113224398,
+      "closedAt": 1790123433181,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790113224398,
+          "endedAt": 1790123433181
+        }
+      ]
+    },
+    {
+      "id": "s5u",
+      "projectId": "p4",
+      "kind": "billed",
+      "taskId": "t6",
+      "rate": 18,
+      "currency": "USD",
+      "createdAt": 1790202994518,
+      "closedAt": 1790206521120,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790202994518,
+          "endedAt": 1790206521120
+        }
+      ]
+    },
+    {
+      "id": "s5v",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1790151900571,
+      "closedAt": 1790165187766,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790151900571,
+          "endedAt": 1790165187766
+        }
+      ]
+    },
+    {
+      "id": "s5w",
+      "projectId": "pa",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 31,
+      "currency": "USD",
+      "createdAt": 1790235979167,
+      "closedAt": 1790247044648,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790235979167,
+          "endedAt": 1790247044648
+        }
+      ]
+    }
+  ],
+  "objectives": [
+    {
+      "id": "o5x",
+      "projectId": "p1",
+      "text": "Clear the 4502 backlog",
+      "done": false,
+      "doneAt": null,
+      "createdAt": 1778878800000,
+      "focusedOn": null,
+      "estimateMs": null,
+      "taskId": null,
+      "deletedAt": null
+    },
+    {
+      "id": "o5y",
+      "projectId": "p1",
+      "text": "Re-check the flagged intake rows",
+      "done": true,
+      "doneAt": 1790197200000,
+      "createdAt": 1778878800000,
+      "focusedOn": null,
+      "estimateMs": null,
+      "taskId": null,
+      "deletedAt": null
+    }
+  ],
+  "earnings": [
+    {
+      "id": "ef",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "se",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1779028309057,
+      "note": "",
+      "createdAt": 1779028309057,
+      "deletedAt": null
+    },
+    {
+      "id": "eh",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "sg",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1779057519586,
+      "note": "",
+      "createdAt": 1779057519586,
+      "deletedAt": null
+    },
+    {
+      "id": "ej",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "si",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1779111818279,
+      "note": "",
+      "createdAt": 1779111818279,
+      "deletedAt": null
+    },
+    {
+      "id": "em",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "sl",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1779208518916,
+      "note": "",
+      "createdAt": 1779208518916,
+      "deletedAt": null
+    },
+    {
+      "id": "es",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "sr",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1779669279715,
+      "note": "",
+      "createdAt": 1779669279715,
+      "deletedAt": null
+    },
+    {
+      "id": "ew",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "sv",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1779831921815,
+      "note": "",
+      "createdAt": 1779831921815,
+      "deletedAt": null
+    },
+    {
+      "id": "e17",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s16",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1780350751225,
+      "note": "",
+      "createdAt": 1780350751225,
+      "deletedAt": null
+    },
+    {
+      "id": "e1d",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s1c",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1780603915201,
+      "note": "",
+      "createdAt": 1780603915201,
+      "deletedAt": null
+    },
+    {
+      "id": "e1m",
+      "projectId": "p7",
+      "taskId": null,
+      "kind": "bonus",
+      "cents": 16402,
+      "currency": "USD",
+      "at": 1781017200000,
+      "note": "quality bonus",
+      "createdAt": 1781017200000,
+      "deletedAt": null
+    },
+    {
+      "id": "e1q",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s1p",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1781384822353,
+      "note": "",
+      "createdAt": 1781384822353,
+      "deletedAt": null
+    },
+    {
+      "id": "e1z",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s1y",
+      "kind": "piece",
+      "cents": 12600,
+      "units": 3,
+      "currency": "USD",
+      "at": 1781775386616,
+      "note": "",
+      "createdAt": 1781775386616,
+      "deletedAt": null
+    },
+    {
+      "id": "e23",
+      "projectId": "p7",
+      "taskId": null,
+      "kind": "bonus",
+      "cents": 6669,
+      "currency": "USD",
+      "at": 1782226800000,
+      "note": "quality bonus",
+      "createdAt": 1782226800000,
+      "deletedAt": null
+    },
+    {
+      "id": "e25",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s24",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1782302895502,
+      "note": "",
+      "createdAt": 1782302895502,
+      "deletedAt": null
+    },
+    {
+      "id": "e2a",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s29",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1782596979230,
+      "note": "",
+      "createdAt": 1782596979230,
+      "deletedAt": null
+    },
+    {
+      "id": "e2c",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s2b",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1782652476166,
+      "note": "",
+      "createdAt": 1782652476166,
+      "deletedAt": null
+    },
+    {
+      "id": "e2h",
+      "projectId": "p4",
+      "taskId": null,
+      "kind": "bonus",
+      "cents": 17651,
+      "currency": "USD",
+      "at": 1783004400000,
+      "note": "quality bonus",
+      "createdAt": 1783004400000,
+      "deletedAt": null
+    },
+    {
+      "id": "e2r",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s2q",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1783694198103,
+      "note": "",
+      "createdAt": 1783694198103,
+      "deletedAt": null
+    },
+    {
+      "id": "e2v",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s2u",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1783951152770,
+      "note": "",
+      "createdAt": 1783951152770,
+      "deletedAt": null
+    },
+    {
+      "id": "e33",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s32",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1784583995310,
+      "note": "",
+      "createdAt": 1784583995310,
+      "deletedAt": null
+    },
+    {
+      "id": "e3c",
+      "projectId": "pa",
+      "taskId": null,
+      "kind": "bonus",
+      "cents": 7714,
+      "currency": "USD",
+      "at": 1785078000000,
+      "note": "quality bonus",
+      "createdAt": 1785078000000,
+      "deletedAt": null
+    },
+    {
+      "id": "e3e",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s3d",
+      "kind": "piece",
+      "cents": 4200,
+      "units": 1,
+      "currency": "USD",
+      "at": 1785161282730,
+      "note": "",
+      "createdAt": 1785161282730,
+      "deletedAt": null
+    },
+    {
+      "id": "e3i",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s3h",
+      "kind": "piece",
+      "cents": 12600,
+      "units": 3,
+      "currency": "USD",
+      "at": 1785328201397,
+      "note": "",
+      "createdAt": 1785328201397,
+      "deletedAt": null
+    },
+    {
+      "id": "e3n",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s3m",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1785622983614,
+      "note": "",
+      "createdAt": 1785622983614,
+      "deletedAt": null
+    },
+    {
+      "id": "e3q",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s3p",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1785788911192,
+      "note": "",
+      "createdAt": 1785788911192,
+      "deletedAt": null
+    },
+    {
+      "id": "e3s",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s3r",
+      "kind": "piece",
+      "cents": 12600,
+      "units": 3,
+      "currency": "USD",
+      "at": 1785856814445,
+      "note": "",
+      "createdAt": 1785856814445,
+      "deletedAt": null
+    },
+    {
+      "id": "e3v",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s3u",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1785937025425,
+      "note": "",
+      "createdAt": 1785937025425,
+      "deletedAt": null
+    },
+    {
+      "id": "e41",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s40",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1786308941478,
+      "note": "",
+      "createdAt": 1786308941478,
+      "deletedAt": null
+    },
+    {
+      "id": "e44",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s43",
+      "kind": "piece",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1786381696704,
+      "note": "",
+      "createdAt": 1786381696704,
+      "deletedAt": null
+    },
+    {
+      "id": "e4c",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s4b",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1786914909747,
+      "note": "",
+      "createdAt": 1786914909747,
+      "deletedAt": null
+    },
+    {
+      "id": "e4f",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s4e",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1787091431173,
+      "note": "",
+      "createdAt": 1787091431173,
+      "deletedAt": null
+    },
+    {
+      "id": "e4i",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s4h",
+      "kind": "piece",
+      "cents": 4200,
+      "units": 1,
+      "currency": "USD",
+      "at": 1787240770283,
+      "note": "",
+      "createdAt": 1787240770283,
+      "deletedAt": null
+    },
+    {
+      "id": "e4q",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s4p",
+      "kind": "piece",
+      "cents": 12600,
+      "units": 3,
+      "currency": "USD",
+      "at": 1787744194610,
+      "note": "",
+      "createdAt": 1787744194610,
+      "deletedAt": null
+    },
+    {
+      "id": "e4s",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s4r",
+      "kind": "piece",
+      "cents": 8400,
+      "units": 2,
+      "currency": "USD",
+      "at": 1787782460105,
+      "note": "",
+      "createdAt": 1787782460105,
+      "deletedAt": null
+    },
+    {
+      "id": "e4v",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s4u",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 2,
+      "currency": "USD",
+      "at": 1787864655061,
+      "note": "",
+      "createdAt": 1787864655061,
+      "deletedAt": null
+    },
+    {
+      "id": "e50",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s4z",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1788217778929,
+      "note": "",
+      "createdAt": 1788217778929,
+      "deletedAt": null
+    },
+    {
+      "id": "e54",
+      "projectId": "pb",
+      "taskId": "td",
+      "sessionId": "s53",
+      "kind": "piece",
+      "cents": 2700,
+      "units": 3,
+      "currency": "USD",
+      "at": 1788296656650,
+      "note": "",
+      "createdAt": 1788296656650,
+      "deletedAt": null
+    },
+    {
+      "id": "e5d",
+      "projectId": "pb",
+      "taskId": "tc",
+      "sessionId": "s5c",
+      "kind": "piece",
+      "cents": 12600,
+      "units": 3,
+      "currency": "USD",
+      "at": 1788985368687,
+      "note": "",
+      "createdAt": 1788985368687,
+      "deletedAt": null
+    }
+  ]
+}

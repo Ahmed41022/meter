@@ -3734,13 +3734,41 @@ describe("what a piece-rate session produced", () => {
     expect(d.querySelector(".card-meta").textContent).not.toMatch(/\/hr/);
   }, 30_000);
 
+  it("never quotes an hourly rate it does not have", async () => {
+    // The header said "$0.00 per hour", which is a confident answer to a
+    // question this project does not ask.
+    const { d } = await openProject();
+    expect(d.querySelector(".plate-rate").textContent).toMatch(/\$1,500\.00 per accepted item/);
+    expect(d.querySelector(".plate-rate").textContent).not.toMatch(/per hour/);
+    // And nothing counts out an hour that is never going to be billed.
+    expect(d.querySelector(".rail")).toBeNull();
+  }, 30_000);
+
+  it("shows the elapsed time once, not twice", async () => {
+    const { d } = await openProject();
+    expect(d.querySelector(".clock-main")).toBeNull();
+    expect(d.querySelector(".money-head")).not.toBeNull();
+  }, 30_000);
+
+  it("calls the money what it is on a piece-rate project", async () => {
+    // Every penny here arrives without the clock, so that name describes
+    // nothing — and reads too close to the app's own "off the clock".
+    const { d } = await openProject();
+    // Scoped to the rendered app: the page inlines its own bundle, so
+    // document.body.textContent contains every string literal in the source,
+    // including the branch that was not taken.
+    const shown = d.querySelector(".wrap").textContent;
+    expect(shown).toMatch(/Accepted work/);
+    expect(shown).not.toMatch(/Earned without the clock/);
+  }, 30_000);
+
   it("asks what the sitting earned as soon as the meter stops", async () => {
     const { dom, d } = await openProject();
     await startMeter(dom, { existing: "task" });
     btn(d, /Stop and save/i).click();
     await wait(400);
     expect(d.querySelector(".settle-row")).not.toBeNull();
-    expect(d.body.textContent).toMatch(/What did this earn/i);
+    expect(d.querySelector(".wrap").textContent).toMatch(/What did this earn/i);
   }, 30_000);
 
   it("records it as pending, against the session that produced it", async () => {
