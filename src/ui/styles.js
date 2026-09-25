@@ -150,12 +150,20 @@ export const CSS = `
    is a BUTTON inside .segmented — sharing the name gave every segmented
    control's buttons this rule's margin-top and made each one 12px taller than
    it looked like it should be. */
-.modes{display:flex;gap:6px;margin-top:12px;}
-.seg-btn{flex:1;font-family:inherit;font-weight:600;font-size:13px;padding:9px 12px;
-  border-radius:8px;border:1px solid var(--line);background:var(--card);
-  color:var(--muted);cursor:pointer;}
+.modes{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+/* Sized to their words. Growing to fill the row stretched two choices into
+   two half-page slabs, which read as a wall of boxes rather than a choice
+   between two things — and the longer the page got, the more of them. */
+.seg-btn{flex:0 1 auto;font-family:inherit;font-weight:600;font-size:13px;padding:8px 16px;
+  border-radius:999px;border:1px solid var(--line);background:var(--card);
+  color:var(--muted);cursor:pointer;line-height:1.35;
+  transition:border-color .12s ease,color .12s ease,background .12s ease;}
+.seg-btn:hover:not(:disabled):not(.on){border-color:var(--line-hi);color:var(--ink-2);}
 .seg-btn.on{background:var(--jade-soft);border-color:var(--jade);color:var(--jade);}
 .seg-btn:disabled{opacity:.4;cursor:not-allowed;}
+/* .hint carries a negative top margin so it can tuck under a field's label.
+   After a row of choices that wedges the text against the buttons. */
+.modes + .hint{margin-top:10px;}
 
 /* ledger selection + filtering */
 .selbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;
