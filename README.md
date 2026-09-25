@@ -13,34 +13,42 @@ Nothing to install, no account, no server. Your data stays in your browser
 unless you switch on sync — and sync goes to a hidden folder in *your* Google
 Drive, not to anyone else's machine.
 
-<!-- SCREENSHOTS: drop the four PNGs into docs/images/ and delete these comment
-     markers. See docs/images/README.md for exactly what to capture.
+![A session running: the elapsed time and the money both climbing in real time, in the meter face and in the bar that sits above every screen](docs/images/running.gif)
 
-| Overview | A session running |
+| Every project at once | A month, across all of them |
 | --- | --- |
-| ![The overview tab](docs/images/overview.png) | ![A running meter](docs/images/running.png) |
+| ![The project list: each project's rate, hours and earnings, under a running total](docs/images/projects.png) | ![The overview: a month's earnings, hours, effective hourly rate, a bar per day, and a breakdown by client](docs/images/overview.png) |
 
-| A project | On a phone |
+| Paid per item, not per hour | On a phone |
 | --- | --- |
-| ![A project's ledger](docs/images/project.png) | ![Installed on Android](docs/images/phone.png) |
--->
+| ![A piece-rate project, quoting a price per accepted item instead of an hourly rate, above a list of accepted items at two different prices](docs/images/project.png) | ![The same overview at phone width, the cards reflowed two abreast](docs/images/phone.png) |
+
+<sub>Screenshots run against `docs/demo-seed.json` — invented projects, invented
+rates. `npm run shots` regenerates every one of them.</sub>
 
 ---
 
 ## What it does
 
-- **Times a session against a project** and shows the money as it accrues.
+- **Times a session against a project** and shows the money as it accrues —
+  from wherever you are in the app, not just the project you started on.
 - **Snapshots the rate onto the session**, so changing a project's rate can
   never reach back into work you already recorded.
+- **Prices work four ways**: by the hour, per accepted item, a task at its own
+  rate, or a task at a fraction of the project's. A task can also be priced at
+  nothing, which is not the same as having no price set.
+- **Asks what a sitting produced** when the work is paid on acceptance rather
+  than by the hour, and files it as pending until you are actually paid.
 - **Reports any day, week, month, year or all of it** across every project at
   once — hours, earnings, what an hour actually came to, and how much of your
   income comes from one client.
-- **Records money the clock never measured** — bonuses, per-item piece rates,
-  rewards — so the ledger matches what you were actually paid.
+- **Records money the clock never measured** — bonuses, piece rates, rewards —
+  so the ledger matches what you were actually paid.
 - **Tracks pending, paid and cancelled**, because work finished is not money
   received.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive.
+- **Follows your system's light or dark setting**, or whichever you pick.
 - **Exports** a JSON backup or a CSV of every line item.
 
 The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.
@@ -104,13 +112,12 @@ npm test
 | `npm test` | Run all tests |
 | `npm run coverage` | Tests with coverage thresholds enforced |
 | `npm run lint` | ESLint |
-| `npm run check` | Lint, test, and build — what CI runs |
+| `npm run check` | Lint, build, then test — what CI runs |
 | `npm run icons` | Regenerate the icon set from `scripts/make-icons.py` |
+| `npm run shots` | Recapture the README's screenshots and GIF |
 | `npm run desktop` | Package a standalone Windows `.exe` |
 
 `npm run build` must run before `npm test`, because the integration suite drives the built file rather than the source.
-
----
 
 ---
 
@@ -131,8 +138,6 @@ That guard reads persisted state directly, because the Electron main process can
 The cost is real: about 220 MB on disk to run a 300 KB file, because it ships its own copy of Chromium. That copy also stops receiving security patches when the pinned Electron does. The shortcut above gets you the same standalone window using the engine Windows already keeps updated, which is why it's listed first.
 
 Note that Edge and Chrome grey out "Install as an app" for `file://` pages, since installation requires a secure origin. That's why the shortcut route exists.
-
----
 
 ---
 
