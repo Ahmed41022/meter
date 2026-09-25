@@ -73,8 +73,8 @@ const html = `<!doctype html>
 <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,${await b64("icon-32.png")}">
 <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,${await b64("icon-180.png")}">
 <link rel="manifest" href="data:application/manifest+json;base64,${manifest}">
-<style>html,body{margin:0;padding:0;background:#F1F3EF;}#root{min-height:100vh;}
-@media (prefers-color-scheme: dark){html,body{background:#0E1210;}}</style>
+<style>html,body{margin:0;padding:0;background:#F1F3EF;color-scheme:light;}#root{min-height:100vh;}
+@media (prefers-color-scheme: dark){html,body{background:#0E1210;color-scheme:dark;}}</style>
 </head>
 <body>
 <div id="root"></div>

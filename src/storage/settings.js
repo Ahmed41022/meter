@@ -13,7 +13,13 @@
  */
 export const SETTING = {
   CLIENT_ID: "meter:google-client",
+  /** Light, dark, or follow the operating system. Per device on purpose: which
+   *  theme suits a phone at night and a desktop at noon are different
+   *  questions, and syncing the answer would make one of them wrong. */
+  THEME: "meter:theme",
 };
+
+export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };
 
 export const loadSetting = (key, fallback = "", win = globalThis) => {
   try {
