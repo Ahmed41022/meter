@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
-  resolveTaskId, sessionsUnderTask, setTaskRate, taskLabel, taskTotals, tasksFor, UNASSIGNED,
+  resolveTaskId, sessionsUnderTask, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
+  parseTaskRate, taskRateInput, UNASSIGNED,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -346,5 +347,88 @@ describe("deleting a task", () => {
                                        tasks: [{ id: "t1", label: "same id", createdAt: T }] }];
     const s = removeTask(two, "p1", "t1");
     expect(findTask(s.projects[1], "t1")).not.toBeNull();
+  });
+});
+
+describe("a task priced as a share of the base rate", () => {
+  const session = (rate) => ({ id: "s1", projectId: "p1", taskId: "t1", rate, kind: "billed" });
+
+  it("reads a percentage as a rule rather than a number", () => {
+    expect(parseTaskRate("30%")).toEqual({ rate: null, factor: 0.3 });
+    expect(parseTaskRate(" 30 % ".replace(" %", "%").trim())).toEqual({ rate: null, factor: 0.3 });
+    expect(parseTaskRate("4.92")).toEqual({ rate: 4.92, factor: null });
+    expect(parseTaskRate("")).toEqual({ rate: null, factor: null });
+    expect(parseTaskRate(null)).toEqual({ rate: null, factor: null });
+  });
+
+  it("applies the share to what the session recorded", () => {
+    const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "assessment" }, T), "p1", "t1", "30%");
+    expect(rateFor(proj(s), session(16.40))).toBeCloseTo(4.92, 10);
+  });
+
+  it("follows the base rate across eras without being touched", () => {
+    // The whole reason to store the rule: this project was $25, then $15.75,
+    // then $16.40. A number typed once would have been wrong twice.
+    const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "assessment" }, T), "p1", "t1", "30%");
+    expect(rateFor(proj(s), session(25))).toBeCloseTo(7.5, 10);
+    expect(rateFor(proj(s), session(15.75))).toBeCloseTo(4.725, 10);
+    expect(rateFor(proj(s), session(16.40))).toBeCloseTo(4.92, 10);
+  });
+
+  it("lets an absolute rate be set, and clears the share", () => {
+    let s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "30%");
+    s = setTaskRate(s, "p1", "t1", "9");
+    expect(findTask(proj(s), "t1")).toMatchObject({ rate: 9, factor: null });
+    expect(rateFor(proj(s), session(16.40))).toBe(9);
+  });
+
+  it("falls back to the snapshot when both are cleared", () => {
+    let s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "30%");
+    s = setTaskRate(s, "p1", "t1", "");
+    expect(rateFor(proj(s), session(16.40))).toBe(16.40);
+  });
+
+  it("can be set as the task is created", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "assessment", factor: 0.3 }, T);
+    expect(rateFor(proj(s), session(20))).toBeCloseTo(6, 10);
+  });
+
+  it("writes no field at all when nothing was given", () => {
+    // Absence is the meaning. A null would say the same thing louder, and
+    // would travel through sync as a change.
+    const s = addTask(base, "p1", { id: "t1", label: "plain" }, T);
+    expect(findTask(proj(s), "t1")).not.toHaveProperty("rate");
+    expect(findTask(proj(s), "t1")).not.toHaveProperty("factor");
+    expect(findTask(proj(s), "t1")).not.toHaveProperty("price");
+  });
+
+  it("shows a share back as a percentage, so editing it again is not a trap", () => {
+    expect(taskRateInput({ factor: 0.3 })).toBe("30%");
+    expect(taskRateInput({ rate: 4.92 })).toBe("4.92");
+    expect(taskRateInput({})).toBe("");
+  });
+
+  it("ignores a percentage that is not a number", () => {
+    expect(parseTaskRate("abc%")).toEqual({ rate: null, factor: null });
+    expect(parseTaskRate("-30%")).toEqual({ rate: null, factor: null });
+  });
+});
+
+describe("a task with its own price per accepted item", () => {
+  it("is set and cleared independently of any rate", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "CL", price: 300 }, T);
+    expect(findTask(proj(s), "t1").price).toBe(300);
+    s = setTaskPrice(s, "p1", "t1", null);
+    expect(findTask(proj(s), "t1").price).toBeNull();
+  });
+
+  it("appears in the per-task totals so a panel can show it", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "CL", price: 300 }, T);
+    const sessions = [{
+      id: "s1", projectId: "p1", taskId: "t1", rate: 0, kind: "billed",
+      currency: "EGP", deletedAt: null, segments: [{ startedAt: T, endedAt: T + HOUR }],
+    }];
+    expect(taskTotals(proj(s), sessions, T + HOUR)[0])
+      .toMatchObject({ label: "CL", price: 300, factor: null, rate: null });
   });
 });
