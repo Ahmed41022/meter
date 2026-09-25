@@ -4,7 +4,7 @@ import { earningsCents, formatMoney, formatShortDuration } from "../domain/money
 import {
   companyOf, isDone as projectDone, isPaused, searchProjects, validateProject,
 } from "../domain/projects.js";
-import { isCancelled, isPending } from "../domain/earnings.js";
+import { isCancelled, isPending, isPerTask, perTask } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
 import { rateFor } from "../domain/tasks.js";
 import { countWord, daysWord, wordsFor } from "./words.js";
@@ -125,7 +125,11 @@ export default function ProjectsView({
             {company && `${company} · `}
             {life
               ? `${mine.length} entr${mine.length === 1 ? "y" : "ies"}`
-              : `${formatMoney(Math.round(p.currentRate * 100), p.currency)}/hr · ${
+              // A project paid per accepted item has no hourly rate, and
+              // printing currentRate gave it a confident $0.00/hr.
+              : `${isPerTask(p)
+                ? `${formatMoney(Math.round(perTask(p) * 100), p.currency)} per task`
+                : `${formatMoney(Math.round(p.currentRate * 100), p.currency)}/hr`} · ${
                   mine.length} session${mine.length === 1 ? "" : "s"}`}
             {open > 0 && !stopped && ` · ${open} to do`}
           </span>
