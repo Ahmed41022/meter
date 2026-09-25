@@ -271,11 +271,18 @@ describe("task rate override", () => {
     expect(rateFor(proj(s), s.sessions[0])).toBe(450);
   });
 
-  it("ignores a zero, negative or non-numeric rate", () => {
-    for (const bad of [0, -5, "abc", ""]) {
+  it("ignores a negative or non-numeric rate", () => {
+    // Zero is no longer in this list: it is a rate somebody meant to type, for
+    // work that genuinely pays nothing. See "a task that pays nothing".
+    for (const bad of [-5, "abc", ""]) {
       const s = setTaskRate(build(), "p1", "t1", bad);
       expect(findTask(proj(s), "t1").rate ?? null).toBeNull();
     }
+  });
+
+  it("keeps a zero, because unpaid is an answer", () => {
+    const s = setTaskRate(build(), "p1", "t1", 0);
+    expect(findTask(proj(s), "t1").rate).toBe(0);
   });
 
   it("coerces the numeric string an input field produces", () => {
@@ -432,5 +439,49 @@ describe("a task with its own price per accepted item", () => {
     }];
     expect(taskTotals(proj(s), sessions, T + HOUR)[0])
       .toMatchObject({ label: "CL", price: 300, factor: null, rate: null });
+  });
+});
+
+describe("a task that pays nothing", () => {
+  const session = (rate) => ({ id: "s1", projectId: "p1", taskId: "t1", rate, kind: "billed" });
+
+  it("tells zero apart from empty", () => {
+    // Empty means "whatever the project says". Zero means "this one is
+    // unpaid" — onboarding, training, an unpaid trial. Conflating them left
+    // no way to say the second except a number so small it rounds away, which
+    // is a lie that still reports as income.
+    expect(parseTaskRate("0")).toEqual({ rate: 0, factor: null });
+    expect(parseTaskRate("")).toEqual({ rate: null, factor: null });
+  });
+
+  it("values its sessions at nothing rather than at the project rate", () => {
+    const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "Onboarding" }, T), "p1", "t1", "0");
+    expect(rateFor(proj(s), session(450))).toBe(0);
+  });
+
+  it("can be set free at creation", () => {
+    const s = addTask(base, "p1", { id: "t1", label: "Onboarding", rate: 0 }, T);
+    expect(findTask(proj(s), "t1").rate).toBe(0);
+    expect(rateFor(proj(s), session(450))).toBe(0);
+  });
+
+  it("goes back to inheriting when the box is cleared", () => {
+    let s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "0");
+    s = setTaskRate(s, "p1", "t1", "");
+    expect(rateFor(proj(s), session(450))).toBe(450);
+  });
+
+  it("shows zero back as zero, not as empty", () => {
+    expect(taskRateInput({ rate: 0 })).toBe("0");
+  });
+
+  it("still refuses a rate that is not a number", () => {
+    const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "abc");
+    expect(rateFor(proj(s), session(450))).toBe(450);
+  });
+
+  it("refuses a negative one, which is not a thing", () => {
+    const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "-5");
+    expect(rateFor(proj(s), session(450))).toBe(450);
   });
 });

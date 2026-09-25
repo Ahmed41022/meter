@@ -94,8 +94,13 @@ export const isPieceOnly = (project) =>
  * instead of forcing two projects for one piece of work.
  */
 export const priceFor = (project, task) => {
-  const own = Number(task?.price);
-  if (Number.isFinite(own) && own > 0) return own;
+  // `!= null` before the number check, and >= 0 after it. A task priced at
+  // zero is a real answer — unpaid onboarding on a paid project — and testing
+  // truthiness would silently fall back to the project's price instead.
+  if (task?.price != null) {
+    const own = Number(task.price);
+    if (Number.isFinite(own) && own >= 0) return own;
+  }
   return perTask(project);
 };
 
