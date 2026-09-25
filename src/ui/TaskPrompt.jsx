@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { wordsFor } from "./words.js";
 import { tasksFor } from "../domain/tasks.js";
-import { isPerTask, perTask } from "../domain/earnings.js";
+import { isPieceOnly, perTask } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 
 const NONE = "__none__";
@@ -24,7 +24,7 @@ export default function TaskPrompt({
   // into existence. Setting it afterwards meant editing the project's rate to
   // get one task priced differently, which repriced everything else.
   const [pay, setPay] = useState("");
-  const piece = isPerTask(project);
+  const piece = isPieceOnly(project);
 
   const confirm = () => {
     if (mode === "new") {

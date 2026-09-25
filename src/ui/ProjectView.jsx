@@ -8,7 +8,7 @@ import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import {
-  PAY, earnedFrom, isCancelled, isPending, isPerTask, perTask, priceFor,
+  PAY, earnedFrom, isCancelled, isPending, isPerTask, isPieceOnly, perTask, priceFor,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
@@ -63,9 +63,12 @@ export default function ProjectView({
   const shownMs = current ? elapsedMs(current, now) : 0;
   const currency = current?.currency ?? project.currency;
   const offClock = isOffClock(project);
-  // Paid per accepted item rather than by the hour, which changes what every
-  // money figure on this screen is allowed to say.
-  const piece = isPerTask(project);
+  // Two different questions. `piece` decides what the money figures are
+  // allowed to say, and a project paying ten an hour plus seventy on
+  // acceptance is still hourly. `settles` decides whether accepted items can
+  // be recorded at all, which that project certainly can.
+  const piece = isPieceOnly(project);
+  const settles = isPerTask(project);
   const w = wordsFor(offClock);
   const { head, tail } = moneyParts(current ? earningsCents(rateFor(project, current), shownMs) : 0, currency);
 
@@ -272,7 +275,7 @@ export default function ProjectView({
                       onClick={() => {
                         const id = current?.id ?? null;
                         onStop();
-                        if (piece && id) setSettling(id);
+                        if (settles && id) setSettling(id);
                       }}>
                 {idling ? "Stop idling" : w.stop}
               </button>
@@ -581,7 +584,7 @@ export default function ProjectView({
                       <button className="linkish" onClick={() => setEditingSession(s.id)}>edit</button>
                       {/* The second way in. Acceptance lands days after the
                           work, so the answer at stop time is often "not yet". */}
-                      {piece && (
+                      {settles && (
                         <>
                           {" · "}
                           <button className="linkish" onClick={() => setSettling(s.id)}>
