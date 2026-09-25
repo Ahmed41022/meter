@@ -3596,6 +3596,85 @@ describe("which work was worth the time, and how much rides on one project", () 
   }, 25_000);
 });
 
+describe("seeing what is running from anywhere", () => {
+  const seed = {
+    projects: [{
+      id: "a", name: "Acme", currentRate: 60, currency: "USD", tasks: [],
+      createdAt: Date.now() - 86_400_000, sessionGoal: null, overallGoal: null,
+    }],
+    sessions: [],
+  };
+  const bar = (d) => d.querySelector(".runbar");
+
+  const startAndLeave = async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    await startMeter(dom);
+    // Back out to the list, then over to the Overview.
+    btn(d, /All projects/i).click();
+    await wait(200);
+    return { dom, d };
+  };
+
+  it("shows nothing at all while nothing is running", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    // Furniture that says "not tracking" earns nothing, and this sits above
+    // every screen in the app.
+    expect(bar(dom.window.document)).toBeNull();
+  }, 25_000);
+
+  it("follows you from the project onto other tabs", async () => {
+    const { d } = await startAndLeave();
+    expect(bar(d)).not.toBeNull();
+    expect(bar(d).textContent).toMatch(/Acme/);
+
+    [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Overview").click();
+    await wait(200);
+    expect(bar(d)).not.toBeNull();
+  }, 30_000);
+
+  it("names the money as it accrues", async () => {
+    const { d } = await startAndLeave();
+    expect(bar(d).querySelector(".runbar-amt")).not.toBeNull();
+    expect(bar(d).querySelector(".runbar-time").textContent).toMatch(/\d\d:\d\d:\d\d/);
+  }, 30_000);
+
+  it("stops the meter from wherever you are", async () => {
+    const { dom, d } = await startAndLeave();
+    bar(d).querySelector(".runbar-stop").click();
+    await wait(350);
+    expect(bar(d)).toBeNull();
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.sessions[0].closedAt).not.toBeNull();
+  }, 30_000);
+
+  it("takes you to the project it belongs to", async () => {
+    const { d } = await startAndLeave();
+    bar(d).querySelector(".runbar-what").click();
+    await wait(250);
+    expect(btn(d, /All projects/i)).toBeTruthy();
+  }, 30_000);
+
+  it("quotes no money on idle time, which is not earnings", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    await startMeter(dom, { idle: true });
+    btn(d, /All projects/i).click();
+    await wait(200);
+    expect(bar(d).querySelector(".runbar-amt")).toBeNull();
+    expect(bar(d).textContent).toMatch(/idle/i);
+  }, 30_000);
+});
+
 describe("the span the Overview opens on", () => {
   const seed = {
     projects: [{
