@@ -146,7 +146,12 @@ export default function ProjectView({
             </div>
             {company && <div className="plate-for">{company}</div>}
             <div className="plate-rate">
-              {offClock ? "off the clock · not counted as work" : <>
+              {offClock ? "off the clock · not counted as work" : piece ? <>
+                {priceFor(project, current ? findTask(project, current.taskId) : null) !== null
+                  ? `${formatMoney(Math.round(priceFor(project, current ? findTask(project, current.taskId) : null) * 100), currency)} per accepted item`
+                  : "no price set"}
+                {current?.taskId && findTask(project, current.taskId)?.price != null && " · task price"}
+              </> : <>
                 {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
                 {current && rateFor(project, current) !== current.rate && " · task rate"}
                 {current && rateFor(project, current) === current.rate
@@ -184,9 +189,10 @@ export default function ProjectView({
         )}
 
         {!bare && <div className="clock">
-          {/* Off the clock the headline figure is already this duration, so
-              repeating it here would just print the same number twice. */}
-          {!offClock && <span className="clock-main">{formatDuration(shownMs)}</span>}
+          {/* Where the headline figure is already this duration — off the
+              clock, or paid per item — repeating it here prints the same
+              number twice. */}
+          {!offClock && !piece && <span className="clock-main">{formatDuration(shownMs)}</span>}
           <span className="clock-note">
             {current
               ? `started ${time(startedAt(current))}`
@@ -195,9 +201,9 @@ export default function ProjectView({
         </div>}
 
         {/* Minute rail: one mark per minute of the current billable hour. It
-            counts out an hour you are going to charge for, so off the clock
-            there is nothing for it to count. */}
-        {!offClock && !bare && <>
+            counts out an hour you are going to charge for — so off the clock,
+            or paid per accepted item, there is no such hour to count. */}
+        {!offClock && !piece && !bare && <>
         <div className="rail" aria-hidden="true">
           {Array.from({ length: 60 }, (_, i) => (
             <span key={i} className={
