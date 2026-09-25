@@ -15,7 +15,7 @@ import { addTask, removeTask, renameTask, resolveTaskId, setTaskRate } from "../
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
-import { createAuth } from "../sync/google.js";
+import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync from "./Sync.jsx";
@@ -158,7 +158,7 @@ export default function App({ store: injectedStore }) {
    * just arrived and send them all straight back as if they were new edits here.
    */
   const runSync = useCallback(async ({ interactive = false } = {}) => {
-    if (!clientId) return;
+    if (!clientId || !originAllowed()) return;
     setSync((s) => ({ ...s, state: "syncing", error: null }));
     try {
       if (!authRef.current) authRef.current = createAuth({ clientId });
@@ -514,6 +514,7 @@ export default function App({ store: injectedStore }) {
               setSync({ state: "idle", at: null });
             }}
             status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
+            canSignIn={originAllowed()}
             onSync={() => runSync({ interactive: true })}
             onSignOut={async () => {
               await authRef.current?.signOut();

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { FILE_NAME, SyncError, createDrive, syncOnce } from "../src/sync/drive.js";
-import { SCOPE, createAuth, loadGis } from "../src/sync/google.js";
+import { SCOPE, createAuth, loadGis, originAllowed } from "../src/sync/google.js";
 import { mergeState } from "../src/domain/merge.js";
 
 const ok = (body, init = {}) => new Response(
@@ -340,5 +340,114 @@ describe("holding a Google token", () => {
     const [a, b] = await Promise.all([loadGis(win, "x"), loadGis(win, "x")]);
     expect(a).toBe(b);
     expect(made).toBe(1);
+  });
+});
+
+describe("a sign-in that cannot succeed", () => {
+  /** The same fake as above, kept local so these can also drive `error_callback`. */
+  const fakeGoogle = () => {
+    const client = { callback: () => {}, error_callback: () => {}, requestAccessToken: () => {} };
+    return {
+      client,
+      google: {
+        accounts: {
+          oauth2: {
+            initTokenClient: () => client,
+            revoke: (t, done) => done?.({ successful: true }),
+          },
+        },
+      },
+    };
+  };
+  const auth = (behaviour) => {
+    const { client, google } = fakeGoogle();
+    client.requestAccessToken = (opts) => behaviour(client, opts);
+    return { client, api: createAuth({ clientId: "cid", load: async () => google }) };
+  };
+
+  it("reports a closed popup instead of waiting for ever", async () => {
+    // GIS delivers this through `error_callback`. Listening only to `callback`
+    // leaves the promise unsettled, which is what stuck the app on "Syncing…".
+    const { api } = auth((client) => client.error_callback({ type: "popup_closed" }));
+    await expect(api.signIn()).rejects.toThrow(/closed before it finished/);
+  });
+
+  it("explains a popup the browser refused to open", async () => {
+    const { api } = auth((client) => client.error_callback({ type: "popup_failed_to_open" }));
+    await expect(api.signIn()).rejects.toThrow(/popup blocker/i);
+  });
+
+  it("lets you try again after a failure", async () => {
+    // The regression this guards: a request that never settles leaves `pending`
+    // set, so every later attempt returns the first one's dead promise and the
+    // button never comes back.
+    let attempts = 0;
+    const { api } = auth((client) => {
+      attempts += 1;
+      if (attempts === 1) return client.error_callback({ type: "popup_closed" });
+      return client.callback({ access_token: "tok", expires_in: 3600 });
+    });
+    await expect(api.signIn()).rejects.toThrow();
+    expect(await api.signIn()).toBe("tok");
+    expect(attempts).toBe(2);
+  });
+
+  it("gives up on a request Google never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api } = auth(() => {});
+      const pending = api.signIn();
+      const settled = pending.then(() => "ok", (e) => e.message);
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(await settled).toMatch(/did not answer/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails a silent request quietly rather than throwing", async () => {
+    const { api } = auth((client) => client.error_callback({ type: "popup_closed" }));
+    expect(await api.getToken()).toBe(null);
+  });
+
+  it("offers the account chooser when a person presses the button", async () => {
+    // Without this, Google reuses whichever account the browser happens to be
+    // signed in to, and someone with two accounts cannot pick the right one.
+    let seen = null;
+    const { api } = auth((client, opts) => {
+      seen = opts;
+      client.callback({ access_token: "tok", expires_in: 3600 });
+    });
+    await api.signIn();
+    expect(seen).toEqual({ prompt: "select_account" });
+  });
+});
+
+describe("origins Google will accept", () => {
+  const at = (origin, hostname = "") => ({ location: { origin, hostname } });
+
+  it("accepts a site served over https", () => {
+    expect(originAllowed(at("https://ahmed41022.github.io", "ahmed41022.github.io"))).toBe(true);
+  });
+
+  it("refuses a page opened from disk", () => {
+    // What the packaged desktop build is. Google reports the origin as `file://`
+    // or `null` and rejects the request outright.
+    expect(originAllowed(at("file://", ""))).toBe(false);
+    expect(originAllowed(at("null", ""))).toBe(false);
+  });
+
+  it("allows localhost, which Google makes an exception for", () => {
+    expect(originAllowed(at("http://localhost:4173", "localhost"))).toBe(true);
+    expect(originAllowed(at("http://127.0.0.1:8080", "127.0.0.1"))).toBe(true);
+  });
+
+  it("refuses plain http anywhere else", () => {
+    expect(originAllowed(at("http://192.168.1.14:8080", "192.168.1.14"))).toBe(false);
+  });
+
+  it("refuses a window with no location at all", () => {
+    expect(originAllowed({})).toBe(false);
+    expect(originAllowed(undefined)).toBe(false);
   });
 });
