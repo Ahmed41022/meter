@@ -34,6 +34,9 @@ import DashboardView from "./DashboardView.jsx";
 const TICK_MS = 1_000;
 /** A burst of edits should be one upload, not one per keystroke. */
 const PUSH_DELAY_MS = 8_000;
+
+/** Replaced at build time; the fallback is what a dev server would show. */
+const VERSION = typeof __METER_VERSION__ === "string" ? __METER_VERSION__ : "dev";
 const HEARTBEAT_MS = 60_000;
 const STALE_MS = 150_000;
 const TOAST_MS = 7_000;
@@ -523,6 +526,11 @@ export default function App({ store: injectedStore }) {
           />
         )}
       </div>
+
+      {/* Which build you are looking at. Three copies of this app can be in
+          use at once — browser, phone and desktop — and "it works on mine" is
+          not answerable without it. */}
+      <p className="version">Meter v{VERSION}</p>
 
       {toast && (
         <Toast message={toast.message} action={toast.action}

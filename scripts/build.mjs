@@ -21,6 +21,10 @@ import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** One version, from one place, for all three builds. The app shows it, the
+ *  release is tagged with it, and the changelog explains it. */
+const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const asset = (p) => join(root, "assets", p);
 const b64 = async (p) => (await readFile(asset(p))).toString("base64");
 
@@ -31,7 +35,10 @@ const result = await build({
   jsx: "automatic",
   format: "iife",
   target: ["chrome100", "firefox100", "safari15"],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    __METER_VERSION__: JSON.stringify(version),
+  },
   write: false,
 });
 const js = result.outputFiles[0].text;
@@ -59,13 +66,15 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#F1F3EF">
+<meta name="theme-color" content="#F1F3EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1210" media="(prefers-color-scheme: dark)">
 <title>Meter</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${svg}">
 <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,${await b64("icon-32.png")}">
 <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,${await b64("icon-180.png")}">
 <link rel="manifest" href="data:application/manifest+json;base64,${manifest}">
-<style>html,body{margin:0;padding:0;background:#F1F3EF;}#root{min-height:100vh;}</style>
+<style>html,body{margin:0;padding:0;background:#F1F3EF;}#root{min-height:100vh;}
+@media (prefers-color-scheme: dark){html,body{background:#0E1210;}}</style>
 </head>
 <body>
 <div id="root"></div>
