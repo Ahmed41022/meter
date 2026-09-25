@@ -11,7 +11,13 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
-      globals: { ...globals.browser, ...globals.node },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        // Substituted at build time by esbuild's `define`; absent everywhere
+        // else, which the reader guards for.
+        __METER_VERSION__: "readonly",
+      },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: { react, "react-hooks": hooks },
