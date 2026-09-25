@@ -21,6 +21,23 @@ const ago = (at, now) => {
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 };
 
+/** What the last round actually did, as a phrase rather than a status code. */
+function Outcome({ status, now, signedIn }) {
+  if (status.state === "error") return <span className="sync-bad">{status.error}</span>;
+  if (!status.at) {
+    return signedIn ? "Signed in. Nothing synced yet." : "Sign in to start syncing.";
+  }
+  return (
+    <>
+      Last synced {ago(status.at, now)}
+      {status.created && " · created the file in Drive"}
+      {status.pushed && !status.created && " · sent your changes"}
+      {status.pulled && " · brought changes in"}
+      {!status.pushed && !status.pulled && !status.created && " · nothing to do"}
+    </>
+  );
+}
+
 export default function Sync({
   clientId, draft, onDraft, onSaveClientId, onForget,
   status, now, onSync, onSignOut, signedIn, canSignIn = true, origin = "",
@@ -30,41 +47,44 @@ export default function Sync({
     <div className="sec">
       <div className="sec-head">
         <span className="eyebrow">Sync</span>
-        <span className="eyebrow">{canSignIn ? (STATE_WORDS[status.state] ?? "") : "Unavailable here"}</span>
+        <span className="eyebrow">
+          {canSignIn ? (STATE_WORDS[status.state] ?? "") : "Unavailable here"}
+        </span>
       </div>
       <div className="panel">
         {!canSignIn ? (
-          // A page opened from disk has no origin Google will authorise, so the
-          // desktop copy cannot sign in however it is configured. Saying so is
-          // better than a button whose only possible outcome is an error page.
+          // A page opened from disk has no origin Google will authorise, so this
+          // copy cannot sign in however it is configured. Saying so is better
+          // than a button whose only possible outcome is an error page.
           <>
-            <p className="hint" style={{ marginTop: 0 }}>
+            <p className="sync-intro">
               This copy runs from a file on disk, and Google only signs in pages served
               from a web address. Sync works in the browser version; open that and sign
               in there.
             </p>
-            <p className="hint">
+            <p className="sync-intro last">
               To move this ledger across meanwhile: Export a backup here, then Restore it
               wherever you want it.
             </p>
           </>
         ) : !configured ? (
           <>
-            <p className="hint" style={{ marginTop: 0 }}>
+            <p className="sync-intro">
               Sync keeps this ledger in a hidden folder in your own Google Drive, so another
               device can pick it up. Nothing passes through anyone else’s server, and the
               permission it asks for cannot see the rest of your Drive.
             </p>
-            <p className="hint">
+            <p className="sync-intro">
               It needs a client ID from a Google Cloud project of your own: enable the Drive
               API, add the address below as an authorised JavaScript origin, and paste the ID
               here. Google matches that origin exactly, so each place you run Meter needs its
               own entry — they can all share one client ID.
             </p>
             {origin && (
-              <p className="hint">
-                This copy’s origin: <code className="origin">{origin}</code>
-              </p>
+              <div className="sync-origin">
+                <span className="eyebrow">Authorise this origin</span>
+                <code className="origin">{origin}</code>
+              </div>
             )}
             <label className="field">
               <span className="eyebrow">Google client ID</span>
@@ -81,35 +101,34 @@ export default function Sync({
         ) : (
           <>
             <p className="sync-read">
-              {status.state === "error" ? (
-                <span className="sync-bad">{status.error}</span>
-              ) : status.at ? (
-                <>
-                  Last synced {ago(status.at, now)}
-                  {status.created && " · created the file in Drive"}
-                  {status.pushed && !status.created && " · sent your changes"}
-                  {status.pulled && " · brought changes in"}
-                  {!status.pushed && !status.pulled && !status.created && " · nothing to do"}
-                </>
-              ) : signedIn ? "Signed in. Nothing synced yet." : "Sign in to start syncing."}
+              <Outcome status={status} now={now} signedIn={signedIn} />
             </p>
             {status.raced && (
-              <p className="hint">
+              <p className="sync-note">
                 Another device had written since this one last looked. Both sets of changes
                 were kept.
               </p>
             )}
+            {/* One action here, not three abreast. Signing out and changing the
+                client ID are each done once and then never again, and giving
+                them the same weight as the button you actually press made the
+                panel read as a row of equally likely choices. */}
             <div className="controls">
               <button className="btn primary" disabled={status.state === "syncing"}
                       onClick={onSync}>
                 {signedIn ? "Sync now" : "Sign in with Google"}
               </button>
-              {signedIn && (
-                <button className="btn ghost" onClick={onSignOut}>Sign out</button>
-              )}
-              <button className="btn ghost" onClick={onForget}>Change client ID</button>
             </div>
-            <p className="hint">
+            <div className="sync-more">
+              {signedIn && (
+                <>
+                  <button className="linkish" onClick={onSignOut}>Sign out</button>
+                  <span className="sync-sep" aria-hidden="true">·</span>
+                </>
+              )}
+              <button className="linkish" onClick={onForget}>Change client ID</button>
+            </div>
+            <p className="sync-foot">
               Syncing merges rather than replaces: a record edited on two devices keeps the
               later edit, and nothing either device recorded is dropped.
             </p>
