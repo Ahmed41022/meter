@@ -228,6 +228,38 @@ export const CSS = `
   .settle-row{flex-wrap:wrap;}
   .settle-what{flex:1 1 100%;}
 }
+/* The running strip. Sits above everything because it is about right now,
+   while the rest of the page is about what has already happened. */
+.runbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:9px 12px;
+  border:1px solid var(--jade);border-radius:11px;background:var(--jade-soft);
+  color:var(--ink);}
+.runbar.idling{border-color:var(--amber-line);background:var(--amber-soft);}
+.runbar-dot{width:8px;height:8px;border-radius:999px;background:var(--jade);flex:0 0 auto;
+  animation:runpulse 2s ease-in-out infinite;}
+.runbar.idling .runbar-dot{background:var(--amber);}
+@keyframes runpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+@media (prefers-reduced-motion:reduce){.runbar-dot{animation:none;}}
+.runbar-what{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:8px;
+  background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left;}
+.runbar-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.runbar-what:hover .runbar-name{text-decoration:underline;text-underline-offset:2px;}
+.runbar-task{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.runbar-time{font-family:var(--mono);font-size:13px;white-space:nowrap;}
+.runbar-amt{font-family:var(--mono);font-size:13px;font-weight:500;white-space:nowrap;}
+.runbar-tag{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;}
+.runbar-stop{font-family:inherit;font-weight:600;font-size:12px;padding:5px 12px;
+  border:1px solid var(--jade);border-radius:7px;background:var(--card);color:var(--jade);
+  cursor:pointer;white-space:nowrap;}
+.runbar-stop:hover{background:var(--jade);color:var(--on-jade);}
+.runbar.idling .runbar-stop{border-color:var(--amber);color:var(--amber);}
+.runbar.idling .runbar-stop:hover{background:var(--amber);color:var(--on-jade);}
+@media (max-width:420px){
+  .runbar{gap:8px;padding:8px 10px;}
+  .runbar-task{display:none;}
+}
+
 .foot{margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:9px;}
 .segmented.theme{gap:2px;padding:2px;border-radius:999px;}
 .seg.icon{display:grid;place-items:center;width:28px;height:28px;padding:0;

@@ -25,6 +25,7 @@ import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync from "./Sync.jsx";
 import ThemeSwitch from "./ThemeSwitch.jsx";
+import RunningBar from "./RunningBar.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
@@ -329,6 +330,17 @@ export default function App({ store: injectedStore }) {
   const projects = liveProjects(state.projects);
   const project = projects.find((p) => p.id === openProjectId) || null;
   const current = project ? currentSession(state, project.id) : null;
+
+  /** The one meter that is going, wherever it belongs. Two at once is already
+   *  reported as a conflict elsewhere; this takes the first either way, so the
+   *  strip never disagrees with itself between renders. Computed plainly
+   *  rather than memoised: it runs after an early return, where a hook cannot
+   *  go, and it is a filter over a list this render walks several times
+   *  already. */
+  const runningSession = liveSessions(state.sessions).filter(isRunning)[0] ?? null;
+  const runningProject = runningSession
+    ? projects.find((p) => p.id === runningSession.projectId) ?? null
+    : null;
   const recovering = recoveryId ? state.sessions.find((s) => s.id === recoveryId) : null;
 
   return (
@@ -337,6 +349,16 @@ export default function App({ store: injectedStore }) {
     <div className="mtr" data-theme={theme === THEME.SYSTEM ? undefined : theme}>
       <style>{CSS}</style>
       <div className="wrap">
+        {/* Above everything, because it is about right now and the rest of the
+            page is about what has already happened. */}
+        {runningProject && (
+          <RunningBar
+            project={runningProject} session={runningSession} now={now}
+            onOpen={openProject}
+            onStop={() => commit((s) => stopSession(s, runningSession.id, Date.now()))}
+          />
+        )}
+
         <div className="topbar">
           <span className="mark">Meter</span>
           {project
