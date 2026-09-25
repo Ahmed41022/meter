@@ -15,7 +15,7 @@ import { Delta, Heatmap, Rhythm, SplitBar, StatTile, TrendChart } from "./charts
 import {
   busiestStretch, byHourOfDay, byWeekday, shareOf, standsOut, timedOnly,
 } from "../domain/rhythm.js";
-import { GoalMeter, goalFormatter } from "./parts.jsx";
+import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
 // and the heading directly under it says "All time" in full.
@@ -81,7 +81,6 @@ const calendarFor = (sessions, now, back = 0) => {
 const earliestOf = (sessions) => Math.min(
   ...sessions.flatMap((s) => (s.segments ?? []).map((g) => g.startedAt)), Infinity);
 
-const PERIOD_WORD = { week: "this week", month: "this month" };
 
 /**
  * Every work goal that has a deadline, paced against its own period.
@@ -333,31 +332,7 @@ export default function DashboardView({
         </div>
       )}
 
-      {targets.length > 0 && (
-        <div className="sec" style={{ marginTop: 0, marginBottom: 26 }}>
-          <div className="sec-head">
-            <span className="eyebrow">Targets</span>
-            <span className="eyebrow">{behind > 0 ? `${behind} behind` : "all on pace"}</span>
-          </div>
-          <div className="panel">
-            {targets.map(({ project, goal, value, pacing }) => {
-              const show = goalFormatter(goal.type, project.currency);
-              return (
-                <div className="trg" key={project.id}>
-                  <div className="trg-top">
-                    <button className="linkish trg-name"
-                            onClick={() => onOpenProject(project.id)}>{project.name}</button>
-                    <span className="trg-of">{PERIOD_WORD[goal.period]}</span>
-                    <span className="goal-val">{show(value)} / {show(goal.target)}</span>
-                  </div>
-                  <GoalMeter type={goal.type} target={goal.target} value={value}
-                             currency={project.currency} pace={pacing} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <TargetsPanel targets={targets} behind={behind} onOpenProject={onOpenProject} />
 
       <div className="tiles">
         <StatTile label="Billed" value={formatShortDuration(current.billedMs)}
@@ -405,113 +380,12 @@ export default function DashboardView({
         </div>
       )}
 
-      {showCompanies && (
-        <div className="sec">
-          <div className="sec-head">
-            <span className="eyebrow">By company</span>
-            <span className="eyebrow">
-              {named.length} {named.length === 1 ? "company" : "companies"}
-            </span>
-          </div>
-          <div className="panel">
-            {companies.map((row) => {
-              const share = shares?.get(row) ?? null;
-              return (
-                <div className={"crow" + (row.company === null ? " none" : "")} key={row.company ?? ""}>
-                  <span className="crow-top">
-                    <span className="crow-name">{row.company ?? "No company"}</span>
-                    <span className="crow-amt">
-                      {currenciesByValue(row.billedCents).length === 0
-                        ? "—"
-                        : currenciesByValue(row.billedCents)
-                            .map(([cur, c]) => formatMoney(c, cur)).join(" · ")}
-                    </span>
-                  </span>
-                  <span className="crow-bar">
-                    <span className="crow-fill"
-                          style={{ width: `${(share ?? 0) * 100}%` }} />
-                  </span>
-                  <span className="crow-meta">
-                    {formatShortDuration(row.billedMs)}
-                    {row.idleMs > 0 && ` · ${formatShortDuration(row.idleMs)} idle`}
-                    {/* The blended rate: what an hour of this client's work
-                        actually came to across every project and task rate. */}
-                    {row.rateCents !== null
-                      && ` · ${formatMoney(row.rateCents, row.currency)}/hr`}
-                    {row.timedRateCents !== null && row.rateCents !== row.timedRateCents
-                      && ` (${formatMoney(row.timedRateCents, row.currency)}/hr timed)`}
-                    {share !== null && ` · ${Math.round(share * 100)}% of revenue`}
-                    {row.currency && (row.pendingCents[row.currency] ?? 0) !== 0
-                      && ` · ${formatMoney(row.pendingCents[row.currency], row.currency)} pending`}
-                    {row.projects.length > 1 && ` · ${row.projects.length} projects`}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <ByCompanyPanel show={showCompanies} companies={companies} named={named}
+                      shares={shares} />
 
-      <div className="sec">
-        <div className="sec-head">
-          <span className="eyebrow">By project</span>
-          {ranked.length > 1 ? (
-            <div className="segmented small" role="tablist" aria-label="Order projects by">
-              {[["time", "Time"], ["rate", "An hour"]].map(([key, label]) => (
-                <button key={key} role="tab" aria-selected={projectSort === key}
-                        className={"seg" + (projectSort === key ? " on" : "")}
-                        onClick={() => setProjectSort(key)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <span className="eyebrow">{rows.length ? `${rows.length} active` : ""}</span>
-          )}
-        </div>
-        {/* One project carrying most of the income is a fact about risk rather
-            than success, and the kind people notice too late. */}
-        {top && top.share >= 0.3 && (
-          <p className="concentration">
-            <strong>{top.row.project.name}</strong> is {Math.round(top.share * 100)}% of it.
-          </p>
-        )}
-        <div className="panel">
-          {shownRows.length === 0 ? (
-            <div className="empty">
-              No project logged time in this period.
-            </div>
-          ) : shownRows.map(({ project, billedMs, idleMs, billedCents, pendingCents, perHour }) => {
-            // One colour for every bar. These are projects, not an ordered
-            // scale, so shading them by size would double-encode the length.
-            const cents = billedCents[project.currency] ?? 0;
-            return (
-              <button className="prow" key={project.id} onClick={() => onOpenProject(project.id)}>
-                <span className="prow-top">
-                  <span className="prow-name">{project.name}</span>
-                  <span className="prow-amt">{formatMoney(cents, project.currency)}</span>
-                </span>
-                <span className="prow-bar">
-                  <span className="prow-billed"
-                        style={{ width: `${(billedMs / widest) * 100}%` }} />
-                  <span className="prow-idle"
-                        style={{ width: `${(idleMs / widest) * 100}%` }} />
-                </span>
-                <span className="prow-meta">
-                  {byRate && perHour !== null
-                    && <strong>{formatMoney(perHour, project.currency)}/hr · </strong>}
-                  {formatShortDuration(billedMs)} billed
-                  {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
-                  {/* Otherwise a project whose money is all waiting on
-                      acceptance reads as having earned nothing. */}
-                  {(pendingCents[project.currency] ?? 0) !== 0
-                    && ` · ${formatMoney(pendingCents[project.currency], project.currency)} pending`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <ByProjectPanel rows={rows} shownRows={shownRows} ranked={ranked} byRate={byRate}
+                      top={top} widest={widest} projectSort={projectSort}
+                      setProjectSort={setProjectSort} onOpenProject={onOpenProject} />
 
       {offRows.length > 0 && (
         <div className="sec">
