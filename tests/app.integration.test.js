@@ -3593,6 +3593,9 @@ describe("choosing a theme", () => {
     sessions: [],
   };
   const root = (d) => d.querySelector(".mtr");
+  // The switch is icons now, so it is found by the name it carries for
+  // anyone who cannot see them.
+  const themeBtn = (d, label) => d.querySelector(`.theme [aria-label="${label}"]`);
 
   it("follows the system until told otherwise", async () => {
     const dom = await boot(seed);
@@ -3601,13 +3604,22 @@ describe("choosing a theme", () => {
     expect(root(dom.window.document).hasAttribute("data-theme")).toBe(false);
   }, 25_000);
 
+  it("names each icon for anyone who cannot see it", async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    for (const label of ["Light", "Dark", "Match system"]) {
+      expect(themeBtn(d, label), label).not.toBeNull();
+    }
+  }, 25_000);
+
   it("can be pinned to light even where the system is dark", async () => {
     // The case that stranded someone: the OS said dark and the app had no way
     // back, because the palette shipped before the switch did.
     const dom = await boot(seed);
     await wait(250);
     const d = dom.window.document;
-    btn(d, /^Light$/).click();
+    themeBtn(d, "Light").click();
     await wait(250);
     expect(root(d).getAttribute("data-theme")).toBe("light");
     expect(dom.window.localStorage.getItem("meter:theme")).toBe("light");
@@ -3625,7 +3637,7 @@ describe("choosing a theme", () => {
     const dom = await boot(seed, { "meter:theme": "dark" });
     await wait(250);
     const d = dom.window.document;
-    btn(d, /^System$/).click();
+    themeBtn(d, "Match system").click();
     await wait(250);
     expect(root(d).hasAttribute("data-theme")).toBe(false);
     expect(dom.window.localStorage.getItem("meter:theme")).toBeNull();
