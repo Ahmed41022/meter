@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const req = createRequire(import.meta.url);
 const { hasRunningSession, STORE_KEY } = req("../desktop/running.js");
@@ -146,7 +147,10 @@ describe("carrying the ledger to the served origin", () => {
 });
 
 describe("serving the app on loopback", () => {
-  const page = new URL("../desktop/bridge.html", import.meta.url).pathname.replace(/^\//, "");
+  // fileURLToPath, not pathname: on Windows a file URL's pathname is "/C:/..."
+  // and on Linux it is already absolute, so trimming a leading slash makes a
+  // valid Windows path and a broken Linux one.
+  const page = fileURLToPath(new URL("../desktop/bridge.html", import.meta.url));
 
   const listening = async () => start({ "/": page, "/bridge": page }, { port: 0 });
 
