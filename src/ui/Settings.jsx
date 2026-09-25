@@ -117,7 +117,7 @@ export default function Settings({
                    onBlur={() => onPatch({ company: company.trim() })} />
           </label>
           {/* Suggestions from what you have already typed: the list is what
-              stops "Outlier" and "outlier" becoming two clients. */}
+              stops "Northwind" and "northwind" becoming two clients. */}
           <datalist id="meter-companies">
             {companiesIn(projects).map((c) => <option key={c} value={c} />)}
           </datalist>
