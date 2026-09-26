@@ -30,7 +30,7 @@ export const taskLabel = (project, taskId) =>
 /** Adds a task unless one with the same id or label already exists.
  *  Callers generate the id, so they can reuse an existing task's id when the
  *  label already matches — see resolveTaskId. */
-export const addTask = (state, projectId, { id, label, rate, factor, price }, now) => {
+export const addTask = (state, projectId, { id, label, rate, factor, price, note }, now) => {
   const clean = normaliseLabel(label);
   if (!clean) return state;
   return {
@@ -46,6 +46,10 @@ export const addTask = (state, projectId, { id, label, rate, factor, price }, no
       if (amount(rate) !== null) task.rate = amount(rate);
       if (amount(factor) !== null) task.factor = amount(factor);
       if (amount(price) !== null) task.price = amount(price);
+      // Whatever the label could not hold: a ticket URL, a platform id, what
+      // the thing actually is. A label is what reports group by, so it has to
+      // stay short and stable; this is where the rest goes.
+      if (normaliseLabel(note)) task.note = normaliseLabel(note);
       return { ...p, tasks: [...existing, task] };
     }),
   };
@@ -137,6 +141,35 @@ export const setTaskRate = (state, projectId, taskId, rate) => {
   };
 };
 
+/**
+ * A free-text note on a task.
+ *
+ * Emptied means gone, not stored blank, so "has a note" stays a question with
+ * one answer. Unlike the label it is never matched, grouped or compared —
+ * which is exactly why it can hold the id, the link and the caveat that a
+ * label being typed into a picker cannot.
+ */
+export const setTaskNote = (state, projectId, taskId, note) => {
+  const clean = normaliseLabel(note);
+  return {
+    ...state,
+    projects: state.projects.map((p) =>
+      p.id === projectId
+        ? {
+          ...p,
+          tasks: tasksFor(p).map((t) => {
+            if (t.id !== taskId) return t;
+            const next = { ...t };
+            if (clean) next.note = clean;
+            else delete next.note;
+            return next;
+          }),
+        }
+        : p
+    ),
+  };
+};
+
 /** What one accepted item pays under this task, overriding the project's own
  *  price the same way a task rate overrides the session snapshot. */
 export const setTaskPrice = (state, projectId, taskId, price) => {
@@ -203,6 +236,7 @@ export const taskTotals = (project, sessions, now) => {
         rate: taskId ? findTask(project, taskId)?.rate ?? null : null,
         factor: taskId ? findTask(project, taskId)?.factor ?? null : null,
         price: taskId ? findTask(project, taskId)?.price ?? null : null,
+        note: taskId ? findTask(project, taskId)?.note ?? null : null,
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }

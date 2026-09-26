@@ -3,35 +3,63 @@ import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
 import { paysOnAcceptance, perTask } from "../domain/earnings.js";
 
+/**
+ * What the form holds, in the shape the inputs want — strings, because that is
+ * what was typed. Kept beside what was last saved so the panel can say whether
+ * there is anything to save, without having to guess how the ledger normalised
+ * the last answer.
+ */
+const formOf = (project) => ({
+  name: project.name,
+  company: companyOf(project) ?? "",
+  rate: String(project.currentRate),
+  each: perTask(project) === null ? "" : String(perTask(project)),
+  sessionGoal: project.sessionGoal || { type: "money", target: "" },
+  overallGoal: project.overallGoal || { type: "money", target: "", period: "week" },
+});
+
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
 }) {
-  const [name, setName] = useState(project.name);
-  const [company, setCompany] = useState(companyOf(project) ?? "");
-  const [rate, setRate] = useState(String(project.currentRate));
-  const [each, setEach] = useState(perTask(project) === null ? "" : String(perTask(project)));
-  const [sessionGoal, setSessionGoal] = useState(project.sessionGoal || { type: "money", target: "" });
-  const [overallGoal, setOverallGoal] = useState(
-    project.overallGoal || { type: "money", target: "", period: "week" }
-  );
+  const [form, setForm] = useState(() => formOf(project));
+  /**
+   * What the ledger holds, in the same terms.
+   *
+   * Comparing against the project itself would not work: a target typed as
+   * "120" comes back as the number 120, and a panel that decided it was still
+   * unsaved would never put its Save button away.
+   */
+  const [saved, setSaved] = useState(() => formOf(project));
   const [confirming, setConfirming] = useState(false);
 
-  const saveBasics = () => {
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+
+  const { name, company, rate, each, sessionGoal, overallGoal } = form;
+  // A rate that is not a number above zero has never been applied, and with an
+  // explicit Save that silence would read as the button not working.
+  const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
+
+  const asGoal = (goal) =>
+    normaliseGoal(isOffClock(project) ? { ...goal, type: "time" } : goal);
+
+  const save = () => {
     const parsed = Number(rate);
     const piece = Number(each);
     onPatch({
       name: name.trim() || project.name,
+      company: company.trim(),
       ...(Number.isFinite(parsed) && parsed > 0 ? { currentRate: parsed } : {}),
       // Cleared on purpose means cleared: null rather than skipped, so a project
       // can stop being paid per item.
       perTask: Number.isFinite(piece) && piece > 0 ? piece : null,
+      sessionGoal: asGoal(sessionGoal),
+      overallGoal: asGoal(overallGoal),
     });
+    setSaved(form);
   };
 
-  const saveGoal = (key, goal) =>
-    onPatch({ [key]: normaliseGoal(isOffClock(project) ? { ...goal, type: "time" } : goal) });
-
-  const goalFields = (key, goal, setGoal, withPeriod) => (
+  const goalFields = (key, goal, withPeriod) => (
     <div className="pair">
       {/* Off the clock there is nothing to earn, so time is the only measure
           on offer rather than a money option that could never move. */}
@@ -44,7 +72,7 @@ export default function Settings({
         <label className="field">
           <span className="eyebrow">Measure</span>
           <select className="inp" value={goal.type}
-                  onChange={(e) => { const next = { ...goal, type: e.target.value }; setGoal(next); saveGoal(key, next); }}>
+                  onChange={(e) => set({ [key]: { ...goal, type: e.target.value } })}>
             <option value="money">Money earned</option>
             <option value="time">Minutes worked</option>
           </select>
@@ -54,7 +82,7 @@ export default function Settings({
         <label className="field">
           <span className="eyebrow">Resets</span>
           <select className="inp" value={goal.period}
-                  onChange={(e) => { const next = { ...goal, period: e.target.value }; setGoal(next); saveGoal(key, next); }}>
+                  onChange={(e) => set({ [key]: { ...goal, period: e.target.value } })}>
             <option value="week">Every Monday</option>
             <option value="month">Every 1st</option>
             <option value="lifetime">Never</option>
@@ -65,17 +93,20 @@ export default function Settings({
         <span className="eyebrow">Target</span>
         <input className="inp" type="number" min="0" step="any" placeholder="empty = no goal"
                value={goal.target}
-               onChange={(e) => setGoal({ ...goal, target: e.target.value })}
-               onBlur={() => saveGoal(key, goal)} />
+               onChange={(e) => set({ [key]: { ...goal, target: e.target.value } })} />
       </label>
     </div>
   );
+
+  /** Enter saves, because a one-field change should not need the mouse. */
+  const onKey = (e) => { if (e.key === "Enter" && dirty) save(); };
 
   return (
     <div className="panel">
       <label className="field">
         <span className="eyebrow">Project name</span>
-        <input className="inp" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveBasics} />
+        <input className="inp" value={name} onKeyDown={onKey}
+               onChange={(e) => set({ name: e.target.value })} />
       </label>
 
       {/* Off the clock replaces the rate rather than sitting beside it. A rate
@@ -91,17 +122,24 @@ export default function Settings({
           <label className="field">
             <span className="eyebrow">Hourly rate ({project.currency})</span>
             <input className="inp" type="number" min="0" step="any" value={rate}
-                   onChange={(e) => setRate(e.target.value)} onBlur={saveBasics} />
+                   onKeyDown={onKey} onChange={(e) => set({ rate: e.target.value })} />
           </label>
           <label className="field">
             <span className="eyebrow">Per accepted task ({project.currency})</span>
             <input className="inp" type="number" min="0" step="any" placeholder="not paid per task"
-                   value={each} onChange={(e) => setEach(e.target.value)} onBlur={saveBasics} />
+                   value={each} onKeyDown={onKey}
+                   onChange={(e) => set({ each: e.target.value })} />
           </label>
           <div className="hint">
             A new rate applies to sessions you start from now on. Everything already in the ledger keeps
             the rate it was recorded at{hasRunningSession ? ", including the one running right now" : ""}.
           </div>
+          {rateRefused && (
+            <div className="hint warn">
+              An hourly rate has to be a number above zero, so this one will be left as it is.
+              To stop charging by the hour, set this project off the clock or price it per task.
+            </div>
+          )}
         </>
       )}
 
@@ -112,9 +150,8 @@ export default function Settings({
           <label className="field">
             <span className="eyebrow">Company</span>
             <input className="inp" value={company} list="meter-companies"
-                   placeholder="who it's for — optional"
-                   onChange={(e) => setCompany(e.target.value)}
-                   onBlur={() => onPatch({ company: company.trim() })} />
+                   placeholder="who it's for — optional" onKeyDown={onKey}
+                   onChange={(e) => set({ company: e.target.value })} />
           </label>
           {/* Suggestions from what you have already typed: the list is what
               stops "Northwind" and "northwind" becoming two clients. */}
@@ -127,6 +164,39 @@ export default function Settings({
           </div>
         </>
       )}
+
+      <div className="sec-head" style={{ marginTop: 22 }}>
+        <span className="eyebrow">Session goal</span>
+      </div>
+      {goalFields("sessionGoal", sessionGoal, false)}
+
+      <div className="sec-head" style={{ marginTop: 10 }}>
+        <span className="eyebrow">Overall goal</span>
+      </div>
+      {goalFields("overallGoal", overallGoal, true)}
+
+      {/*
+        Everything above is typed, and nothing above is saved until this.
+        Editing a rate used to take effect the moment focus left the box, which
+        meant a half-typed "4" on the way to "45" was briefly the project's
+        real rate — and a tab away at the wrong moment left it there.
+
+        The three controls BELOW are deliberately still immediate. Each is one
+        decisive click with a visible consequence, not something typed, and
+        Status already offers an Undo of its own. Making them wait for a Save
+        they do not need would teach the button to mean two different things.
+      */}
+      <div className={"savebar" + (dirty ? " on" : "")} aria-live="polite">
+        {dirty ? (
+          <>
+            <span className="savebar-note">Unsaved changes</span>
+            <button className="btn primary" onClick={save}>Save changes</button>
+            <button className="btn ghost" onClick={() => setForm(saved)}>Discard</button>
+          </>
+        ) : (
+          <span className="savebar-note quiet">Saved</span>
+        )}
+      </div>
 
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Counts as</span>
@@ -175,16 +245,6 @@ export default function Settings({
           </div>
         </>
       )}
-
-      <div className="sec-head" style={{ marginTop: 22 }}>
-        <span className="eyebrow">Session goal</span>
-      </div>
-      {goalFields("sessionGoal", sessionGoal, setSessionGoal, false)}
-
-      <div className="sec-head" style={{ marginTop: 10 }}>
-        <span className="eyebrow">Overall goal</span>
-      </div>
-      {goalFields("overallGoal", overallGoal, setOverallGoal, true)}
 
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Status</span>

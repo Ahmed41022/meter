@@ -3,7 +3,7 @@ import {
   startSession, pauseSession, resumeSession, stopSession, recoverSession,
   deleteSession, restoreSession, heartbeat, currentSession, sessionsFor, liveSessions,
   allSessionsFor, idleSessionsFor, isBilled, isIdle, kindOf, utilisation, KIND,
-  addManualSession, wasManual, overlappingSessions,
+  addManualSession, wasManual, overlappingSessions, ownedBy,
 } from "../src/domain/sessions.js";
 import { elapsedMs, isRunning, isOpen } from "../src/domain/time.js";
 import { earningsCents } from "../src/domain/money.js";
@@ -426,5 +426,47 @@ describe("a project that has stopped taking time", () => {
   it("takes time again the moment it is running", () => {
     expect(startSession(empty, { ...project, status: null }, { now: T, id: "s1" }).sessions)
       .toHaveLength(1);
+  });
+});
+
+describe("which device is holding the meter", () => {
+  it("stamps the device that started it, and leaves it off when there is none", () => {
+    expect(startSession(empty, project, { now: T, id: "s1", device: "laptop" })
+      .sessions[0].device).toBe("laptop");
+    expect(startSession(empty, project, { now: T, id: "s1" }).sessions[0])
+      .not.toHaveProperty("device");
+  });
+
+  it("reads a session written before devices were told apart as this one's", () => {
+    // Every such session already behaved that way; nothing may change meaning.
+    expect(ownedBy({ id: "s1" }, "laptop")).toBe(true);
+    expect(ownedBy({ id: "s1", device: "phone" }, "laptop")).toBe(false);
+    expect(ownedBy({ id: "s1", device: "laptop" }, "laptop")).toBe(true);
+  });
+
+  it("treats everything as this one's when the caller has no device", () => {
+    // The domain layer has no device of its own, and neither does a test that
+    // does not care about them.
+    expect(ownedBy({ id: "s1", device: "phone" }, null)).toBe(true);
+  });
+
+  it("refuses to vouch for a meter another device is running", () => {
+    // Crash recovery closes a session at its last tick. A tick written here
+    // for a machine we cannot see would bill hours nobody worked.
+    const s = startSession(empty, project, { now: T, id: "s1", device: "phone" });
+    const after = heartbeat(s, T + 60_000, "laptop");
+    expect(after.sessions[0].segments[0].lastTick).toBe(T);
+    expect(heartbeat(s, T + 60_000, "phone").sessions[0].segments[0].lastTick)
+      .toBe(T + 60_000);
+  });
+
+  it("hands the meter over when the other device resumes it", () => {
+    let s = startSession(empty, project, { now: T, id: "s1", device: "laptop" });
+    s = pauseSession(s, "s1", T + HOUR);
+    s = resumeSession(s, "s1", T + 2 * HOUR, "phone");
+    expect(s.sessions[0].device).toBe("phone");
+    // And the phone is now the one whose heartbeat counts.
+    expect(heartbeat(s, T + 3 * HOUR, "laptop").sessions[0].segments[1].lastTick)
+      .toBe(T + 2 * HOUR);
   });
 });

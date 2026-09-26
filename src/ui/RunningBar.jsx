@@ -16,7 +16,7 @@ import { isPieceOnly } from "../domain/earnings.js";
  * there, saying "not tracking", is furniture — and this one sits above every
  * screen in the app, so it has to earn the row it occupies.
  */
-export default function RunningBar({ project, session, now, onOpen, onStop }) {
+export default function RunningBar({ project, session, now, elsewhere = false, onOpen, onStop }) {
   if (!project || !session) return null;
 
   const ms = elapsedMs(session, now);
@@ -43,6 +43,9 @@ export default function RunningBar({ project, session, now, onOpen, onStop }) {
         </span>
       )}
       {idling && <span className="runbar-tag">idle</span>}
+      {/* Said out loud, because the strip is otherwise indistinguishable from
+          a meter running here — and Stop reaches across either way. */}
+      {elsewhere && <span className="runbar-tag">elsewhere</span>}
       <button className="runbar-stop" onClick={onStop}>Stop</button>
     </div>
   );

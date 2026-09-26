@@ -76,6 +76,7 @@ export default function TaskBreakdown({
                 </>
               )}
             </div>
+            {r.note && <div className="trow-note">{r.note}</div>}
             {earnings && r.taskId && (
               <PayLine pay={taskPay(earnings, r.taskId)} currency={currency} />
             )}

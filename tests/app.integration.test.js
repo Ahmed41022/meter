@@ -252,7 +252,10 @@ describe("a full session, end to end", () => {
     await wait(150);
     const rateInput = d.querySelectorAll("input[type=number]")[0];
     setValue(window, rateInput, "900");
-    rateInput.dispatchEvent(new window.FocusEvent("focusout", { bubbles: true }));
+    await wait(120);
+    // Settings are staged and saved on request; leaving the box is not the
+    // act of changing a rate any more.
+    btn(d, /Save changes/).click();
     await wait(220);
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
@@ -4260,5 +4263,166 @@ describe("settling a batch of tasks", () => {
     const meta = [...d.querySelectorAll(".ern-meta")].map((e) => e.textContent);
     expect(meta.some((t) => /1234/.test(t))).toBe(true);
     expect(meta.some((t) => /1235/.test(t))).toBe(true);
+  }, 30_000);
+});
+
+describe("a meter running on the other device", () => {
+  const HOUR = 3_600_000;
+  /** Started elsewhere two hours ago. Its heartbeat is deliberately local, so
+   *  from here it will always look stale however recently the other machine
+   *  ticked it. */
+  const elsewhere = () => {
+    const now = Date.now();
+    return {
+      projects: [{ id: "p1", name: "Overnight", currentRate: 450, currency: "EGP",
+                   createdAt: now - 2 * HOUR, sessionGoal: null, overallGoal: null }],
+      sessions: [{ id: "s1", projectId: "p1", kind: "billed", rate: 450, currency: "EGP",
+                   createdAt: now - 2 * HOUR, device: "some-other-machine",
+                   segments: [{ startedAt: now - 2 * HOUR, endedAt: null, lastTick: now - 2 * HOUR }],
+                   closedAt: null, deletedAt: null }],
+    };
+  };
+
+  const recovery = (d) => [...d.querySelectorAll(".banner")]
+    .find((b) => /Meter left running/.test(b.textContent)) ?? null;
+
+  it("is not offered back as a crash", async () => {
+    // Offering to close it at its last tick would cut two hours off work that
+    // is still being done on the other machine.
+    const d = (await boot(elsewhere())).window.document;
+    await wait(200);
+    expect(recovery(d)).toBeNull();
+  }, 20_000);
+
+  it("shows in the running bar, and says it is not here", async () => {
+    const d = (await boot(elsewhere())).window.document;
+    await wait(200);
+    const bar = d.querySelector(".runbar");
+    expect(bar).not.toBeNull();
+    expect(bar.textContent).toMatch(/Overnight/);
+    expect(bar.textContent).toMatch(/elsewhere/);
+  }, 20_000);
+
+  it("stops from here, and the stop is a real edit that will travel", async () => {
+    const dom = await boot(elsewhere());
+    const d = dom.window.document;
+    await wait(200);
+    const before = Date.now();
+    btn(d, /^Stop$/).click();
+    await wait(250);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0];
+    expect(saved.closedAt).not.toBeNull();
+    expect(saved.segments[0].endedAt).not.toBeNull();
+    // Stamped, unlike a heartbeat — that stamp is what wins the merge on the
+    // machine that is still counting.
+    expect(saved.updatedAt).toBeGreaterThanOrEqual(before);
+  }, 20_000);
+
+  it("still recovers a crash of its own", async () => {
+    // The change must not have bought cross-device stopping by disabling
+    // recovery: a stale session THIS device opened is still a crash.
+    const now = Date.now();
+    const seed = elsewhere();
+    seed.sessions[0].device = undefined;
+    delete seed.sessions[0].device;
+    const d = (await boot(seed)).window.document;
+    await wait(200);
+    expect(recovery(d)).not.toBeNull();
+    expect(recovery(d).textContent).toMatch(/Overnight/);
+    expect(now).toBeGreaterThan(0);
+  }, 20_000);
+});
+
+describe("settings wait for Save", () => {
+  const HOUR = 3_600_000;
+  const seed = () => ({
+    projects: [{
+      id: "a", name: "Gateway", currentRate: 80, currency: "USD",
+      createdAt: Date.now() - 30 * HOUR, sessionGoal: null, overallGoal: null, tasks: [],
+    }],
+    sessions: [],
+  });
+  const openSettings = async () => {
+    const dom = await boot(seed());
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    btn(d, /^Open$/).click();
+    await wait(200);
+    return { dom, d };
+  };
+  const field = (d, label) => [...d.querySelectorAll(".field")]
+    .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input");
+  const rateOf = (dom) =>
+    JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0].currentRate;
+
+  it("does not write a half-typed rate the moment focus leaves the box", async () => {
+    // A "4" on the way to "45" used to be the project's real rate for as long
+    // as it took to tab away and notice.
+    const { dom, d } = await openSettings();
+    setValue(dom.window, field(d, "Hourly rate"), "4");
+    field(d, "Hourly rate").blur();
+    await wait(250);
+    expect(rateOf(dom)).toBe(80);
+  }, 30_000);
+
+  it("says so, and writes it when asked", async () => {
+    const { dom, d } = await openSettings();
+    setValue(dom.window, field(d, "Hourly rate"), "45");
+    await wait(150);
+    expect(d.querySelector(".savebar").textContent).toMatch(/Unsaved changes/);
+    btn(d, /Save changes/).click();
+    await wait(250);
+    expect(rateOf(dom)).toBe(45);
+    expect(d.querySelector(".savebar").textContent).toMatch(/^Saved$/);
+  }, 30_000);
+
+  it("puts everything back when discarded, and writes nothing", async () => {
+    const { dom, d } = await openSettings();
+    setValue(dom.window, field(d, "Project name"), "Something else");
+    await wait(150);
+    btn(d, /^Discard$/).click();
+    await wait(200);
+    expect(field(d, "Project name").value).toBe("Gateway");
+    expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0].name)
+      .toBe("Gateway");
+  }, 30_000);
+});
+
+describe("a note on a task", () => {
+  it("is asked for when the task is made, and kept where it is listed", async () => {
+    const dom = await boot({
+      projects: [{
+        id: "a", name: "Gateway", currentRate: 80, currency: "USD",
+        createdAt: Date.now() - 3_600_000, sessionGoal: null, overallGoal: null, tasks: [],
+      }],
+      sessions: [],
+    });
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+
+    btn(d, /Start the meter/i).click();
+    await wait(200);
+    const fields = [...d.querySelectorAll(".prompt .field")];
+    const input = (label) => fields
+      .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+      ?.querySelector("input");
+    setValue(dom.window, input("Name it"), "1234");
+    setValue(dom.window, input("^Note$"), "QA-88, rerun weekly");
+    await wait(120);
+    btn(d, /^Start the meter$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks[0]).toMatchObject({ label: "1234", note: "QA-88, rerun weekly" });
+    // And it is on screen where the task is, not only in storage.
+    expect(d.querySelector(".wrap").textContent).toMatch(/QA-88, rerun weekly/);
   }, 30_000);
 });

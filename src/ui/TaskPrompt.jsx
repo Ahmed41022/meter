@@ -24,12 +24,16 @@ export default function TaskPrompt({
   // into existence. Setting it afterwards meant editing the project's rate to
   // get one task priced differently, which repriced everything else.
   const [pay, setPay] = useState("");
+  // Everything the label cannot hold. The label is what every report groups
+  // by, so it has to stay short and stable — but an id, a link or a line
+  // saying what the thing actually is has to live somewhere.
+  const [note, setNote] = useState("");
   const piece = isPieceOnly(project);
 
   const confirm = () => {
     if (mode === "new") {
       const clean = draft.trim();
-      return onConfirm(clean ? { label: clean, pay: pay.trim() } : { taskId: null });
+      return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim() } : { taskId: null });
     }
     onConfirm({ taskId: taskId === NONE ? null : taskId });
   };
@@ -92,6 +96,22 @@ export default function TaskPrompt({
             {!piece && <>A percentage stays a percentage: work paid at 30% of the base follows
               the base when it changes, instead of going stale the day it moves. </>}
             Empty uses the project&apos;s figure; <strong>0</strong> says this task pays nothing.
+          </span>
+        </label>
+      )}
+
+      {mode === "new" && (
+        <label className="field">
+          <span className="eyebrow">Note</span>
+          <input className="inp" value={note} placeholder="ids, a link, what it is — optional"
+                 onChange={(e) => setNote(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === "Enter") confirm();
+                   if (e.key === "Escape") onCancel();
+                 }} />
+          <span className="hint" style={{ marginTop: 8, display: "block" }}>
+            Kept on the task and shown wherever it is listed. Nothing groups or
+            matches on it, so it can say whatever you need it to.
           </span>
         </label>
       )}

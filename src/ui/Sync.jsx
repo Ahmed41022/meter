@@ -12,7 +12,7 @@ const STATE_WORDS = {
   error: "Sync failed",
 };
 
-const ago = (at, now) => {
+export const ago = (at, now) => {
   const s = Math.max(0, Math.round((now - at) / 1000));
   if (s < 45) return "just now";
   const m = Math.round(s / 60);
@@ -20,6 +20,34 @@ const ago = (at, now) => {
   const h = Math.round(m / 60);
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 };
+
+/**
+ * The same status in one line, from wherever you are.
+ *
+ * The panel below lives on the Work tab because that is where Export and
+ * Restore are, and the three of them answer one question together. But "has
+ * my phone got this yet?" is asked on every screen, and an answer you have to
+ * navigate to is an answer you stop checking.
+ *
+ * It renders nothing at all until sync is set up. Before that there is no
+ * state to report, and a permanent "off" would be furniture.
+ */
+export function SyncPip({ status, now, signedIn, onSync }) {
+  const state = status.state;
+  const label =
+    state === "syncing" ? "Syncing…"
+      : state === "error" ? "Sync failed"
+        : !signedIn ? "Sync · sign in"
+          : status.at ? `Synced ${ago(status.at, now)}`
+            : "Not synced yet";
+  return (
+    <button className={`pip pip-${state}`} onClick={onSync} disabled={state === "syncing"}
+            title={state === "error" ? status.error : "Sync now"}>
+      <span className="pip-dot" aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
 
 /** What the last round actually did, as a phrase rather than a status code. */
 function Outcome({ status, now, signedIn }) {
