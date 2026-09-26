@@ -17,7 +17,7 @@ import { elapsedMs } from "./time.js";
 import { rateFor, taskLabel } from "./tasks.js";
 import { earningsCents } from "./money.js";
 import { isBilled } from "./sessions.js";
-import { payStateOf } from "./earnings.js";
+import { payStateOf, tasksOf } from "./earnings.js";
 import { companyOf } from "./projects.js";
 
 const HOUR = 3_600_000;
@@ -64,6 +64,14 @@ const amount = (cents) => (cents / 100).toFixed(2);
  * Deleted records are left out: they were removed on purpose, and a backup
  * already holds them if they are ever wanted back.
  */
+/** The task column for an earning: the one it names, the number it covers, or
+ *  blank where it is money no single task can be pointed at. */
+const taskColumn = (project, earning) => {
+  const tasks = tasksOf(earning);
+  if (!project || tasks.length === 0) return "";
+  return tasks.length === 1 ? taskLabel(project, tasks[0]) : `${tasks.length} tasks`;
+};
+
 export const toCsv = (state, now) => {
   const projects = state?.projects ?? [];
   const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
@@ -110,7 +118,10 @@ export const toCsv = (state, now) => {
         isoDate(e.at),
         project?.name ?? "",
         companyOf(project) ?? "",
-        "",
+        // One reward can cover a whole batch, and naming fifty tasks in a
+        // spreadsheet cell helps nobody — the count is the fact a reader of
+        // this file can act on.
+        taskColumn(project, e),
         e.kind === "bonus" ? "Bonus" : e.kind === "adjust" ? "Adjustment" : "Per item",
         payStateOf(e),
         "", "",

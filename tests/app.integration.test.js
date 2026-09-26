@@ -3922,7 +3922,7 @@ describe("what a piece-rate session produced", () => {
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings).toHaveLength(1);
     expect(saved.earnings[0]).toMatchObject({
-      cents: 150_000, status: "pending", taskId: "t1", units: 1,
+      cents: 150_000, status: "pending", taskIds: ["t1"], units: 1,
       sessionId: saved.sessions[0].id,
     });
   }, 30_000);
@@ -4160,4 +4160,105 @@ describe("the sync panel", () => {
     await toProjects(d, "Life");
     expect(panel(d)).toBeUndefined();
   }, 25_000);
+});
+
+describe("settling a batch of tasks", () => {
+  const HOUR = 3_600_000;
+  const now = Date.now();
+  /** $80 an hour AND $10 more when the item is accepted — the shape where
+   *  hourly figures stay and acceptance is a separate, later fact. */
+  const seed = {
+    projects: [{
+      id: "a", name: "Gateway", currentRate: 80, perTask: 10, currency: "USD",
+      createdAt: now - 30 * HOUR, sessionGoal: null, overallGoal: null,
+      tasks: [
+        { id: "t1", label: "1234", createdAt: now - 30 * HOUR },
+        { id: "t2", label: "1235", createdAt: now - 30 * HOUR },
+      ],
+    }],
+    sessions: [1, 2].map((n) => ({
+      id: `s${n}`, projectId: "a", kind: "billed", taskId: `t${n}`, rate: 80, currency: "USD",
+      createdAt: now - (n + 1) * HOUR, closedAt: now - n * HOUR, deletedAt: null,
+      segments: [{ startedAt: now - (n + 1) * HOUR, endedAt: now - n * HOUR }],
+    })),
+    earnings: [],
+  };
+  const open = async () => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    return { dom, d };
+  };
+  const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+  const taskRows = (d) => [...d.querySelectorAll(".trow")];
+
+  it("says a task has not been claimed, which is not the same as worth nothing", async () => {
+    const { d } = await open();
+    expect(taskRows(d).every((r) => /not claimed/.test(r.textContent))).toBe(true);
+  }, 30_000);
+
+  it("accepts every selected task at its own price, pending", async () => {
+    const { dom, d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accept 2$/).click();
+    await wait(300);
+
+    const { earnings } = stored(dom);
+    expect(earnings).toHaveLength(2);
+    expect(earnings.map((e) => e.cents)).toEqual([1_000, 1_000]);
+    expect(earnings.map((e) => e.taskIds)).toEqual([["t1"], ["t2"]]);
+    expect(earnings.every((e) => e.status === "pending")).toBe(true);
+  }, 30_000);
+
+  it("then marks the whole batch paid in one go", async () => {
+    const { dom, d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accept 2$/).click();
+    await wait(300);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /Mark 2 paid/).click();
+    await wait(300);
+
+    expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
+  }, 30_000);
+
+  it("covers a batch with one reward, without splitting it between them", async () => {
+    // Fifty tasks paid by one milestone are each paid for, and none of them is
+    // worth a fiftieth of it — that price was never quoted.
+    const { dom, d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^One reward$/).click();
+    await wait(200);
+    const amount = [...d.querySelectorAll(".panel input[type=number]")].at(-1);
+    setValue(dom.window, amount, "100");
+    await wait(150);
+    btn(d, /Record for 2 tasks/).click();
+    await wait(300);
+
+    const { earnings } = stored(dom);
+    expect(earnings).toHaveLength(1);
+    expect(earnings[0]).toMatchObject({ cents: 10_000, units: 2, taskIds: ["t1", "t2"] });
+    // Each task reads as covered, and neither is given a figure of its own.
+    const rows = taskRows(d).map((r) => r.textContent);
+    expect(rows.every((t) => /in 1 shared reward/.test(t))).toBe(true);
+    expect(rows.every((t) => !/not claimed/.test(t))).toBe(true);
+  }, 30_000);
+
+  it("names the task on the money, once it has one", async () => {
+    const { d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accept 2$/).click();
+    await wait(300);
+    const meta = [...d.querySelectorAll(".ern-meta")].map((e) => e.textContent);
+    expect(meta.some((t) => /1234/.test(t))).toBe(true);
+    expect(meta.some((t) => /1235/.test(t))).toBe(true);
+  }, 30_000);
 });

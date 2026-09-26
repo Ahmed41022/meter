@@ -7,7 +7,40 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Money says which task it was for.** Every earning names its task, in the
+  list, in the CSV export and on the task itself. A row that read `$10.00 ·
+  Per accepted item` told you an amount and a date, which is as much as a bank
+  statement tells you — and the question being asked of that list is which
+  task has been paid for.
+- **A task says where it stands.** Under each one: what has been paid, what is
+  accepted and still owed, or **not claimed** — because on work paid on
+  acceptance the absence of a line is not a zero, it is work that is done and
+  not yet credited, and past thirty tasks that is not a thing you can see by
+  reading down a column of amounts.
+- **Acceptance in batches.** Pick any number of tasks and record them accepted
+  in one go, each at its own price, or mark every line they are owed as paid.
+  Approval does not arrive one task at a time and neither should the ledger.
+- **One reward across many tasks.** "Finish fifty and we pay you X" is a single
+  payment naming all fifty. Each of them then reads as paid for without being
+  given a share of it — splitting it fifty ways would invent a per-task price
+  nobody quoted.
+- An earning can be re-filed under a different task, or unfiled, from its row.
+
+### Changed
+
+- An earning's task is stored as `taskIds`, a list, because one payment can
+  cover a batch. The singular `taskId` an earlier build wrote is still read and
+  never written again, so no record holds two answers to one question.
+- A batch of rows changes pay state in one write rather than one write each —
+  it was one stamp and one upload per row.
+
+### Fixed
+
+- **A piece-rate project's task list quoted `$0.00` against every task**, in
+  the column next to what the task had actually been paid. Hourly figures were
+  already hidden everywhere else on that kind of project; this one was missed.
 
 ## [1.1.0] — 2026-09-26
 

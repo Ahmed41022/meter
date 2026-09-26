@@ -77,6 +77,26 @@ describe("the ledger as a spreadsheet", () => {
     expect(col(csv, "Note")[i]).toMatch(/6 items/);
   });
 
+  it("names the task a payment was for, so the file can be read per task", () => {
+    const tasked = {
+      ...state,
+      projects: [project("p1", { tasks: [{ id: "t1", label: "1234" }] })],
+      earnings: [earning("e1", 12, 1_000, { taskIds: ["t1"] })],
+    };
+    expect(col(toCsv(tasked, NOW), "Task")).toContain("1234");
+  });
+
+  it("gives a batch reward its count rather than fifty names in one cell", () => {
+    const tasked = {
+      ...state,
+      projects: [project("p1", {
+        tasks: [{ id: "t1", label: "1234" }, { id: "t2", label: "1235" }],
+      })],
+      earnings: [earning("e1", 12, 10_000, { kind: "bonus", taskIds: ["t1", "t2"] })],
+    };
+    expect(col(toCsv(tasked, NOW), "Task")).toContain("2 tasks");
+  });
+
   it("leaves hours BLANK on money that took no recorded time", () => {
     // Not 0.000: a zero invites an hourly rate to be computed from it.
     const s = { ...state, earnings: [earning("e1", 12, 100_00)] };

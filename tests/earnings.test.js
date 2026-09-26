@@ -3,7 +3,8 @@ import {
   EARNING, PAY, addEarning, earningTotals, earningsFor, earningsIn, isCancelled,
   isPending, isSettled, liveEarnings, paysOnAcceptance, payStateOf, removeEarning,
   isPerTask, perTask, perTaskCents, priceFor, earningsForSession, sessionEarnedCents,
-  restoreEarning, setPayState,
+  restoreEarning, setPayState, setPayStateMany, setEarningTasks, earningsForTask,
+  tasksOf, taskPay,
 } from "../src/domain/earnings.js";
 import { performanceIn, untimedShare, byProject, byCompany } from "../src/domain/performance.js";
 import { KIND } from "../src/domain/sessions.js";
@@ -327,5 +328,126 @@ describe("an unpaid task on a paid project", () => {
 
   it("keeps null meaning inherit", () => {
     expect(priceFor(piece, { id: "t3", price: null })).toBe(70);
+  });
+});
+
+describe("which task the money was for", () => {
+  const piece = {
+    id: "p1", name: "CoAT", currency: "USD", currentRate: 80, perTask: 10,
+    tasks: [{ id: "t1", label: "1234" }, { id: "t2", label: "1235" }],
+  };
+  const base = { projects: [piece], sessions: [], earnings: [] };
+
+  it("writes a list, so one payment can cover a batch", () => {
+    const s = addEarning(base, piece, { cents: 10_000, taskIds: ["t1", "t2"] }, T, "e1");
+    expect(s.earnings[0].taskIds).toEqual(["t1", "t2"]);
+    expect(tasksOf(s.earnings[0])).toEqual(["t1", "t2"]);
+  });
+
+  it("leaves the field off entirely when no task is named", () => {
+    // Absent has to keep meaning "money no one task can be pointed at",
+    // which an empty array written out would blur.
+    const s = addEarning(base, piece, { cents: 5_000 }, T, "e1");
+    expect(s.earnings[0]).not.toHaveProperty("taskIds");
+    expect(s.earnings[0]).not.toHaveProperty("taskId");
+    expect(tasksOf(s.earnings[0])).toEqual([]);
+  });
+
+  it("still reads the singular field an older build wrote", () => {
+    expect(tasksOf({ taskId: "t1" })).toEqual(["t1"]);
+    expect(tasksOf({ taskId: null })).toEqual([]);
+    expect(tasksOf(undefined)).toEqual([]);
+  });
+
+  it("re-files an earning, dropping the old singular field with it", () => {
+    const legacy = { ...base, earnings: [{ id: "e1", projectId: "p1", cents: 1_000, taskId: "t1" }] };
+    const moved = setEarningTasks(legacy, "e1", ["t2"]);
+    expect(moved.earnings[0]).not.toHaveProperty("taskId");
+    expect(tasksOf(moved.earnings[0])).toEqual(["t2"]);
+  });
+
+  it("unfiles when handed nothing", () => {
+    const s = addEarning(base, piece, { cents: 1_000, taskIds: ["t1"] }, T, "e1");
+    const loose = setEarningTasks(s, "e1", []);
+    expect(loose.earnings[0]).not.toHaveProperty("taskIds");
+  });
+
+  it("finds every earning naming a task, and skips deleted ones", () => {
+    let s = addEarning(base, piece, { cents: 1_000, taskIds: ["t1"] }, T, "e1");
+    s = addEarning(s, piece, { cents: 2_000, taskIds: ["t1", "t2"] }, T, "e2");
+    s = addEarning(s, piece, { cents: 4_000, taskIds: ["t2"] }, T, "e3");
+    expect(earningsForTask(s.earnings, "t1").map((e) => e.id)).toEqual(["e1", "e2"]);
+    expect(earningsForTask(removeEarning(s, "e1", T).earnings, "t1").map((e) => e.id))
+      .toEqual(["e2"]);
+  });
+});
+
+describe("where one task stands with the money", () => {
+  const piece = {
+    id: "p1", name: "CoAT", currency: "USD", currentRate: 80, perTask: 10,
+    tasks: [{ id: "t1", label: "1234" }, { id: "t2", label: "1235" }],
+  };
+  const base = { projects: [piece], sessions: [], earnings: [] };
+
+  it("says nothing has been claimed, which is not the same as nothing owed", () => {
+    expect(taskPay([], "t1")).toMatchObject({ claimed: false, settled: 0, pending: 0 });
+  });
+
+  it("separates what has landed from what has only been accepted", () => {
+    let s = addEarning(base, piece, { cents: 1_000, taskIds: ["t1"], status: PAY.PENDING }, T, "e1");
+    s = addEarning(s, piece, { cents: 3_000, taskIds: ["t1"] }, T, "e2");
+    expect(taskPay(s.earnings, "t1")).toMatchObject({
+      claimed: true, claims: 2, pending: 1_000, settled: 3_000, shared: 0,
+    });
+  });
+
+  it("counts a batch reward without giving the task a share of it", () => {
+    // Fifty tasks covered by one payment are each paid for, and none of them
+    // is worth a fiftieth of it — that price was never quoted.
+    const s = addEarning(base, piece,
+      { cents: 10_000, taskIds: ["t1", "t2"], status: PAY.PENDING }, T, "e1");
+    expect(taskPay(s.earnings, "t1")).toMatchObject({
+      claimed: true, shared: 1, pending: 0, settled: 0,
+    });
+  });
+
+  it("does not let a rejected line read as a claim", () => {
+    const s = addEarning(base, piece,
+      { cents: 1_000, taskIds: ["t1"], status: PAY.CANCELLED }, T, "e1");
+    expect(taskPay(s.earnings, "t1")).toMatchObject({ claimed: false, cancelled: 1 });
+  });
+
+  it("ignores earnings filed against another task", () => {
+    const s = addEarning(base, piece, { cents: 1_000, taskIds: ["t2"] }, T, "e1");
+    expect(taskPay(s.earnings, "t1").claimed).toBe(false);
+  });
+});
+
+describe("marking a batch off in one go", () => {
+  const piece = { id: "p1", name: "CoAT", currency: "USD", perTask: 10, tasks: [] };
+
+  it("moves several earnings at once", () => {
+    let s = { projects: [piece], sessions: [], earnings: [] };
+    s = addEarning(s, piece, { cents: 1_000, status: PAY.PENDING }, T, "e1");
+    s = addEarning(s, piece, { cents: 1_000, status: PAY.PENDING }, T, "e2");
+    s = addEarning(s, piece, { cents: 1_000, status: PAY.PENDING }, T, "e3");
+    const paid = setPayStateMany(s, ["e1", "e3"], PAY.PAID);
+    expect(paid.earnings.map(isPending)).toEqual([false, true, false]);
+  });
+
+  it("reaches sessions and earnings alike, the way the single one does", () => {
+    const s = {
+      projects: [piece],
+      sessions: [{ id: "s1", status: PAY.PENDING }],
+      earnings: [{ id: "e1", status: PAY.PENDING }],
+    };
+    const paid = setPayStateMany(s, ["s1", "e1"], PAY.PAID);
+    expect(paid.sessions[0]).not.toHaveProperty("status");
+    expect(paid.earnings[0]).not.toHaveProperty("status");
+  });
+
+  it("leaves everything alone when handed an empty list", () => {
+    const s = { projects: [piece], sessions: [], earnings: [{ id: "e1", status: PAY.PENDING }] };
+    expect(setPayStateMany(s, [], PAY.PAID).earnings[0].status).toBe(PAY.PENDING);
   });
 });

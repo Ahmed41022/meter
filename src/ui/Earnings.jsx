@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
+import { findTask, tasksFor } from "../domain/tasks.js";
 import {
-  EARNING, PAY, isCancelled, isPending, isPieceOnly, perTask, perTaskCents,
+  EARNING, PAY, isCancelled, isPending, isPieceOnly, perTask, perTaskCents, priceFor,
+  tasksOf,
 } from "../domain/earnings.js";
+
+/** The value a "no task" option carries. A select cannot hold null, and ""
+ *  is indistinguishable from an unset control. */
+const NONE = "__none__";
 
 const KINDS = [
   [EARNING.PIECE, "Per accepted item"],
@@ -29,14 +35,21 @@ const toInput = (t) => {
  * has none of those, and putting it in the same list would mean every reader of
  * the ledger has to remember that some rows do not mean what the columns say.
  */
-export default function Earnings({ project, earnings, now, onAdd, onRemove, onSetPayState }) {
+export default function Earnings({
+  project, earnings, now, onAdd, onRemove, onSetPayState, onSetTasks,
+}) {
   const [adding, setAdding] = useState(false);
+  // Which row is having its task changed. One at a time: a select on every
+  // row would turn a list you read into a form you have to be careful in.
+  const [filing, setFiling] = useState(null);
   const [form, setForm] = useState({
-    amount: "", kind: EARNING.PIECE, at: toInput(now), units: "", note: "",
+    amount: "", kind: EARNING.PIECE, at: toInput(now), units: "", taskId: NONE, note: "",
   });
-  /** What one accepted item is worth here, or null where the project has no
-   *  such price and a count means nothing on its own. */
-  const each = perTask(project);
+  const tasks = tasksFor(project);
+  /** What one accepted item is worth under whatever task is picked, or null
+   *  where there is no such price and a count means nothing on its own. */
+  const chosen = form.taskId === NONE ? null : findTask(project, form.taskId);
+  const each = priceFor(project, chosen);
 
   const rows = [...earnings].sort((a, b) => b.at - a.at);
   const settled = rows.filter((e) => !isPending(e) && !isCancelled(e))
@@ -56,9 +69,10 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
       // boundary in a zone where local midnight does not exist.
       at: new Date(`${form.at}T12:00`).getTime(),
       units: Number.isFinite(units) && units > 0 ? units : null,
+      taskIds: form.taskId === NONE ? [] : [form.taskId],
       note: form.note,
     });
-    setForm({ amount: "", kind: form.kind, at: toInput(now), units: "", note: "" });
+    setForm({ amount: "", kind: form.kind, at: toInput(now), units: "", taskId: NONE, note: "" });
     setAdding(false);
   };
 
@@ -82,15 +96,45 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
           </div>
         )}
 
-        {rows.map((e) => (
+        {rows.map((e) => {
+          const ids = tasksOf(e);
+          /* The name is the point. Without it every row here is an amount and
+             a date, which is exactly as much as a bank statement tells you —
+             and the question being asked of this list is "which task has been
+             paid for", which an amount cannot answer. */
+          const named = ids.length > 1
+            ? `${ids.length} tasks`
+            : ids.length === 1 ? (findTask(project, ids[0])?.label ?? "deleted task") : null;
+          return (
           <div className={`ern${isCancelled(e) ? " cancelled" : ""}`} key={e.id}>
             <span className="ern-main">
               <span className="ern-amt">{formatMoney(e.cents, e.currency)}</span>
               <span className="ern-meta">
-                {day(e.at)} · {KIND_WORD[e.kind] ?? e.kind}
+                {day(e.at)}
+                {" · "}
+                {/* A batch is never re-filed from here. Offering a single
+                    picker over fifty tasks would quietly discard forty-nine. */}
+                {onSetTasks && tasks.length > 0 && ids.length <= 1 ? (
+                  <button className={"linkish" + (named ? "" : " faintish")}
+                          onClick={() => setFiling(filing === e.id ? null : e.id)}>
+                    {named ?? "no task"}
+                  </button>
+                ) : (named ?? "no task")}
+                {" · "}{KIND_WORD[e.kind] ?? e.kind}
                 {e.units ? ` · ${e.units} × ${formatMoney(Math.round(e.cents / e.units), e.currency)}` : ""}
                 {e.note ? ` · ${e.note}` : ""}
               </span>
+              {filing === e.id && (
+                <select className="inp mini" autoFocus value={ids[0] ?? NONE}
+                        aria-label="Which task this is for"
+                        onChange={(ev) => {
+                          onSetTasks(e.id, ev.target.value === NONE ? [] : [ev.target.value]);
+                          setFiling(null);
+                        }}>
+                  <option value={NONE}>No task</option>
+                  {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              )}
             </span>
             <span className="ern-actions">
               <select className="inp mini" value={isPending(e) ? PAY.PENDING : isCancelled(e) ? PAY.CANCELLED : PAY.PAID}
@@ -103,7 +147,8 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
               <button className="x" aria-label="Remove" onClick={() => onRemove(e.id)}>×</button>
             </span>
           </div>
-        ))}
+          );
+        })}
 
         {adding ? (
           <div className="ern-form">
@@ -134,11 +179,11 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
                        value={form.units}
                        onChange={(e) => {
                          const units = e.target.value;
-                         // Where the project has a price per item, a count IS
-                         // the amount, so typing one fills it in. Editing the
+                         // Where there is a price per item, a count IS the
+                         // amount, so typing one fills it in. Editing the
                          // amount afterwards stands: a capped or part-paid batch
                          // is exactly the case you would want to overrule.
-                         const priced = perTaskCents(project, units);
+                         const priced = perTaskCents(project, units, chosen);
                          setForm((f) => ({
                            ...f, units,
                            amount: priced === null ? f.amount : String(priced / 100),
@@ -146,6 +191,35 @@ export default function Earnings({ project, earnings, now, onAdd, onRemove, onSe
                        }} />
               </label>
             </div>
+            {tasks.length > 0 && (
+              <label className="field">
+                <span className="eyebrow">Which task</span>
+                <select className="inp" value={form.taskId}
+                        onChange={(e) => {
+                          const taskId = e.target.value;
+                          // Re-price against the task just picked, so choosing
+                          // the task after typing the count does not leave an
+                          // amount computed from the wrong one.
+                          const task = taskId === NONE ? null : findTask(project, taskId);
+                          const priced = perTaskCents(project, form.units, task);
+                          setForm((f) => ({
+                            ...f, taskId,
+                            amount: priced === null ? f.amount : String(priced / 100),
+                          }));
+                        }}>
+                  <option value={NONE}>
+                    {perTask(project) === null ? "No task" : "No task · the project's price"}
+                  </option>
+                  {tasks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                      {priceFor(project, t) !== null
+                        && ` · ${formatMoney(Math.round(priceFor(project, t) * 100), project.currency)}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field">
               <span className="eyebrow">Note</span>
               <input className="inp" placeholder="optional" value={form.note}

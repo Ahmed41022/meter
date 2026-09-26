@@ -46,6 +46,10 @@ rates. `npm run shots` regenerates every one of them.</sub>
   so the ledger matches what you were actually paid.
 - **Tracks pending, paid and cancelled**, because work finished is not money
   received.
+- **Says which task has been paid for** and which is still only done — and
+  settles a batch of them in one go, since approval never arrives one task at
+  a time. One reward can cover fifty tasks without pretending to be a price
+  per task.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive.
 - **Follows your system's light or dark setting**, or whichever you pick.
