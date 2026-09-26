@@ -113,10 +113,61 @@ export const perTaskCents = (project, units, task = null) => {
   return Math.round(each * 100 * n);
 };
 
+/**
+ * Which tasks an earning is for.
+ *
+ * A LIST, because one payment can cover many. A platform that pays a reward
+ * for finishing fifty tasks writes one line, not fifty — and those fifty still
+ * need to know they were paid for, or they read as work nobody credited. The
+ * ordinary case is a batch of one.
+ *
+ * `taskId` is the singular field earlier builds wrote. It is read here and
+ * never written again, so no record can hold two different answers to the same
+ * question. An older build reading a newer ledger sees an earning with no
+ * task, which is what it already showed for every earning it had.
+ */
+export const tasksOf = (earning) => {
+  const many = earning?.taskIds;
+  if (Array.isArray(many)) return many.filter(Boolean);
+  return earning?.taskId ? [earning.taskId] : [];
+};
+
+export const namesTask = (earning, taskId) =>
+  !!taskId && tasksOf(earning).includes(taskId);
+
 export const liveEarnings = (state) => (state.earnings ?? []).filter((e) => !e.deletedAt);
 
 export const earningsFor = (state, projectId) =>
   liveEarnings(state).filter((e) => e.projectId === projectId);
+
+/** Every live earning that names this task, whether or not it names others. */
+export const earningsForTask = (earnings, taskId) =>
+  (earnings ?? []).filter((e) => !e.deletedAt && namesTask(e, taskId));
+
+/**
+ * Where one task stands with the money.
+ *
+ * `claimed` is the question that made this exist: has anything at all been
+ * recorded for this task, or is it work that is done and not yet credited?
+ * Past a few dozen tasks that is not a question you can answer by reading down
+ * a column of amounts.
+ *
+ * Money is attributed only where a line names this task AND NOTHING ELSE. A
+ * reward for fifty tasks is fifty tasks' worth of money and none of it is this
+ * one's; dividing by fifty would print a per-task price nobody ever quoted. So
+ * a shared line is counted and named rather than split.
+ */
+export const taskPay = (earnings, taskId) => {
+  let settled = 0, pending = 0, shared = 0, cancelled = 0, claims = 0;
+  for (const e of earningsForTask(earnings, taskId)) {
+    if (isCancelled(e)) { cancelled += 1; continue; }
+    claims += 1;
+    if (tasksOf(e).length > 1) { shared += 1; continue; }
+    if (isPending(e)) pending += e.cents;
+    else settled += e.cents;
+  }
+  return { claimed: claims > 0, claims, settled, pending, shared, cancelled };
+};
 
 /** Inside a half-open window, by when the money was earned. A single instant,
  *  not a span — there are no hours to overlap. */
@@ -142,9 +193,10 @@ export const sessionEarnedCents = (state, sessionId) =>
 export const earningsIn = (earnings, from, to) =>
   earnings.filter((e) => e.at >= from && e.at < to);
 
-export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskId = null, units = null, sessionId = null }, now, id) => {
+export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null }, now, id) => {
   const amount = Math.round(cents);
   if (!Number.isFinite(amount) || amount === 0) return state;
+  const tasks = (taskIds ?? []).filter(Boolean);
   return {
     ...state,
     earnings: [
@@ -152,7 +204,10 @@ export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, no
       {
         id,
         projectId: project.id,
-        taskId,
+        // Omitted rather than written empty, so absent keeps meaning what it
+        // has always meant here: money this project earned that no one task
+        // can be pointed at.
+        ...(tasks.length ? { taskIds: tasks } : {}),
         kind,
         cents: amount,
         currency: project.currency,
@@ -184,13 +239,46 @@ export const restoreEarning = (state, id) => ({
   earnings: (state.earnings ?? []).map((e) => (e.id === id ? { ...e, deletedAt: null } : e)),
 });
 
-/** Moves a session or an earning between pay states. `null` clears it back to
- *  settled, which is what absent has always meant. */
-export const setPayState = (state, id, status) => ({
+/**
+ * Re-files an earning under a different set of tasks.
+ *
+ * An empty list clears the link, which is the honest shape for money that no
+ * one task can be pointed at — a monthly adjustment, a referral, a bonus for
+ * being around. The singular `taskId` an older build may have written is
+ * dropped here rather than left behind to disagree with the list.
+ */
+export const setEarningTasks = (state, id, taskIds) => ({
   ...state,
-  sessions: state.sessions.map((s) => (s.id === id ? withStatus(s, status) : s)),
-  earnings: (state.earnings ?? []).map((e) => (e.id === id ? withStatus(e, status) : e)),
+  earnings: (state.earnings ?? []).map((e) => {
+    if (e.id !== id) return e;
+    const next = { ...e };
+    delete next.taskId;
+    const tasks = (taskIds ?? []).filter(Boolean);
+    if (tasks.length) next.taskIds = tasks;
+    else delete next.taskIds;
+    return next;
+  }),
 });
+
+/**
+ * Moves sessions and earnings between pay states, any number at once. `null`
+ * clears back to settled, which is what absent has always meant.
+ *
+ * Plural because that is how work paid on acceptance actually gets approved —
+ * a batch is marked off in one go, and doing it one record at a time would be
+ * one write, one stamp and one upload per row.
+ */
+export const setPayStateMany = (state, ids, status) => {
+  const wanted = new Set(ids);
+  const move = (record) => (wanted.has(record.id) ? withStatus(record, status) : record);
+  return {
+    ...state,
+    sessions: state.sessions.map(move),
+    earnings: (state.earnings ?? []).map(move),
+  };
+};
+
+export const setPayState = (state, id, status) => setPayStateMany(state, [id], status);
 
 const withStatus = (record, status) => {
   const next = { ...record };

@@ -285,6 +285,9 @@ export const CSS = `
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 .linkish:hover{color:var(--jade-hi);}
+/* A link offering to fill something in, rather than naming what is there. */
+.linkish.faintish{color:var(--muted);text-decoration-style:dashed;}
+.linkish.faintish:hover{color:var(--jade);}
 .trow.clickable{cursor:pointer;}
 .trow.clickable:hover .trow-label{color:var(--jade);}
 .trow.on .trow-label{color:var(--jade);}
@@ -307,6 +310,13 @@ export const CSS = `
 .trow-amt{font-family:var(--mono);font-size:15px;color:var(--ink);
   font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
 .trow.none .trow-label{color:var(--muted);font-weight:500;}
+.trow.pick{grid-template-columns:auto 1fr auto auto;}
+.trow.sel{background:var(--jade-soft);}
+/* Work done and not yet credited. Amber rather than red: nothing is wrong
+   with it, it is simply money that has not been claimed yet. */
+.trow-sub.unclaimed{color:var(--amber);}
+.trow-sub.owed{color:var(--amber);}
+.trow-sub.earned{color:var(--jade);}
 
 /* collapsible sections */
 .toggle{display:flex;align-items:center;gap:7px;background:none;border:0;padding:6px 4px;

@@ -11,11 +11,12 @@ import {
   addProject, liveProjects, patchProject, removeProject, setStatus,
 } from "../domain/projects.js";
 import {
-  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, removeEarning,
-  restoreEarning, setPayState,
+  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, priceFor, removeEarning,
+  restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
-  addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskPrice, setTaskRate,
+  addTask, findTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskPrice,
+  setTaskRate, taskLabel,
 } from "../domain/tasks.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
@@ -458,7 +459,7 @@ export default function App({ store: injectedStore }) {
               // accepted is somebody else's decision and days away.
               (acc, line) => addEarning(acc, project, {
                 cents: line.cents, kind: EARNING.PIECE, units: line.units,
-                taskId: line.taskId, sessionId, status: PAY.PENDING,
+                taskIds: line.taskId ? [line.taskId] : [], sessionId, status: PAY.PENDING,
               }, Date.now(), uid()),
               s,
             ))}
@@ -515,6 +516,44 @@ export default function App({ store: injectedStore }) {
               flash("Removed.", "Undo", () => commit((s) => restoreEarning(s, id)));
             }}
             onSetPayState={(id, status) => commit((s) => setPayState(s, id, status))}
+            onSetEarningTasks={(id, taskIds) => commit((s) => setEarningTasks(s, id, taskIds))}
+            onSetPayStateMany={(ids, status) => {
+              if (!ids.length) return;
+              const snapshot = stateRef.current;
+              commit((s) => setPayStateMany(s, ids, status));
+              flash(`${ids.length} marked ${status === PAY.PAID ? "paid" : status}.`, "Undo",
+                    () => commit(() => snapshot));
+            }}
+            /* One line per task, each at that task's own price — the
+               "$80 an hour and $10 more when it lands" case, where the batch
+               is only how the approval arrived, not how the money was priced. */
+            onAcceptTasks={(taskIds) => {
+              const at = Date.now();
+              const snapshot = stateRef.current;
+              commit((s) => taskIds.reduce((acc, taskId) => {
+                const each = priceFor(project, findTask(project, taskId));
+                if (each === null) return acc;
+                return addEarning(acc, project, {
+                  cents: Math.round(each * 100), kind: EARNING.PIECE, units: 1,
+                  taskIds: [taskId], status: PAY.PENDING,
+                  note: `Accepted · ${taskLabel(project, taskId)}`,
+                }, at, uid());
+              }, s));
+              flash(`${taskIds.length} accepted, pending payment.`, "Undo",
+                    () => commit(() => snapshot));
+            }}
+            /* One payment for the whole batch — "finish fifty and we pay you
+               X". It names every task without giving any of them a share:
+               splitting it would invent a per-task price nobody quoted. */
+            onRewardTasks={(taskIds, { cents, note }) => {
+              const snapshot = stateRef.current;
+              commit((s) => addEarning(s, project, {
+                cents, kind: EARNING.BONUS, units: taskIds.length, taskIds,
+                status: PAY.PENDING, note,
+              }, Date.now(), uid()));
+              flash(`Reward recorded across ${taskIds.length} tasks.`, "Undo",
+                    () => commit(() => snapshot));
+            }}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onSetStatus={(status) => {
               commit((s) => setStatus(s, project.id, status, Date.now()));

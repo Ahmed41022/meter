@@ -8,7 +8,8 @@ import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import {
-  PAY, earnedFrom, isCancelled, isPending, isPerTask, isPieceOnly, perTask, priceFor,
+  PAY, earnedFrom, isCancelled, isPending, isPerTask, isPieceOnly, namesTask, perTask,
+  priceFor,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
@@ -17,6 +18,7 @@ import {
 import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
 import TaskEditor from "./TaskEditor.jsx";
+import TaskSettle from "./TaskSettle.jsx";
 import SettlePrompt from "./SettlePrompt.jsx";
 import SessionEditor from "./SessionEditor.jsx";
 
@@ -39,7 +41,8 @@ export default function ProjectView({
   onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
-  earnings = [], onAddEarning, onRemoveEarning, onSetPayState,
+  earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
+  onSetEarningTasks, onAcceptTasks, onRewardTasks,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual,
@@ -55,6 +58,7 @@ export default function ProjectView({
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
   const [bulkPrompt, setBulkPrompt] = useState(false);
+  const [pickedTasks, setPickedTasks] = useState([]); // task ids picked for settling
   const [editingTask, setEditingTask] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
   const running = current && isRunning(current);
@@ -118,6 +122,23 @@ export default function ProjectView({
 
   const taskRows = taskTotals(project, [...sessions, ...idleSessions], now);
   const hasTasks = taskRows.some((r) => r.taskId);
+
+  /**
+   * Whether a task on this project is the kind of thing that gets accepted.
+   *
+   * The project's own per-item price says yes, and so does any single task
+   * carrying one — some projects price nothing centrally and everything per
+   * task. Anywhere else, "not claimed" against a task would be a warning
+   * about money that was never owed, on every row, forever.
+   */
+  const accepts = settles || taskRows.some((r) => r.price != null);
+  const pickable = taskRows.filter((r) => r.taskId).map((r) => r.taskId);
+  const toggleTask = (id) =>
+    setPickedTasks((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  /** The pending lines the selection covers — what "mark paid" would move. */
+  const owedIds = earnings
+    .filter((e) => !e.deletedAt && isPending(e) && pickedTasks.some((t) => namesTask(e, t)))
+    .map((e) => e.id);
 
   const stopped = !acceptsTime(project);
   /** A stopped project with nothing open has no meter to show: the money
@@ -387,6 +408,7 @@ export default function ProjectView({
       {!offClock && (
         <Earnings project={project} earnings={earnings} now={now}
                   onAdd={onAddEarning} onRemove={onRemoveEarning}
+                  onSetTasks={onSetEarningTasks}
                   onSetPayState={onSetPayState} />
       )}
 
@@ -404,10 +426,29 @@ export default function ProjectView({
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">{w.byTask}</span>
-            <span className="eyebrow">
-              {taskRows.length} {w.task}{taskRows.length === 1 ? "" : "s"}
-            </span>
+            {accepts && pickable.length > 1 ? (
+              <button className="linkbtn"
+                      onClick={() => setPickedTasks(
+                        pickedTasks.length === pickable.length ? [] : pickable
+                      )}>
+                {pickedTasks.length === pickable.length ? "Select none" : `Select all ${pickable.length}`}
+              </button>
+            ) : (
+              <span className="eyebrow">
+                {taskRows.length} {w.task}{taskRows.length === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
+
+          {accepts && pickedTasks.length > 0 && (
+            <TaskSettle
+              project={project} taskIds={pickedTasks} owedIds={owedIds} allIds={pickable}
+              onAccept={(ids) => { onAcceptTasks(ids); setPickedTasks([]); }}
+              onReward={(entry) => { onRewardTasks(pickedTasks, entry); setPickedTasks([]); }}
+              onPay={() => { onSetPayStateMany(owedIds, PAY.PAID); setPickedTasks([]); }}
+              onSelectAll={() => setPickedTasks(pickable)}
+              onClear={() => setPickedTasks([])} />
+          )}
           {editingTask && (
             <div style={{ marginBottom: 12 }}>
               <TaskEditor words={w}
@@ -426,7 +467,11 @@ export default function ProjectView({
               />
             </div>
           )}
-          <TaskBreakdown offClock={offClock} rows={taskRows} currency={project.currency} active={filterTask}
+          <TaskBreakdown offClock={offClock} piece={piece} rows={taskRows}
+                         currency={project.currency} active={filterTask}
+                         earnings={accepts ? earnings : null}
+                         selected={accepts ? pickedTasks : null}
+                         onToggleSelect={accepts ? toggleTask : undefined}
                          onEdit={(id) => setEditingTask(id)}
                          onPick={(key) => {
                            setFilterTask(key === filterTask ? null : key);
@@ -510,11 +555,11 @@ export default function ProjectView({
             {/* Work paid on acceptance arrives pending and is settled in
                 batches, which is how it actually gets approved. */}
             <button className="btn ghost" onClick={() => {
-              selected.forEach((id) => onSetPayState(id, PAY.PAID));
+              onSetPayStateMany(selected, PAY.PAID);
               setSelected([]);
             }}>Mark paid</button>
             <button className="btn ghost" onClick={() => {
-              selected.forEach((id) => onSetPayState(id, PAY.PENDING));
+              onSetPayStateMany(selected, PAY.PENDING);
               setSelected([]);
             }}>Mark pending</button>
             <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
