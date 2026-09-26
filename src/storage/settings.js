@@ -20,6 +20,10 @@ export const SETTING = {
   /** Which span the Overview opens on. A view preference, not work — it does
    *  not belong in the ledger and does not want merging. */
   PERIOD: "meter:period",
+  /** Which machine this is. Minted once and never synced — it is the one fact
+   *  about a device that must NOT travel with the ledger, because its whole
+   *  job is to tell this copy apart from the others. */
+  DEVICE: "meter:device",
 };
 
 export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };
@@ -40,4 +44,24 @@ export const saveSetting = (key, value, win = globalThis) => {
   } catch {
     return false;
   }
+};
+
+/**
+ * A stable name for this device, minted on first use.
+ *
+ * It exists so a session can say where it is running. Without it, a meter
+ * started on a laptop and seen from a phone is indistinguishable from a meter
+ * that crashed: both look like a session whose heartbeat stopped arriving, and
+ * the phone would offer to close it at a timestamp that is simply wrong.
+ *
+ * Falls back to a fresh id every call where storage cannot be written, which
+ * reads as "a device that has never been seen before" — the safe answer, since
+ * it only ever costs the caller a heartbeat it was not entitled to write.
+ */
+export const deviceId = (win = globalThis) => {
+  const found = loadSetting(SETTING.DEVICE, "", win);
+  if (found) return found;
+  const minted = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  saveSetting(SETTING.DEVICE, minted, win);
+  return minted;
 };

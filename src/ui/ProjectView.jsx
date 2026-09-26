@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { elapsedMs, isOpen, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
 import {
   earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
@@ -45,7 +45,7 @@ export default function ProjectView({
   onSetEarningTasks, onAcceptTasks, onRewardTasks,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
-  findOverlaps, onAddManual,
+  findOverlaps, onAddManual, focusSession = null,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addingTime, setAddingTime] = useState(false);
@@ -61,6 +61,24 @@ export default function ProjectView({
   const [pickedTasks, setPickedTasks] = useState([]); // task ids picked for settling
   const [editingTask, setEditingTask] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
+  const focusRow = useRef(null);
+
+  /**
+   * Sent here by a warning that named a session. The ledger collapses itself
+   * once it is long, and a filter may be on — both of which would hide the
+   * one row the reader was just promised.
+   */
+  useEffect(() => {
+    if (!focusSession) return;
+    setLedgerOpen(true);
+    setFilterTask(null);
+  }, [focusSession]);
+
+  useEffect(() => {
+    if (focusSession && focusRow.current) {
+      focusRow.current.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focusSession]);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
@@ -610,7 +628,10 @@ export default function ProjectView({
               {filterTask ? w.emptyFiltered : w.emptyLedger}
             </div>
           ) : visible.map((s) => (
-            <div className={"row pick" + (isIdle(s) ? " is-idle" : "") + (selected.includes(s.id) ? " sel" : "")}
+            <div className={"row pick" + (isIdle(s) ? " is-idle" : "")
+                   + (selected.includes(s.id) ? " sel" : "")
+                   + (s.id === focusSession ? " focus" : "")}
+                 ref={s.id === focusSession ? focusRow : null}
                  key={s.id}>
               <input type="checkbox" className="row-check" checked={selected.includes(s.id)}
                      aria-label={`Select session from ${date(startedAt(s))}`}

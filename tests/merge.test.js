@@ -269,3 +269,44 @@ describe("a project deleted on one device stays deleted on both", () => {
     expect(merged.earnings[0].deletedAt).toBe(T);
   });
 });
+
+describe("a meter stopped from the other device", () => {
+  /**
+   * The rule that makes stopping from anywhere work.
+   *
+   * A heartbeat is written WITHOUT a stamp (see App's heartbeat effect), so a
+   * laptop ticking once a minute does not out-date the stop a phone made. If
+   * it did, the merge would take the laptop's copy and the session would
+   * quietly reopen with the hours it had kept counting.
+   */
+  const stillRunningHere = {
+    sessions: [session("s1", T, null, {
+      updatedAt: T, closedAt: null,
+      segments: [{ startedAt: T, endedAt: null, lastTick: T + 10 * HOUR }],
+    })],
+  };
+  const stoppedThere = {
+    sessions: [session("s1", T, T + HOUR, { updatedAt: T + HOUR })],
+  };
+
+  it("wins over the copy that is still counting", () => {
+    const out = mergeState(stillRunningHere, stoppedThere);
+    expect(out.sessions[0].closedAt).toBe(T + HOUR);
+    expect(out.sessions[0].segments[0].endedAt).toBe(T + HOUR);
+  });
+
+  it("wins from either side of the merge", () => {
+    // Whichever device syncs first must reach the same answer, or the session
+    // reopens on the next round trip.
+    expect(mergeState(stoppedThere, stillRunningHere).sessions[0].closedAt).toBe(T + HOUR);
+  });
+
+  it("would lose if the heartbeat counted as an edit", () => {
+    // Pinned deliberately: this is what the bug looked like, so a change that
+    // reinstates stamping fails here rather than in someone's ledger.
+    const ticking = {
+      sessions: [{ ...stillRunningHere.sessions[0], updatedAt: T + 10 * HOUR }],
+    };
+    expect(mergeState(ticking, stoppedThere).sessions[0].closedAt).toBeNull();
+  });
+});

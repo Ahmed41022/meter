@@ -131,7 +131,12 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
           </p>
           <ul>
             {clashes.slice(0, 4).map((s) => (
-              <li key={s.id}>{when(s.segments[0].startedAt)}{s.closedAt ? ` → ${when(s.closedAt)}` : " · still running"}</li>
+              <li key={s.id}>
+                {s.projectName ? `${s.projectName} · ` : ""}
+                {s.taskName ? `${s.taskName} · ` : ""}
+                {when(s.segments[0].startedAt)}
+                {s.closedAt ? ` → ${when(s.closedAt)}` : " · still running"}
+              </li>
             ))}
           </ul>
           <label className="clash-ok">

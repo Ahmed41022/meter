@@ -16,6 +16,22 @@ export const isBilled = (session) => kindOf(session) === KIND.BILLED;
 export const isIdle = (session) => kindOf(session) === KIND.IDLE;
 
 /**
+ * Whether this copy of the app is the one running the meter.
+ *
+ * A session records which device opened it, because a meter running on your
+ * laptop and a meter that crashed look identical from your phone: both are a
+ * session whose heartbeat stopped arriving. Only the device that started it
+ * can tell the difference, and only it should write proof of life.
+ *
+ * Absent `device` means a session written before devices were told apart, and
+ * reads as THIS one — the behaviour every such session already had. Passing no
+ * device at all means the caller has only one, which is true of the whole
+ * domain layer and of every test that does not care.
+ */
+export const ownedBy = (session, device) =>
+  device == null || (session.device ?? device) === device;
+
+/**
  * Pure state transitions. Every one takes (state, ..., now) and returns a new
  * state. No Date.now(), no random IDs, no storage — so every rule below can be
  * asserted in a test without mocking the clock.
@@ -71,7 +87,7 @@ export const utilisation = (billedMs, idleMs) => {
  * current when it happened. The task is a reference, not a copy, so renaming
  * a task updates every session that points at it.
  */
-export const startSession = (state, project, { now, id, kind = KIND.BILLED, taskId = null }) => {
+export const startSession = (state, project, { now, id, kind = KIND.BILLED, taskId = null, device = null }) => {
   /**
    * A paused or finished project takes no new time, and the rule lives here
    * rather than only in the button that hides.
@@ -101,6 +117,9 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
         segments: [{ startedAt: now, endedAt: null, lastTick: now }],
         closedAt: null,
         deletedAt: null,
+        // Which device is holding the meter. Omitted where the caller has only
+        // one, so nothing written before this existed changed meaning.
+        ...(device ? { device } : {}),
         // Where the work is only worth something once someone accepts it, that
         // is true from the moment the meter starts. Marking it afterwards would
         // mean every figure counted the money first and corrected later.
@@ -181,12 +200,22 @@ export const overlappingSessions = (state, { startedAt, endedAt }, excludeId = n
 export const pauseSession = (state, id, now) =>
   mapSessions(state, (s) => (s.id === id && isRunning(s) ? closeOpenSegments(s, now) : s));
 
-/** Resume appends a new segment rather than reopening the old one, so the
- *  gap is preserved and never billed. */
-export const resumeSession = (state, id, now) =>
+/**
+ * Resume appends a new segment rather than reopening the old one, so the gap
+ * is preserved and never billed.
+ *
+ * It also takes the meter over. Resuming on your phone a session you paused on
+ * your laptop makes the phone the device that is running it, and the one whose
+ * heartbeat means anything.
+ */
+export const resumeSession = (state, id, now, device = null) =>
   mapSessions(state, (s) =>
     s.id === id && isOpen(s) && !isRunning(s)
-      ? { ...s, segments: [...s.segments, { startedAt: now, endedAt: null, lastTick: now }] }
+      ? {
+        ...s,
+        ...(device ? { device } : {}),
+        segments: [...s.segments, { startedAt: now, endedAt: null, lastTick: now }],
+      }
       : s
   );
 
@@ -211,10 +240,17 @@ export const deleteSession = (state, id, now) =>
 export const restoreSession = (state, id) =>
   mapSessions(state, (s) => (s.id === id ? { ...s, deletedAt: null } : s));
 
-/** Periodic proof-of-life written into the open segment. */
-export const heartbeat = (state, now) =>
+/**
+ * Periodic proof-of-life written into the open segment.
+ *
+ * Only for meters this device is actually running. Ticking a session that
+ * another device opened would be this copy vouching for a machine it cannot
+ * see, and the vouching is the whole point: crash recovery closes a session at
+ * its last tick, so a fake one bills hours nobody worked.
+ */
+export const heartbeat = (state, now, device = null) =>
   mapSessions(state, (s) =>
-    !s.deletedAt && isRunning(s)
+    !s.deletedAt && isRunning(s) && ownedBy(s, device)
       ? { ...s, segments: s.segments.map((g) => (g.endedAt == null ? { ...g, lastTick: now } : g)) }
       : s
   );

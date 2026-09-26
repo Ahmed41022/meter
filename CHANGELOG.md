@@ -27,6 +27,29 @@ ledger changed such that an older build can no longer read it.
   given a share of it — splitting it fifty ways would invent a per-task price
   nobody quoted.
 - An earning can be re-filed under a different task, or unfiled, from its row.
+- **A note on a task**, for what its name cannot hold — ids, a link, what the
+  thing actually is. Asked for when the task is made and editable after, shown
+  wherever the task is listed. Nothing groups, matches or reports on it, which
+  is the point: the label has to stay short and stable because every figure is
+  bucketed by it.
+- **A meter can be stopped from any device.** It could be seen from one
+  already; stopping it did not stick, because the machine that started it
+  stamped a heartbeat every minute and the merge takes the later stamp — so
+  the session reopened with the hours it had kept counting. A heartbeat is now
+  written without a stamp, a session records which device is holding it, and
+  the app looks for news on a timer while something is running.
+- **Sync state in the footer**, on every screen rather than only the tab that
+  configures it. "Has my phone got this yet?" is asked everywhere.
+- **A Save button on project settings.** Typing a rate used to take effect the
+  moment focus left the box, so a half-typed `4` on the way to `45` was
+  briefly the project's real rate. Nothing typed there is saved until asked
+  now. The three toggles below it stay immediate: each is one decisive click,
+  and Status already has an Undo.
+- **The overlap warning names the sessions it is about**, and opens either
+  one. Counting two records and leaving the reader to find them by matching
+  timestamps by eye was throwing away work the app had already done. The
+  warning you meet while typing in a manual entry names them too, but does not
+  link — following a link mid-form would cost the entry you were filling in.
 
 ### Changed
 
@@ -35,6 +58,10 @@ ledger changed such that an older build can no longer read it.
   never written again, so no record holds two answers to one question.
 - A batch of rows changes pay state in one write rather than one write each —
   it was one stamp and one upload per row.
+- A meter found running at startup is only offered back as a crash if THIS
+  device opened it. One running elsewhere is neither a crash nor a second tab,
+  and closing it at a heartbeat that was never going to arrive would have cut
+  hours off work still being done.
 
 ### Fixed
 

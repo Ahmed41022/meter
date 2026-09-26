@@ -51,7 +51,8 @@ rates. `npm run shots` regenerates every one of them.</sub>
   a time. One reward can cover fifty tasks without pretending to be a price
   per task.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
-  Google Drive.
+  Google Drive — including stopping, from whichever device is to hand, a meter
+  the other one started.
 - **Follows your system's light or dark setting**, or whichever you pick.
 - **Exports** a JSON backup or a CSV of every line item.
 

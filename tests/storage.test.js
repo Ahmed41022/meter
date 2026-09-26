@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createBackend, createStore, parseState, STORE_KEY } from "../src/storage/store.js";
+import { SETTING, deviceId, loadSetting } from "../src/storage/settings.js";
 
 const fakeLocalStorage = () => {
   const map = new Map();
@@ -98,5 +99,42 @@ describe("artifact backend", () => {
   it("survives a backend that throws on read", async () => {
     const backend = { name: "flaky", get: async () => { throw new Error("boom"); }, set: async () => {} };
     expect(await createStore(backend).load()).toBeNull();
+  });
+});
+
+describe("which device this is", () => {
+  it("mints one once and keeps giving the same answer", () => {
+    const win = { localStorage: fakeLocalStorage() };
+    const first = deviceId(win);
+    expect(first).toBeTruthy();
+    expect(deviceId(win)).toBe(first);
+    expect(loadSetting(SETTING.DEVICE, "", win)).toBe(first);
+  });
+
+  it("gives two devices two names", () => {
+    expect(deviceId({ localStorage: fakeLocalStorage() }))
+      .not.toBe(deviceId({ localStorage: fakeLocalStorage() }));
+  });
+
+  it("never lands in the ledger", () => {
+    // It is the one fact about a device that must not travel with the data:
+    // its whole job is to tell this copy apart from the others.
+    const win = { localStorage: fakeLocalStorage() };
+    deviceId(win);
+    expect(SETTING.DEVICE).not.toBe(STORE_KEY);
+    expect(win.localStorage.getItem(STORE_KEY)).toBeNull();
+  });
+
+  it("still answers where storage cannot be written", () => {
+    // A private window throws on access. A device with no name at all would
+    // make every session look like somebody else's.
+    const blocked = {
+      localStorage: {
+        getItem: () => { throw new Error("denied"); },
+        setItem: () => { throw new Error("denied"); },
+        removeItem: () => {},
+      },
+    };
+    expect(deviceId(blocked)).toBeTruthy();
   });
 });

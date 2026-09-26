@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
-  resolveTaskId, sessionsUnderTask, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
+  resolveTaskId, sessionsUnderTask, setTaskNote, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
   parseTaskRate, taskRateInput, UNASSIGNED,
 } from "../src/domain/tasks.js";
 import {
@@ -483,5 +483,53 @@ describe("a task that pays nothing", () => {
   it("refuses a negative one, which is not a thing", () => {
     const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "-5");
     expect(rateFor(proj(s), session(450))).toBe(450);
+  });
+});
+
+describe("a note on a task", () => {
+  it("keeps what the label cannot hold", () => {
+    // The label is what every report groups by, so it stays short and stable.
+    // The ticket id, the link and the caveat go here instead.
+    const s = addTask(base, "p1", { id: "t1", label: "1234", note: "  QA-88 · rerun weekly " }, T);
+    expect(findTask(proj(s), "t1").note).toBe("QA-88 · rerun weekly");
+  });
+
+  it("is left off when there is none, so absent keeps meaning none", () => {
+    expect(addTask(base, "p1", { id: "t1", label: "1234" }, T).projects[0].tasks[0])
+      .not.toHaveProperty("note");
+    expect(addTask(base, "p1", { id: "t1", label: "1234", note: "   " }, T).projects[0].tasks[0])
+      .not.toHaveProperty("note");
+  });
+
+  it("is written, rewritten and cleared", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = setTaskNote(s, "p1", "t1", "first");
+    expect(findTask(proj(s), "t1").note).toBe("first");
+    s = setTaskNote(s, "p1", "t1", "second");
+    expect(findTask(proj(s), "t1").note).toBe("second");
+    s = setTaskNote(s, "p1", "t1", "  ");
+    expect(findTask(proj(s), "t1")).not.toHaveProperty("note");
+  });
+
+  it("never touches what the task is worth", () => {
+    // A note is the one field on a task that no figure depends on.
+    let s = addTask(base, "p1", { id: "t1", label: "1234", rate: 90, note: "a" }, T);
+    s = setTaskNote(s, "p1", "t1", "b");
+    expect(findTask(proj(s), "t1").rate).toBe(90);
+  });
+
+  it("reaches the breakdown, which is where it gets read", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234", note: "QA-88" }, T);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T + HOUR);
+    const row = taskTotals(proj(s), allSessionsFor(s, "p1"), T + HOUR)[0];
+    expect(row.note).toBe("QA-88");
+  });
+
+  it("leaves other tasks alone", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "1235" }, T);
+    s = setTaskNote(s, "p1", "t1", "only mine");
+    expect(findTask(proj(s), "t2")).not.toHaveProperty("note");
   });
 });

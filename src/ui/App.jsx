@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
-import { isRunning, isStale } from "../domain/time.js";
+import { isRunning, isStale, startedAt } from "../domain/time.js";
+import { formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
   overlappingSessions, revertCorrection, heartbeat, idleSessionsFor, isBilled,
-  liveSessions, pauseSession, recoverSession, restoreSession, resumeSession,
+  liveSessions, ownedBy, pauseSession, recoverSession, restoreSession, resumeSession,
   sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import {
@@ -15,16 +16,16 @@ import {
   restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
-  addTask, findTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskPrice,
-  setTaskRate, taskLabel,
+  addTask, findTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
+  setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
-import { SETTING, THEME, loadSetting, saveSetting } from "../storage/settings.js";
-import Sync from "./Sync.jsx";
+import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
+import Sync, { SyncPip } from "./Sync.jsx";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
@@ -47,6 +48,14 @@ const PUSH_DELAY_MS = 8_000;
 const VERSION = typeof __METER_VERSION__ === "string" ? __METER_VERSION__ : "dev";
 const HEARTBEAT_MS = 60_000;
 const STALE_MS = 150_000;
+/**
+ * How often to look for news while a meter is going.
+ *
+ * Without it the only way to learn that the other device stopped the session
+ * is to leave the app and come back, so a stop from your phone would sit
+ * unseen on a laptop that is still counting the hours.
+ */
+const LIVE_PULL_MS = 120_000;
 const TOAST_MS = 7_000;
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -59,7 +68,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const resolveTaskPick = (project, pick, createTask) => {
   if (pick?.label === undefined) return { id: pick?.taskId ?? null, prepare: (s) => s };
   const id = resolveTaskId(project, pick.label, uid());
-  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay) };
+  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay, pick.note) };
 };
 
 /**
@@ -82,6 +91,25 @@ const payFields = (project, pay) => {
 };
 const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 
+const clockTime = (t) =>
+  new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const dayShort = (t) =>
+  new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+/** One side of a clash, by the two facts that let you recognise it: whose work
+ *  it is and when it started. A session deleted since the merge is named
+ *  rather than linked — there is nothing left to open. */
+function SessionLink({ id, state, projects, onShow }) {
+  const session = state.sessions.find((x) => x.id === id);
+  if (!session || session.deletedAt) return <span>a deleted session</span>;
+  const project = projects.find((p) => p.id === session.projectId);
+  return (
+    <button className="linkish" onClick={() => onShow(id)}>
+      {project?.name ?? "a removed project"}, {clockTime(startedAt(session))}
+    </button>
+  );
+}
+
 export default function App({ store: injectedStore }) {
   // Created ONCE. A default parameter (`store = createStore()`) is evaluated on
   // every render, which made this a new object every time — so the load effect's
@@ -89,6 +117,9 @@ export default function App({ store: injectedStore }) {
   // parsed object, and re-rendered. A runaway loop that also re-armed the
   // startup banners, so dismissing one appeared to do nothing.
   const [store] = useState(() => injectedStore ?? createStore());
+  /** Which machine this is, minted once and never synced. It is what lets a
+   *  meter running on the laptop be told apart from one that crashed. */
+  const [device] = useState(deviceId);
 
   const [state, setState] = useState(EMPTY);
   const [ready, setReady] = useState(false);
@@ -100,6 +131,9 @@ export default function App({ store: injectedStore }) {
   const [now, setNow] = useState(() => Date.now());
   const [recoveryId, setRecoveryId] = useState(null);
   const [conflict, setConflict] = useState(false);
+  /** A session the user has been sent to look at, from a warning that named
+   *  it. Cleared on the way out, so returning later does not re-scroll. */
+  const [focusSession, setFocusSession] = useState(null);
   const [toast, setToast] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
 
@@ -163,15 +197,31 @@ export default function App({ store: injectedStore }) {
       setReady(true);
 
       const t = Date.now();
-      const running = liveSessions(data.sessions).filter(isRunning);
+      /**
+       * Only meters this device opened are ours to judge.
+       *
+       * A session running on another device stopped syncing its heartbeat the
+       * moment it started — proof of life is deliberately local — so from here
+       * it always looks stale, and offering to close it at its last tick would
+       * cut hours off work that is still being done. It is not a crash and it
+       * is not a second tab: it is the other machine, and the running bar
+       * already offers to stop it.
+       */
+      const running = liveSessions(data.sessions)
+        .filter((s) => isRunning(s) && ownedBy(s, device));
       const stale = running.find((s) => isStale(s, t, STALE_MS));
       if (stale) setRecoveryId(stale.id);
       else if (running.length) setConflict(true); // fresh heartbeat: another tab
     });
     return () => { alive = false; clearTimeout(toastTimer.current); };
-  }, [store]);
+  }, [store, device]);
 
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
+  /** A meter THIS device is holding. Only it may write proof of life. */
+  const meterHere = useMemo(
+    () => liveSessions(state.sessions).some((s) => isRunning(s) && ownedBy(s, device)),
+    [state.sessions, device],
+  );
   const backup = useMemo(() => backupState(state, now), [state, now]);
 
   // ------------------------------------------------------------------ syncing
@@ -254,15 +304,34 @@ export default function App({ store: injectedStore }) {
     return () => clearInterval(id);
   }, [anyRunning]);
 
-  /** Proof of life, so a crash can be closed at the right timestamp. */
+  /**
+   * Proof of life, so a crash can be closed at the right timestamp.
+   *
+   * Written with `write` rather than `commit`, which is the whole difference
+   * between a meter you can stop from your phone and one you cannot. `commit`
+   * stamps what it touched, and the merge takes the later stamp — so a laptop
+   * ticking once a minute would out-stamp the stop your phone made, and the
+   * session would quietly reopen with the hours the laptop kept counting.
+   *
+   * A heartbeat is not news about the ledger. It is this device saying it is
+   * still here, to itself.
+   */
   useEffect(() => {
-    if (!anyRunning || recoveryId) return;
+    if (!meterHere || recoveryId) return;
     const id = setInterval(
-      () => commit((s) => heartbeat(s, Date.now()), { sync: false }),
+      () => write(heartbeat(stateRef.current, Date.now(), device)),
       HEARTBEAT_MS,
     );
     return () => clearInterval(id);
-  }, [anyRunning, recoveryId, commit]);
+  }, [meterHere, recoveryId, write, device]);
+
+  /** While something is going, look for news on a timer — a stop made on the
+   *  other device has to reach the one that is still counting. */
+  useEffect(() => {
+    if (!anyRunning || !clientId) return;
+    const id = setInterval(() => runSync(), LIVE_PULL_MS);
+    return () => clearInterval(id);
+  }, [anyRunning, clientId, runSync]);
 
   /** Hands the user a file. Throws rather than failing quietly if the browser
    *  will not make one, so nothing downstream records a backup that never
@@ -300,10 +369,18 @@ export default function App({ store: injectedStore }) {
 
   /** Opening a project lands on the tab it belongs to, so the back link
    *  returns somewhere the project is actually listed. */
-  const openProject = (id) => {
+  const openProject = (id, session = null) => {
     const p = stateRef.current.projects.find((x) => x.id === id);
     setOpenProjectId(id);
+    setFocusSession(session);
     setTab(p?.offClock ? "life" : "work");
+  };
+
+  /** Takes the reader to one named session, wherever it lives. A warning that
+   *  says two records disagree is only actionable if it can hand them over. */
+  const showSession = (id) => {
+    const found = stateRef.current.sessions.find((x) => x.id === id);
+    if (found) openProject(found.projectId, id);
   };
 
   const importBackup = (file) => {
@@ -356,6 +433,7 @@ export default function App({ store: injectedStore }) {
         {runningProject && (
           <RunningBar
             project={runningProject} session={runningSession} now={now}
+            elsewhere={!ownedBy(runningSession, device)}
             onOpen={openProject}
             onStop={() => commit((s) => stopSession(s, runningSession.id, Date.now()))}
           />
@@ -364,7 +442,10 @@ export default function App({ store: injectedStore }) {
         <div className="topbar">
           <span className="mark">Meter</span>
           {project
-            ? <button className="linkbtn" onClick={() => setOpenProjectId(null)}>← All projects</button>
+            ? <button className="linkbtn"
+                      onClick={() => { setOpenProjectId(null); setFocusSession(null); }}>
+                ← All projects
+              </button>
             : <nav className="tabs" role="tablist" aria-label="Views">
                 {[["overview", "Overview"], ["work", "Work"], ["life", "Life"]].map(([key, label]) => (
                   <button key={key} role="tab" aria-selected={tab === key}
@@ -417,12 +498,23 @@ export default function App({ store: injectedStore }) {
             about the ledger looks wrong — the hours simply read high. */}
         {merged?.overlaps?.length > 0 && (
           <Notice title="Some time is counted twice">
-            {merged.overlaps.length === 1 ? "A session" : `${merged.overlaps.length} sessions`}
-            {" "}brought in from another device
-            {merged.overlaps.length === 1 ? " overlaps" : " overlap"} one already here, so
-            those hours are counted twice. Open the project and correct or delete whichever
-            is wrong.
-            {" "}<button className="linkish" onClick={() => setMerged(null)}>Dismiss</button>
+            The meter ran in two places at once, so these hours are in the ledger twice.
+            Open each side and correct or delete whichever is wrong.
+            {/* Naming them is the whole value of the warning. "Two sessions
+                overlap" leaves the reader to find two records out of hundreds
+                by matching timestamps by eye, which is the work the app just
+                did and then threw away. */}
+            {merged.overlaps.map((clash) => (
+              <span className="twice" key={`${clash.a}-${clash.b}`}>
+                <strong>{formatShortDuration(clash.ms)}</strong> twice,
+                {" "}from {clockTime(clash.at)} on {dayShort(clash.at)}:{" "}
+                <SessionLink id={clash.a} state={state} projects={projects} onShow={showSession} />
+                {" and "}
+                <SessionLink id={clash.b} state={state} projects={projects} onShow={showSession} />
+              </span>
+            ))}
+            {" "}
+            <button className="linkish" onClick={() => setMerged(null)}>Dismiss</button>
           </Notice>
         )}
 
@@ -446,13 +538,14 @@ export default function App({ store: injectedStore }) {
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
             onStart={(kind, pick) => {
-              const taskId = resolveTaskPick(project, pick, (st, id, label, pay) =>
-                addTask(st, project.id, { id, label, ...payFields(project, pay) }, Date.now()));
+              const taskId = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
+                addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
               commit((s) => startSession(
-                taskId.prepare(s), project, { now: Date.now(), id: uid(), kind, taskId: taskId.id }));
+                taskId.prepare(s), project,
+                { now: Date.now(), id: uid(), kind, taskId: taskId.id, device }));
             }}
             onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
-            onResume={() => commit((s) => resumeSession(s, current.id, Date.now()))}
+            onResume={() => commit((s) => resumeSession(s, current.id, Date.now(), device))}
             onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
             onSettle={(sessionId, lines) => commit((s) => lines.reduce(
               // Pending, not paid. The work is submitted; whether it is
@@ -468,8 +561,8 @@ export default function App({ store: injectedStore }) {
               flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
             }}
             onAssign={(sessionIds, pick) => {
-              const chosen = resolveTaskPick(project, pick, (st, id, label, pay) =>
-                addTask(st, project.id, { id, label, ...payFields(project, pay) }, Date.now()));
+              const chosen = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
+                addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
               commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
             }}
             onCorrect={(sessionId, window_) => {
@@ -479,10 +572,12 @@ export default function App({ store: injectedStore }) {
             }}
             onRevertCorrection={(sessionId) =>
               commit((s) => revertCorrection(s, sessionId))}
-            onSaveTask={(taskId, { label, rate, price }) =>
-              commit((s) => setTaskPrice(
-                setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
-                project.id, taskId, price))}
+            onSaveTask={(taskId, { label, rate, price, note }) =>
+              commit((s) => setTaskNote(
+                setTaskPrice(
+                  setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
+                  project.id, taskId, price),
+                project.id, taskId, note))}
             onDeleteTask={(taskId) => {
               const snapshot = stateRef.current;
               // Objectives pointing at the task are unfiled with it, so the
@@ -491,7 +586,19 @@ export default function App({ store: injectedStore }) {
               flash("Task deleted. Its sessions moved to “No task”.", "Undo",
                     () => commit(() => snapshot));
             }}
-            findOverlaps={(window_) => overlappingSessions(stateRef.current, window_)}
+            focusSession={focusSession}
+            /* Named, not linked. You meet this warning mid-form, and a link
+               that threw the half-typed entry away to show you the clash
+               would cost more than it told you — so it says which record it
+               is instead, and you decide. */
+            findOverlaps={(window_) => overlappingSessions(stateRef.current, window_).map((s) => {
+              const owner = stateRef.current.projects.find((x) => x.id === s.projectId);
+              return {
+                ...s,
+                projectName: owner?.name ?? "a removed project",
+                taskName: s.taskId ? taskLabel(owner, s.taskId) : null,
+              };
+            })}
             onAddManual={(entry) => {
               commit((s) => addManualSession(s, project, entry, Date.now(), uid()));
               flash("Time added.");
@@ -631,6 +738,14 @@ export default function App({ store: injectedStore }) {
       </div>
 
       <div className="foot">
+        {/* Where the ledger stands with Drive, on every screen rather than
+            only the one that configures it. Nothing at all before it is set
+            up: there is no state to report, and a permanent "off" is
+            furniture. */}
+        {clientId && originAllowed() && (
+          <SyncPip status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
+                   onSync={() => runSync({ interactive: true })} />
+        )}
         {/* System is the default and stays it. The other two exist because
             "what my OS is set to" and "what I want to look at right now" are
             not the same question — least of all at 2am. */}

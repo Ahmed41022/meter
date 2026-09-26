@@ -164,6 +164,15 @@ export const CSS = `
 /* .hint carries a negative top margin so it can tuck under a field's label.
    After a row of choices that wedges the text against the buttons. */
 .modes + .hint{margin-top:10px;}
+.hint.warn{color:var(--amber);}
+
+/* Nothing typed on the settings panel is saved until this says so. */
+.savebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:20px;
+  padding:12px 14px;border-radius:11px;border:1px solid var(--line-2);}
+.savebar.on{border-color:var(--jade);background:var(--jade-soft);}
+.savebar-note{font-size:13px;font-weight:600;color:var(--jade);flex:1;min-width:110px;}
+.savebar-note.quiet{color:var(--muted);font-weight:500;}
+.savebar .btn{flex:0 0 auto;min-width:0;padding:9px 14px;font-size:13px;}
 
 /* ledger selection + filtering */
 .selbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;
@@ -176,6 +185,10 @@ export const CSS = `
   border:0;cursor:pointer;font-family:inherit;}
 .chip:hover{background:var(--jade-soft-hi);}
 .row.sel{background:var(--jade-soft);}
+/* The row a warning sent you to. Amber rather than the jade of a selection:
+   it is being pointed at, not picked. */
+.row.focus{background:var(--amber-soft);box-shadow:inset 3px 0 0 var(--amber);}
+.twice{display:block;margin-top:8px;}
 .row-check{width:18px;height:18px;accent-color:var(--jade);cursor:pointer;flex:none;}
 .row.pick{grid-template-columns:auto 1fr auto auto;}
 .preview{margin-top:16px;padding:14px 15px;border-radius:10px;background:var(--card);
@@ -246,7 +259,7 @@ export const CSS = `
   animation:runpulse 2s ease-in-out infinite;}
 .runbar.idling .runbar-dot{background:var(--amber);}
 @keyframes runpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
-@media (prefers-reduced-motion:reduce){.runbar-dot{animation:none;}}
+@media (prefers-reduced-motion:reduce){.runbar-dot,.pip-dot{animation:none;}}
 .runbar-what{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:8px;
   background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left;}
 .runbar-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;
@@ -269,6 +282,17 @@ export const CSS = `
 }
 
 .foot{margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:9px;}
+/* Sync state, from any screen. The panel that configures it stays on Work. */
+.pip{display:inline-flex;align-items:center;gap:7px;background:none;border:0;
+  font:inherit;font-size:11.5px;font-family:var(--mono);color:var(--muted);
+  cursor:pointer;padding:4px 2px;}
+.pip:hover:not(:disabled){color:var(--ink-2);}
+.pip:disabled{cursor:default;}
+.pip-dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none;}
+.pip-ok .pip-dot{background:var(--jade);}
+.pip-syncing .pip-dot{background:var(--jade);animation:runpulse 1.1s ease-in-out infinite;}
+.pip-error{color:var(--amber);}
+.pip-error .pip-dot{background:var(--amber);}
 .segmented.theme{gap:2px;padding:2px;border-radius:999px;}
 .seg.icon{display:grid;place-items:center;width:28px;height:28px;padding:0;
   border-radius:999px;color:var(--muted);transition:color .12s ease,background .12s ease;}
@@ -305,6 +329,9 @@ export const CSS = `
 .trow-label{font-weight:600;font-size:14.5px;}
 .trow-sub{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
 .trow-sub.idle{color:var(--amber);}
+/* Not mono, unlike the figures around it: this is prose the user wrote. */
+.trow-note{font-size:12px;color:var(--ink-2);margin-top:5px;line-height:1.45;
+  overflow-wrap:anywhere;}
 .trow-time{font-family:var(--mono);font-size:13px;color:var(--muted);
   font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
 .trow-amt{font-family:var(--mono);font-size:15px;color:var(--ink);

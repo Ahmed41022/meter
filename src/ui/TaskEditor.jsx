@@ -17,6 +17,7 @@ export default function TaskEditor({
   // rule into a number the next time anyone opens this.
   const [rate, setRate] = useState(taskRateInput(task));
   const [price, setPrice] = useState(task.price == null ? "" : String(task.price));
+  const [note, setNote] = useState(task.note ?? "");
   const [confirming, setConfirming] = useState(false);
   const piece = projectPrice !== null;
 
@@ -24,6 +25,7 @@ export default function TaskEditor({
     label: label.trim() || task.label,
     rate: rate.trim() === "" ? null : rate,
     price: price.trim() === "" ? null : price,
+    note,
   });
 
   if (confirming) {
@@ -67,6 +69,12 @@ export default function TaskEditor({
         <input className="inp" value={rate}
                placeholder={`empty = as recorded (${formatMoney(Math.round(projectRate * 100), currency)}/hr now) · or 30%`}
                onChange={(e) => setRate(e.target.value)}
+               onKeyDown={(e) => e.key === "Enter" && save()} />
+      </label>
+      <label className="field">
+        <span className="eyebrow">Note</span>
+        <input className="inp" value={note} placeholder="ids, a link, what it is — optional"
+               onChange={(e) => setNote(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && save()} />
       </label>
       <div className="hint" style={{ marginBottom: 0 }}>
