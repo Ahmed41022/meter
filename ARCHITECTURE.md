@@ -77,6 +77,7 @@ tests/sessions.test.js     the state machine and the rate-snapshot rule
 tests/projects.test.js     creation, validation, cascading removal, status and companies
 tests/goals.test.js        period boundaries including DST, and pacing
 tests/earnings.test.js     money without hours, and whether it has landed
+tests/recent.test.js       what happened lately, and what to start again
 tests/performance.test.js  window overlap, calendar buckets, period comparison, the year grid,
                            company rollups, effective rate, streaks
 tests/app.integration.test.js   the built HTML, driven in jsdom

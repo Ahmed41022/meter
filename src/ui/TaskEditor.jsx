@@ -73,9 +73,11 @@ export default function TaskEditor({
       </label>
       <label className="field">
         <span className="eyebrow">Note</span>
-        <input className="inp" value={note} placeholder="ids, a link, what it is — optional"
-               onChange={(e) => setNote(e.target.value)}
-               onKeyDown={(e) => e.key === "Enter" && save()} />
+        {/* Enter makes a line here rather than saving: a task that ran across
+            eight sittings has eight ids to keep, and they are a list. */}
+        <textarea className="inp note-box" rows={3} value={note}
+                  placeholder="ids, a link, what it is — one per line"
+                  onChange={(e) => setNote(e.target.value)} />
       </label>
       <div className="hint" style={{ marginBottom: 0 }}>
         Setting a rate reprices every session filed under this task, including ones already

@@ -64,6 +64,20 @@ const runningSeed = (lastTickAgoMs) => {
 const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test(b.textContent));
 
 /**
+ * Boot, then go to the Overview.
+ *
+ * Most of the dashboard tests below were written when the app opened on the
+ * Overview. It opens on Today now — what you are doing, not how the month
+ * went — so a test about the dashboard has to say which screen it means.
+ */
+const bootDash = async (seed, settings = null) => {
+  const dom = await boot(seed, settings);
+  await wait(150);
+  await toProjects(dom.window.document, "Overview");
+  return dom;
+};
+
+/**
  * The overall view is what the app opens on, so anything that manages projects
  * switches to the Projects tab first. Idempotent: a no-op when that tab is
  * already showing, or when a project is open and the tabs are replaced by the
@@ -77,7 +91,9 @@ const toProjects = async (d, name = "Work") => {
   }
 };
 const setValue = (win, el, value) => {
-  const proto = el.tagName === "SELECT" ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype;
+  const proto = el.tagName === "SELECT" ? win.HTMLSelectElement.prototype
+    : el.tagName === "TEXTAREA" ? win.HTMLTextAreaElement.prototype
+      : win.HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
   el.dispatchEvent(new win.Event("input", { bubbles: true }));
   el.dispatchEvent(new win.Event("change", { bubbles: true }));
@@ -1212,20 +1228,27 @@ describe("the overall view", () => {
     .find((t) => t.querySelector(".eyebrow").textContent === label)
     .querySelector(".tile-val").textContent;
 
-  it("opens on the overall view, not the project list", async () => {
+  it("opens on Today, not the project list", async () => {
+    // Today leads because it is why the app gets opened at all. The Overview
+    // answers how a month went, which nobody asks first. Plain `boot` on
+    // purpose: this is the one test in here about where you land.
     const { document: d } = (await boot()).window;
-    const overview = [...d.querySelectorAll("[role=tab]")]
-      .find((t) => t.textContent === "Overview");
-    expect(overview.getAttribute("aria-selected")).toBe("true");
-    expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((s) => s.textContent))
-      .toEqual(["Day", "Week", "Month", "Year", "All"]);
+    const today = [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Today");
+    expect(today.getAttribute("aria-selected")).toBe("true");
     // Work and Life are places of their own, not sections of one list.
     expect([...d.querySelectorAll(".tabs [role=tab]")].map((t) => t.textContent))
-      .toEqual(["Overview", "Work", "Life"]);
+      .toEqual(["Today", "Overview", "Work", "Life"]);
+  });
+
+  it("still gives the Overview its full range of spans", async () => {
+    const { document: d } = (await bootDash()).window;
+    await toProjects(d, "Overview");
+    expect([...d.querySelectorAll(".dash-head .segmented .seg")].map((s) => s.textContent))
+      .toEqual(["Day", "Week", "Month", "Year", "All"]);
   });
 
   it("switches to the project list and back without losing either view", async () => {
-    const { document: d } = (await boot()).window;
+    const { document: d } = (await bootDash()).window;
     await toProjects(d);
     expect(btn(d, /New project/i)).toBeTruthy();
     // By its own label, not by ".segmented" — the theme switch in the footer
@@ -1239,7 +1262,7 @@ describe("the overall view", () => {
 
   it("reports what today earned, in time and in money", async () => {
     // Two hours at 450 is 900, and it must read the same in both places.
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 3 * HOUR)],
     });
@@ -1255,7 +1278,7 @@ describe("the overall view", () => {
     // The figure the whole reporting layer exists to get right. 23:30 to 00:30
     // is half an hour of yesterday and half an hour of today, and filing it
     // whole under either day would move money onto the wrong date.
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [block("s1", "p1", dayStart(1) + 23 * HOUR + 30 * MIN, dayStart() + 30 * MIN)],
     });
@@ -1270,7 +1293,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("steps back through periods and refuses to step into the future", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [block("s1", "p1", dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR)],
     });
@@ -1290,7 +1313,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("keeps idle time out of the money while still reporting it", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [
         block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR),
@@ -1309,7 +1332,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("compares against the period before and names it", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [
         block("s1", "p1", dayStart() + HOUR, dayStart() + 3 * HOUR),     // 2h today
@@ -1326,7 +1349,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("draws one trend bar per hour of the day and marks the worked one", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [block("s1", "p1", dayStart() + 9 * HOUR, dayStart() + 10 * HOUR)],
     });
@@ -1342,7 +1365,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("says so plainly when a period recorded nothing", async () => {
-    const dom = await boot({ projects: [project("p1", "Acme")], sessions: [] });
+    const dom = await bootDash({ projects: [project("p1", "Acme")], sessions: [] });
     const { document: d } = dom.window;
     btn(d, /^Week$/).click();
     await wait(220);
@@ -1351,7 +1374,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("gives a week seven bars and a month one per day", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR)],
     });
@@ -1368,7 +1391,7 @@ describe("the overall view", () => {
   }, 25_000);
 
   it("breaks the period down by project, busiest first, and opens one on click", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme"), project("p2", "Beta")],
       sessions: [
         block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR),                 // 1h
@@ -1393,7 +1416,7 @@ describe("the overall view", () => {
     // Regression: the rows are ordered by BILLED time, so the first row is not
     // necessarily the longest overall. Scaling every bar to it let a row below
     // with more idle time compute a width above 100% and overrun its track.
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Mostly billed"), project("p2", "Mostly idle")],
       sessions: [
         block("s1", "p1", dayStart() + HOUR, dayStart() + 4 * HOUR),                        // 3h billed
@@ -1417,7 +1440,7 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("leaves a project out of the breakdown when it logged nothing this period", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme"), project("p2", "Dormant")],
       sessions: [block("s1", "p1", dayStart() + HOUR, dayStart() + 2 * HOUR)],
     });
@@ -1436,7 +1459,7 @@ describe("the overall view", () => {
     // the app is actually being asked about.
     const midnight = new Date(now).setHours(0, 0, 0, 0);
     const started = Math.max(now - HOUR, midnight + 60_000);
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [{
         id: "s1", projectId: "p1", kind: "billed", taskId: null, rate: 450, currency: "EGP",
@@ -1489,7 +1512,7 @@ describe("off the clock, in the real UI", () => {
   });
 
   it("keeps off-clock hours out of earnings, billed time and billed share", async () => {
-    const dom = await boot(seed(true));
+    const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
     await wait(220);
@@ -1503,7 +1526,7 @@ describe("off the clock, in the real UI", () => {
   it("is what the rate hack could not do — the same data unflagged inflates everything", async () => {
     // Left as an ordinary project, those eight hours land in billed time and
     // in the breakdown no matter how small the rate is. This is the before.
-    const dom = await boot(seed(false));
+    const dom = await bootDash(seed(false));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
     await wait(220);
@@ -1514,7 +1537,7 @@ describe("off the clock, in the real UI", () => {
   }, 20_000);
 
   it("reports off-clock time in its own panel instead of dropping it", async () => {
-    const dom = await boot(seed(true));
+    const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
     await wait(220);
@@ -1530,7 +1553,7 @@ describe("off the clock, in the real UI", () => {
   }, 20_000);
 
   it("leaves off-clock money out of the lifetime total on the Projects tab", async () => {
-    const dom = await boot(seed(true));
+    const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/);
@@ -1541,7 +1564,7 @@ describe("off the clock, in the real UI", () => {
   }, 20_000);
 
   it("shows elapsed time rather than a meaningless zero on the meter face", async () => {
-    const dom = await boot(seed(true));
+    const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     await toProjects(d, "Life");
     d.querySelector(".card.off").click();
@@ -1554,7 +1577,7 @@ describe("off the clock, in the real UI", () => {
   }, 20_000);
 
   it("moves a project off the clock from its settings, and back again", async () => {
-    const dom = await boot(seed(false));
+    const dom = await bootDash(seed(false));
     const { document: d } = dom.window;
     await toProjects(d);
     [...d.querySelectorAll(".card-name")].find((n) => n.textContent.includes("Life"))
@@ -1772,7 +1795,7 @@ describe("objectives", () => {
     objectives,
   });
   const openAcme = async (objectives) => {
-    const dom = await boot(seed(objectives));
+    const dom = await bootDash(seed(objectives));
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
@@ -1841,7 +1864,7 @@ describe("objectives", () => {
 
   it("gathers today's picks from work and life alike", async () => {
     const key = todayKey();
-    const dom = await boot(seed([
+    const dom = await bootDash(seed([
       objective("o1", "p1", "Ship it", { focusedOn: key }),
       objective("o2", "p2", "Bed by midnight", { focusedOn: key }),
       objective("o3", "p1", "Not today"),
@@ -1853,7 +1876,7 @@ describe("objectives", () => {
   }, 20_000);
 
   it("drops an item off today once it is ticked, leaving what is left", async () => {
-    const dom = await boot(seed([
+    const dom = await bootDash(seed([
       objective("o1", "p1", "Ship it", { focusedOn: todayKey() }),
       objective("o2", "p1", "And this", { focusedOn: todayKey() }),
     ]));
@@ -1866,7 +1889,7 @@ describe("objectives", () => {
   }, 20_000);
 
   it("calls it a to-do on something off the clock", async () => {
-    const dom = await boot(seed([objective("o1", "p2", "Bed by midnight")]));
+    const dom = await bootDash(seed([objective("o1", "p2", "Bed by midnight")]));
     const d = dom.window.document;
     await toProjects(d, "Life");
     d.querySelector(".card").click();
@@ -1894,7 +1917,7 @@ describe("objectives", () => {
   }, 25_000);
 
   it("counts what is left on the project card", async () => {
-    const dom = await boot(seed([
+    const dom = await bootDash(seed([
       objective("o1", "p1", "One"),
       objective("o2", "p1", "Two", { done: true, doneAt: Date.now() }),
     ]));
@@ -2198,7 +2221,7 @@ describe("pacing a target", () => {
   const todaysWork = () => block(dayStart() + HOUR, dayStart() + 4 * HOUR);
 
   const overview = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -2344,7 +2367,7 @@ describe("the activity calendar", () => {
     segments: [{ startedAt: from, endedAt: to }],
   });
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -2507,7 +2530,7 @@ describe("companies, and projects that have stopped", () => {
     segments: [{ startedAt: dayStart(back) + 9 * HOUR, endedAt: dayStart(back) + (9 + hours) * HOUR }],
   });
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -2711,7 +2734,7 @@ describe("money the clock never measured", () => {
     at: dayStart(back) + 12 * HOUR, note: "", createdAt: dayStart(back), deletedAt: null, ...extra,
   });
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -2931,7 +2954,7 @@ describe("a year on the overview", () => {
     segments: [{ startedAt: dayAt(y, m, d), endedAt: dayAt(y, m, d) + hours * HOUR }],
   });
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -3006,7 +3029,7 @@ describe("the company panel showing up at all", () => {
     segments: [{ startedAt: dayStart(1) + 9 * HOUR, endedAt: dayStart(1) + (9 + hours) * HOUR }],
   });
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return dom.window.document;
   };
@@ -3054,13 +3077,13 @@ describe("reaching further back on the calendar", () => {
   });
 
   it("offers no stepper when everything fits in one calendar", async () => {
-    const dom = await boot(seedWith([1, 2, 3]));
+    const dom = await bootDash(seedWith([1, 2, 3]));
     await wait(150);
     expect(dom.window.document.querySelector(".hm-head .step")).toBeNull();
   }, 25_000);
 
   it("steps back a whole calendar at a time and stops at the oldest record", async () => {
-    const dom = await boot(seedWith([1, 400]));
+    const dom = await bootDash(seedWith([1, 400]));
     const d = dom.window.document;
     await wait(150);
     const steps = () => [...d.querySelectorAll(".hm-head .step")];
@@ -3102,7 +3125,7 @@ describe("all time on the overview", () => {
     ],
   };
   const open = async (seed) => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -3462,7 +3485,7 @@ describe("telling the user when they work", () => {
   const panel = (d) => [...d.querySelectorAll(".sec")].find((x) => /When you work/.test(x.textContent));
   const read = (d) => panel(d)?.querySelector(".rhy-read")?.textContent.replace(/\s+/g, " ") ?? "";
   const open = async (s) => {
-    const dom = await boot(s);
+    const dom = await bootDash(s);
     await wait(250);
     return dom.window.document;
   };
@@ -3539,7 +3562,7 @@ describe("which work was worth the time, and how much rides on one project", () 
   const sorters = (d) => [...d.querySelectorAll('[aria-label="Order projects by"] .seg')];
   const named = (d) => [...d.querySelectorAll(".prow-name")].map((e) => e.textContent);
   const open = async () => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(250);
     const d = dom.window.document;
     [...d.querySelectorAll(".dash-head .segmented .seg")].find((b) => b.textContent === "All").click();
@@ -3581,7 +3604,7 @@ describe("which work was worth the time, and how much rides on one project", () 
   }, 30_000);
 
   it("says nothing about concentration when the work is spread", async () => {
-    const dom = await boot({
+    const dom = await bootDash({
       projects: [project("a"), project("b"), project("c"), project("d")],
       sessions: [
         work("s1", "a", 10, 250), work("s2", "b", 10, 250),
@@ -3593,7 +3616,7 @@ describe("which work was worth the time, and how much rides on one project", () 
   }, 30_000);
 
   it("offers no ordering choice when there is nothing to reorder", async () => {
-    const dom = await boot({ projects: [project("a")], sessions: [work("s1", "a", 10, 100)] });
+    const dom = await bootDash({ projects: [project("a")], sessions: [work("s1", "a", 10, 100)] });
     await wait(250);
     expect(sorters(dom.window.document)).toHaveLength(0);
   }, 25_000);
@@ -3689,13 +3712,13 @@ describe("the span the Overview opens on", () => {
   const chosen = (d) => d.querySelector('[aria-label="Reporting period"] .seg.on')?.textContent;
 
   it("opens on the week when nothing has been chosen", async () => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(250);
     expect(chosen(dom.window.document)).toBe("Week");
   }, 25_000);
 
   it("remembers the one you picked", async () => {
-    const dom = await boot(seed);
+    const dom = await bootDash(seed);
     await wait(250);
     const d = dom.window.document;
     btn(d, /^Month$/).click();
@@ -3704,7 +3727,7 @@ describe("the span the Overview opens on", () => {
   }, 25_000);
 
   it("opens on it next time", async () => {
-    const dom = await boot(seed, { "meter:period": "year" });
+    const dom = await bootDash(seed, { "meter:period": "year" });
     await wait(250);
     expect(chosen(dom.window.document)).toBe("Year");
   }, 25_000);
@@ -3712,13 +3735,13 @@ describe("the span the Overview opens on", () => {
   it("ignores a stored value it does not recognise", async () => {
     // A span from a future version, or a hand-edited one, must not leave the
     // Overview showing nothing at all.
-    const dom = await boot(seed, { "meter:period": "fortnight" });
+    const dom = await bootDash(seed, { "meter:period": "fortnight" });
     await wait(250);
     expect(chosen(dom.window.document)).toBe("Week");
   }, 25_000);
 
   it("keeps it out of the ledger, where it would have to be merged", async () => {
-    const dom = await boot(seed, { "meter:period": "month" });
+    const dom = await bootDash(seed, { "meter:period": "month" });
     await wait(250);
     const saved = dom.window.localStorage.getItem("meter:v1");
     expect(saved === null || !saved.includes("\"period\"")).toBe(true);
@@ -4413,7 +4436,7 @@ describe("a note on a task", () => {
     const fields = [...d.querySelectorAll(".prompt .field")];
     const input = (label) => fields
       .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
-      ?.querySelector("input");
+      ?.querySelector("input, textarea");
     setValue(dom.window, input("Name it"), "1234");
     setValue(dom.window, input("^Note$"), "QA-88, rerun weekly");
     await wait(120);
@@ -4425,4 +4448,93 @@ describe("a note on a task", () => {
     // And it is on screen where the task is, not only in storage.
     expect(d.querySelector(".wrap").textContent).toMatch(/QA-88, rerun weekly/);
   }, 30_000);
+});
+
+describe("the Today tab", () => {
+  const HOUR = 3_600_000;
+  const seed = () => {
+    const now = Date.now();
+    return {
+      projects: [
+        { id: "a", name: "Gateway", currentRate: 60, currency: "USD", createdAt: now - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [{ id: "t1", label: "1234" }] },
+        { id: "b", name: "Atlas", currentRate: 40, currency: "USD", createdAt: now - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [] },
+      ],
+      sessions: [
+        // Today, and two days back — so the list has more than one day in it.
+        { id: "s1", projectId: "a", kind: "billed", taskId: "t1", rate: 60, currency: "USD",
+          createdAt: now - 3 * HOUR, closedAt: now - 2 * HOUR, deletedAt: null,
+          segments: [{ startedAt: now - 3 * HOUR, endedAt: now - 2 * HOUR }] },
+        { id: "s2", projectId: "b", kind: "billed", taskId: null, rate: 40, currency: "USD",
+          createdAt: now - 50 * HOUR, closedAt: now - 49 * HOUR, deletedAt: null,
+          segments: [{ startedAt: now - 50 * HOUR, endedAt: now - 49 * HOUR }] },
+      ],
+      earnings: [],
+    };
+  };
+  const open = async () => {
+    const dom = await boot(seed());
+    await wait(300);
+    return { dom, d: dom.window.document };
+  };
+
+  it("offers the last things you ran, newest first", async () => {
+    const { d } = await open();
+    const picks = [...d.querySelectorAll(".again")].map((b) => b.textContent);
+    expect(picks[0]).toMatch(/Gateway/);
+    expect(picks[0]).toMatch(/1234/);
+    expect(picks[1]).toMatch(/Atlas/);
+  }, 20_000);
+
+  it("starts the meter on that exact project and task in one click", async () => {
+    const { dom, d } = await open();
+    d.querySelectorAll(".again")[0].click();
+    await wait(300);
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    const live = saved.sessions.find((s) => s.segments.some((g) => g.endedAt == null));
+    expect(live).toMatchObject({ projectId: "a", taskId: "t1" });
+  }, 20_000);
+
+  it("puts the one-click starts away while a meter is going", async () => {
+    // Starting one closes whatever else is open, so a row of one-click starts
+    // beside a running session is a row of one-click ways to end it.
+    const { d } = await open();
+    d.querySelectorAll(".again")[0].click();
+    await wait(300);
+    expect(d.querySelector(".again")).toBeNull();
+    expect(d.querySelector(".runbar")).not.toBeNull();
+  }, 20_000);
+
+  it("lists the days there was work, newest first", async () => {
+    const { d } = await open();
+    const days = [...d.querySelectorAll(".day-name")].map((e) => e.textContent);
+    expect(days).toHaveLength(2);
+  }, 20_000);
+
+  it("agrees with the Overview about what today came to", async () => {
+    // Two screens quoting one day differently is the bug this whole codebase
+    // is arranged to prevent, so the claim is asserted against the other
+    // screen rather than against a number written here — which would pass
+    // even if both were wrong, and breaks near midnight besides.
+    const { d } = await open();
+    const here = [...d.querySelectorAll(".sec-head")]
+      .find((h) => /^Today/.test(h.textContent)).textContent.replace("Today", "").trim();
+
+    await toProjects(d, "Overview");
+    [...d.querySelectorAll(".dash-head .segmented .seg")]
+      .find((b) => b.textContent === "Day").click();
+    await wait(250);
+    const overview = d.querySelector(".grand-amt").textContent;
+
+    expect(here.startsWith(overview)).toBe(true);
+  }, 20_000);
+
+  it("opens the session a row names", async () => {
+    const { d } = await open();
+    d.querySelector(".day .row").click();
+    await wait(300);
+    expect(d.querySelector(".face")).not.toBeNull();
+    expect(d.querySelector(".row.focus")).not.toBeNull();
+  }, 20_000);
 });

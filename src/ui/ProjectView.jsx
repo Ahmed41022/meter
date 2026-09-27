@@ -75,9 +75,10 @@ export default function ProjectView({
   }, [focusSession]);
 
   useEffect(() => {
-    if (focusSession && focusRow.current) {
-      focusRow.current.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    // Optional-called: `scrollIntoView` is missing in some environments —
+    // jsdom has none — and bringing a row into view is not worth taking the
+    // page down for. The highlight alone still finds it.
+    if (focusSession) focusRow.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [focusSession]);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
@@ -559,9 +560,21 @@ export default function ProjectView({
         )}
 
         {filterTask && (
-          <button className="chip" style={{ marginBottom: 12 }} onClick={() => setFilterTask(null)}>
-            Showing {filterTask === UNASSIGNED ? "sessions with no task" : taskLabel(project, filterTask)} ✕
-          </button>
+          <>
+            <button className="chip" onClick={() => setFilterTask(null)}>
+              Showing {filterTask === UNASSIGNED ? "sessions with no task" : taskLabel(project, filterTask)} ✕
+            </button>
+            {/* Filtering down to a task is what you do in order to WORK on it,
+                and its note is where the ids live. Making them readable only
+                from the summary above would mean scrolling away from the
+                sessions you came here for. */}
+            {findTask(project, filterTask)?.note && (
+              <div className="filter-note">
+                {findTask(project, filterTask).note}
+                <button className="linkish" onClick={() => setEditingTask(filterTask)}>edit</button>
+              </div>
+            )}
+          </>
         )}
 
         {selecting && (

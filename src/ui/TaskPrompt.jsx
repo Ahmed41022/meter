@@ -103,15 +103,18 @@ export default function TaskPrompt({
       {mode === "new" && (
         <label className="field">
           <span className="eyebrow">Note</span>
-          <input className="inp" value={note} placeholder="ids, a link, what it is — optional"
-                 onChange={(e) => setNote(e.target.value)}
-                 onKeyDown={(e) => {
-                   if (e.key === "Enter") confirm();
-                   if (e.key === "Escape") onCancel();
-                 }} />
+          {/* A box, not a line. One task runs across many sittings and
+              collects an id from each, so what goes here is usually a list
+              that grows — and Enter has to make a new line rather than start
+              the meter. */}
+          <textarea className="inp note-box" rows={2} value={note}
+                    placeholder="ids, a link, what it is — one per line"
+                    onChange={(e) => setNote(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} />
           <span className="hint" style={{ marginTop: 8, display: "block" }}>
-            Kept on the task and shown wherever it is listed. Nothing groups or
-            matches on it, so it can say whatever you need it to.
+            Kept on the task and shown wherever it is listed, including when you
+            filter the ledger down to it. Nothing groups or matches on it, so it
+            can say whatever you need it to.
           </span>
         </label>
       )}

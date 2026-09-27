@@ -30,6 +30,8 @@ rates. `npm run shots` regenerates every one of them.</sub>
 
 ## What it does
 
+- **Opens on Today**: what you have done today, every day there was work, and
+  a one-click restart of the last few things you ran.
 - **Times a session against a project** and shows the money as it accrues —
   from wherever you are in the app, not just the project you started on.
 - **Snapshots the rate onto the session**, so changing a project's rate can
