@@ -299,6 +299,13 @@ const seedInto = async (p, { theme = "light", period = "week", running = null } 
   }
 };
 
+/** The app opens on Today now, so anything about the Overview says so. */
+const toOverview = async (p) => {
+  await p.click("nav.tabs button.tab", "Overview");
+  await p.until(`document.querySelector(".grand")`, "the dashboard");
+  await sleep(500); // the first chart paint
+};
+
 /** Work tab, then into a named project, stopping on its meter face. */
 async function openProject(p, name) {
   await p.click("nav.tabs button.tab", "Work");
@@ -313,9 +320,17 @@ async function openProject(p, name) {
 const RUNNING = { project: "search-ranking", minutes: 47, taskId: "t3" };
 
 const SHOTS = {
+  /** The screen the app opens on: what today came to, and what to start. */
+  async today(p) {
+    await p.viewport(900, 1000);
+    await seedInto(p);
+    await p.shot("today.png");
+  },
+
   async overview(p) {
     await p.viewport(900, 1100);
     await seedInto(p, { period: "month" });
+    await toOverview(p);
     await p.shot("overview.png");
   },
 
@@ -347,6 +362,7 @@ const SHOTS = {
   async phone(p) {
     await p.viewport(414, 860, 3, true);
     await seedInto(p, { running: RUNNING });
+    await toOverview(p);
     await p.shot("phone.png");
   },
 };

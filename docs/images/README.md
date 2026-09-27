@@ -13,6 +13,7 @@ live in [`scripts/shots.mjs`](../../scripts/shots.mjs).
 | File | What it shows |
 | --- | --- |
 | `running.gif` | A session running, with the elapsed time and the money both climbing. |
+| `today.png` | The screen the app opens on: what to start again, what today came to, and the days behind it. |
 | `projects.png` | The Work tab: every project's rate, hours and earnings under a running total. |
 | `overview.png` | The Overview on a month — headline, hours, effective rate, a bar per day, a split by client. |
 | `project.png` | A piece-rate project, quoting a price per accepted item and listing what was accepted. |
@@ -30,6 +31,11 @@ a temp directory, on a different origin from any copy of Meter you actually
 use, so the seeded storage cannot reach yours.
 
 ## When a shot comes out wrong
+
+The app opens on **Today**, so every recipe about another screen clicks its
+tab first. That is the drift to expect here: a shot that used to land on the
+right screen by default quietly starts photographing the landing one instead,
+and nothing fails — it just captures the wrong thing. Look at what came out.
 
 `node scripts/shots.mjs --probe` prints what is on screen at each step — tabs,
 cards, buttons, prompts — instead of capturing anything. That is usually enough
