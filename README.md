@@ -15,6 +15,8 @@ Drive, not to anyone else's machine.
 
 ![A session running: the elapsed time and the money both climbing in real time, in the meter face and in the bar that sits above every screen](docs/images/running.gif)
 
+![The screen it opens on: what today has come to per project, one-click restarts of the last few things you ran, and every day there was work](docs/images/today.png)
+
 | Every project at once | A month, across all of them |
 | --- | --- |
 | ![The project list: each project's rate, hours and earnings, under a running total](docs/images/projects.png) | ![The overview: a month's earnings, hours, effective hourly rate, a bar per day, and a breakdown by client](docs/images/overview.png) |
