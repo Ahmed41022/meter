@@ -40,6 +40,22 @@ ledger changed such that an older build can no longer read it.
   the app looks for news on a timer while something is running.
 - **Sync state in the footer**, on every screen rather than only the tab that
   configures it. "Has my phone got this yet?" is asked everywhere.
+- **A Today tab, and the app now opens on it.** What you are doing and what to
+  start next is why the app gets opened; how a month went is a question nobody
+  asks first, and the Overview goes on answering it. Today holds one-click
+  restarts of the last few things you ran, what today has come to per project,
+  and every day there was work, newest first, seven at a time.
+  - A day with nothing in it is absent rather than empty. A fortnight off
+    would otherwise be fourteen rows saying nothing between the two days you
+    wanted to compare.
+  - A sitting that crossed midnight is listed once, under the day it started
+    in, while the figures beside each day still split it by overlap the way
+    every other screen does. The row says how much of itself landed on the day
+    above it, because a ledger whose arithmetic does not work in front of you
+    is not one anybody goes on trusting.
+- The task note is shown beside the sessions when you filter the ledger down
+  to that task, with an edit link — filtering to a task is what you do in
+  order to work on it, and the ids are the reason you came.
 - **A Save button on project settings.** Typing a rate used to take effect the
   moment focus left the box, so a half-typed `4` on the way to `45` was
   briefly the project's real rate. Nothing typed there is saved until asked
@@ -58,6 +74,9 @@ ledger changed such that an older build can no longer read it.
   never written again, so no record holds two answers to one question.
 - A batch of rows changes pay state in one write rather than one write each —
   it was one stamp and one upload per row.
+- The task note is a box rather than a line, and keeps its line breaks. One
+  task runs across many sittings and collects an id from each, so what goes in
+  it is usually a list that grows.
 - A meter found running at startup is only offered back as a crash if THIS
   device opened it. One running elsewhere is neither a crash nor a second tab,
   and closing it at a heartbeat that was never going to arrive would have cut
@@ -65,6 +84,12 @@ ledger changed such that an older build can no longer read it.
 
 ### Fixed
 
+- **A stray backtick in a CSS comment ended the stylesheet**, which is one
+  template literal, and took the whole app down with it. Caught by the test
+  suite before it left the working tree; the comment now says so.
+- **Opening a session from a warning could take the page down.**
+  `scrollIntoView` does not exist in every environment, and bringing a row
+  into view is not worth a blank screen — the highlight finds it anyway.
 - **A piece-rate project's task list quoted `$0.00` against every task**, in
   the column next to what the task had actually been paid. Hourly figures were
   already hidden everywhere else on that kind of project; this one was missed.

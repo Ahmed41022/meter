@@ -5,8 +5,8 @@ import { formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
   overlappingSessions, revertCorrection, heartbeat, idleSessionsFor, isBilled,
-  liveSessions, ownedBy, pauseSession, recoverSession, restoreSession, resumeSession,
-  sessionsFor, startSession, stopSession,
+  KIND, liveSessions, ownedBy, pauseSession, recoverSession, restoreSession,
+  resumeSession, sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import {
   addProject, liveProjects, patchProject, removeProject, setStatus,
@@ -39,6 +39,7 @@ import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
 import DashboardView from "./DashboardView.jsx";
+import TodayView from "./TodayView.jsx";
 
 const TICK_MS = 1_000;
 /** A burst of edits should be one upload, not one per keystroke. */
@@ -124,10 +125,12 @@ export default function App({ store: injectedStore }) {
   const [state, setState] = useState(EMPTY);
   const [ready, setReady] = useState(false);
   const [openProjectId, setOpenProjectId] = useState(null);
-  // The overall view leads, and the project list is a tab of its own. A project
-  // opens as a drill-down from that list, so closing one returns there rather
-  // than to the dashboard the user was not looking at.
-  const [tab, setTab] = useState("overview");
+  // Today leads: what you are doing now and what to start next is the reason
+  // the app gets opened, and the Overview answers a different question — how
+  // a month went — that nobody asks first. The project list is a tab of its
+  // own, and a project opens as a drill-down from it, so closing one returns
+  // there rather than to a screen the user was not looking at.
+  const [tab, setTab] = useState("today");
   const [now, setNow] = useState(() => Date.now());
   const [recoveryId, setRecoveryId] = useState(null);
   const [conflict, setConflict] = useState(false);
@@ -447,7 +450,7 @@ export default function App({ store: injectedStore }) {
                 ← All projects
               </button>
             : <nav className="tabs" role="tablist" aria-label="Views">
-                {[["overview", "Overview"], ["work", "Work"], ["life", "Life"]].map(([key, label]) => (
+                {[["today", "Today"], ["overview", "Overview"], ["work", "Work"], ["life", "Life"]].map(([key, label]) => (
                   <button key={key} role="tab" aria-selected={tab === key}
                           className={"tab" + (tab === key ? " on" : "")}
                           onClick={() => setTab(key)}>
@@ -674,6 +677,23 @@ export default function App({ store: injectedStore }) {
               commit((s) => removeProject(s, project.id, Date.now()));
               setOpenProjectId(null);
               flash("Project removed.", "Undo", () => commit(() => snapshot));
+            }}
+          />
+        ) : tab === "today" ? (
+          <TodayView
+            projects={projects}
+            sessions={liveSessions(state.sessions)}
+            earnings={liveEarnings(state)}
+            now={now} running={Boolean(runningSession)}
+            onOpen={openProject}
+            onShowSession={showSession}
+            onStart={(projectId, taskId, kind) => {
+              const owner = projects.find((p) => p.id === projectId);
+              if (!owner) return;
+              commit((s) => startSession(s, owner, {
+                now: Date.now(), id: uid(), kind: kind ?? KIND.BILLED, taskId, device,
+              }));
+              openProject(projectId);
             }}
           />
         ) : tab === "overview" ? (

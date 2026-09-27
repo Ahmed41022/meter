@@ -184,6 +184,12 @@ export const CSS = `
   background:var(--jade-soft);color:var(--jade);border-radius:999px;padding:5px 12px;
   border:0;cursor:pointer;font-family:inherit;}
 .chip:hover{background:var(--jade-soft-hi);}
+/* The filtered task's note, kept beside the sessions rather than above them. */
+.filter-note{margin:10px 0 12px;padding:10px 13px;border-radius:10px;
+  background:var(--raise);border:1px solid var(--line-2);
+  font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--ink-2);
+  white-space:pre-wrap;overflow-wrap:anywhere;}
+.filter-note .linkish{display:block;margin-top:7px;font-size:11.5px;}
 .row.sel{background:var(--jade-soft);}
 /* The row a warning sent you to. Amber rather than the jade of a selection:
    it is being pointed at, not picked. */
@@ -331,12 +337,34 @@ export const CSS = `
 .trow-sub.idle{color:var(--amber);}
 /* Not mono, unlike the figures around it: this is prose the user wrote. */
 .trow-note{font-size:12px;color:var(--ink-2);margin-top:5px;line-height:1.45;
-  overflow-wrap:anywhere;}
+  overflow-wrap:anywhere;white-space:pre-wrap;}
 .trow-time{font-family:var(--mono);font-size:13px;color:var(--muted);
   font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
 .trow-amt{font-family:var(--mono);font-size:15px;color:var(--ink);
   font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
 .trow.none .trow-label{color:var(--muted);font-weight:500;}
+.trow-pending{display:block;font-size:11px;color:var(--amber);margin-top:3px;}
+
+/* the Today tab */
+/* Named apart from ".pick", which is a ledger row carrying a checkbox.
+   This file is one template literal: a backtick in here ends the stylesheet. */
+.agains{display:flex;flex-wrap:wrap;gap:9px;}
+.again{display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  background:var(--raise);border:1px solid var(--line);border-radius:11px;
+  padding:10px 14px;cursor:pointer;font:inherit;text-align:left;
+  transition:border-color .12s ease,background .12s ease;}
+.again:hover{border-color:var(--jade);background:var(--jade-soft);}
+.again-name{font-weight:600;font-size:14px;color:var(--ink);}
+.again-task{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+.again:hover .again-task{color:var(--jade);}
+.day + .day{margin-top:18px;}
+.day-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  margin-bottom:9px;flex-wrap:wrap;}
+.day-name{font-weight:600;font-size:14px;}
+.day-sum{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;}
+.row.clickable,.trow.clickable{cursor:pointer;}
+.row.clickable:hover .row-when{color:var(--jade);}
 .trow.pick{grid-template-columns:auto 1fr auto auto;}
 .trow.sel{background:var(--jade-soft);}
 /* Work done and not yet credited. Amber rather than red: nothing is wrong
@@ -595,6 +623,8 @@ export const CSS = `
 .ern-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
 .ern-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
 .inp.mini{padding:5px 7px;font-size:11.5px;width:auto;}
+.note-box{resize:vertical;min-height:52px;line-height:1.5;font-family:var(--mono);
+  font-size:12.5px;}
 /* Cancelled work still happened; it is dimmed, never hidden. */
 .ern.cancelled .ern-amt{text-decoration:line-through;color:var(--muted);}
 .ern-form{padding-top:16px;border-top:1px solid var(--line-2);}
