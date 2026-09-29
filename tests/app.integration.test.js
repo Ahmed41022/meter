@@ -2868,9 +2868,20 @@ describe("money the clock never measured", () => {
   it("settles a batch of sessions from the ledger", async () => {
     const { dom, d } = await open({
       projects: [project("a")],
+      /**
+       * Both today, on purpose. The Overview opens on the week, so a fixture
+       * dated "2 days ago" sits outside it every Monday and Tuesday and this
+       * assertion fails on the calendar rather than on the code. The test is
+       * about pending money, not about dates, so it should not have one.
+       */
       sessions: [
-        block("s1", "a", 2, 1, { status: "pending" }),
-        block("s2", "a", 3, 2, { status: "pending" }),
+        block("s1", "a", 2, 0, { status: "pending" }),
+        block("s2", "a", 3, 0, {
+          status: "pending",
+          createdAt: dayStart() + 13 * HOUR,
+          closedAt: dayStart() + 16 * HOUR,
+          segments: [{ startedAt: dayStart() + 13 * HOUR, endedAt: dayStart() + 16 * HOUR }],
+        }),
       ],
     });
     // an em dash, not $0.00: nothing has been earned yet, which is a different
@@ -4226,11 +4237,11 @@ describe("settling a batch of tasks", () => {
     expect(taskRows(d).every((r) => /not claimed/.test(r.textContent))).toBe(true);
   }, 30_000);
 
-  it("accepts every selected task at its own price, pending", async () => {
+  it("submits every selected task at its own price, pending", async () => {
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
     await wait(200);
-    btn(d, /^Accept 2$/).click();
+    btn(d, /^Submit 2$/).click();
     await wait(300);
 
     const { earnings } = stored(dom);
@@ -4240,18 +4251,22 @@ describe("settling a batch of tasks", () => {
     expect(earnings.every((e) => e.status === "pending")).toBe(true);
   }, 30_000);
 
-  it("then marks the whole batch paid in one go", async () => {
+  it("then answers the whole batch in one go", async () => {
+    // Submitted and accepted are two different days: the first says the work
+    // is in, the second that it was taken.
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
     await wait(200);
-    btn(d, /^Accept 2$/).click();
+    btn(d, /^Submit 2$/).click();
     await wait(300);
     btn(d, /^Select all 2$/).click();
     await wait(200);
-    btn(d, /Mark 2 paid/).click();
+    btn(d, /^Accepted 2$/).click();
     await wait(300);
 
     expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
+    expect(stored(dom).projects[0].tasks.map((t) => t.state))
+      .toEqual(["accepted", "accepted"]);
   }, 30_000);
 
   it("covers a batch with one reward, without splitting it between them", async () => {
@@ -4281,7 +4296,7 @@ describe("settling a batch of tasks", () => {
     const { d } = await open();
     btn(d, /^Select all 2$/).click();
     await wait(200);
-    btn(d, /^Accept 2$/).click();
+    btn(d, /^Submit 2$/).click();
     await wait(300);
     const meta = [...d.querySelectorAll(".ern-meta")].map((e) => e.textContent);
     expect(meta.some((t) => /1234/.test(t))).toBe(true);
@@ -4537,4 +4552,165 @@ describe("the Today tab", () => {
     expect(d.querySelector(".face")).not.toBeNull();
     expect(d.querySelector(".row.focus")).not.toBeNull();
   }, 20_000);
+});
+
+describe("paid more per hour once accepted", () => {
+  const HOUR = 3_600_000;
+  const now = Date.now();
+
+  /** A finished sitting: started `back` hours ago, lasting `hours`. */
+  const sess = (id, taskId, back, hours) => ({
+    id, projectId: "a", kind: "billed", taskId, rate: 80, currency: "USD",
+    status: "pending", deletedAt: null,
+    createdAt: now - back * HOUR,
+    closedAt: now - (back - hours) * HOUR,
+    segments: [{ startedAt: now - back * HOUR, endedAt: now - (back - hours) * HOUR }],
+  });
+
+  /**
+   * The shape the flat per-item model got wrong.
+   *
+   * $80 an hour as worked, and $10 more for every hour once the task lands —
+   * so accepted work is worth $90 an hour, and a task that took six times as
+   * long is worth six times as much. A flat $10 paid the same for a task that
+   * took twenty minutes and one that took six hours.
+   */
+  const seed = () => ({
+    projects: [{
+      id: "a", name: "Orion", currentRate: 80, bonusPerHour: 10, currency: "USD",
+      paysOnAcceptance: true, createdAt: now - 30 * HOUR,
+      sessionGoal: null, overallGoal: null,
+      tasks: [
+        { id: "t1", label: "1234", createdAt: now - 30 * HOUR },
+        { id: "t2", label: "1235", createdAt: now - 30 * HOUR },
+      ],
+    }],
+    sessions: [sess("s1", "t1", 4, 3), sess("s2", "t2", 1, 0.5)],
+    earnings: [],
+  });
+
+  const open = async (state = seed()) => {
+    const dom = await boot(state);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    return { dom, d };
+  };
+  const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+  const submitAll = async (d) => {
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Submit 2$/).click();
+    await wait(300);
+  };
+
+  it("prices the reward by the hours worked, not once per task", async () => {
+    const { dom, d } = await open();
+    await submitAll(d);
+
+    const { earnings } = stored(dom);
+    expect(earnings).toHaveLength(2);
+    // Three hours and half an hour, at ten an hour.
+    expect(earnings.map((e) => e.cents).sort((x, y) => y - x)).toEqual([3_000, 500]);
+    expect(earnings.every((e) => e.status === "pending")).toBe(true);
+    // Hours, not items: a count of one would print a per-item price nobody
+    // quoted.
+    expect(earnings.every((e) => e.units === undefined)).toBe(true);
+  }, 30_000);
+
+  it("settles the hourly money the moment the work is handed in", async () => {
+    const { dom, d } = await open();
+    expect(stored(dom).sessions.every((x) => x.status === "pending")).toBe(true);
+    await submitAll(d);
+    expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
+  }, 30_000);
+
+  it("shows on the row where the work stands", async () => {
+    const { d } = await open();
+    await submitAll(d);
+    const tags = [...d.querySelectorAll(".trow .tag")].map((t) => t.textContent);
+    expect(tags.filter((t) => t === "submitted")).toHaveLength(2);
+  }, 30_000);
+
+  it("pays the reward once the answer comes back yes", async () => {
+    const { dom, d } = await open();
+    await submitAll(d);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accepted 2$/).click();
+    await wait(300);
+
+    expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
+    expect(stored(dom).projects[0].tasks.map((t) => t.state)).toEqual(["accepted", "accepted"]);
+  }, 30_000);
+
+  it("cancels the reward when it comes back no, and keeps the hours paid", async () => {
+    // Submitting is what earned the hourly money. A rejection is about the
+    // top-up, not a clawback of work that was done and delivered.
+    const { dom, d } = await open();
+    await submitAll(d);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Rejected 2$/).click();
+    await wait(300);
+
+    expect(stored(dom).earnings.every((e) => e.status === "cancelled")).toBe(true);
+    expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
+  }, 30_000);
+
+  it("will not take another hour on work already submitted", async () => {
+    // The platform priced what it received. Minutes added afterwards are
+    // minutes nobody is paying for, and they would change what the reward on
+    // already-submitted work should have been.
+    const { dom, d } = await open();
+    await submitAll(d);
+    btn(d, /Start the meter/i).click();
+    await wait(200);
+    const options = [...(d.querySelector(".prompt select")?.options ?? [])]
+      .map((o) => o.textContent);
+    expect(options).not.toContain("1234");
+    expect(options).not.toContain("1235");
+    expect(stored(dom).sessions).toHaveLength(2);
+  }, 30_000);
+
+  it("lets the work be reopened, without moving the money", async () => {
+    const { dom, d } = await open();
+    await submitAll(d);
+    const before = stored(dom).earnings.map((e) => [e.cents, e.status]);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Reopen 2$/).click();
+    await wait(300);
+
+    expect(stored(dom).projects[0].tasks.every((t) => t.state === undefined)).toBe(true);
+    expect(stored(dom).earnings.map((e) => [e.cents, e.status])).toEqual(before);
+  }, 30_000);
+
+  it("lets a project choose which reward system it pays", async () => {
+    // "Keep the per task reward as it is, but add this too so I can choose."
+    const flat = seed();
+    delete flat.projects[0].bonusPerHour;
+    flat.projects[0].perTask = 10;
+
+    const { dom, d } = await open(flat);
+    btn(d, /^Open$/).click();
+    await wait(200);
+    btn(d, /^More per hour$/).click();
+    await wait(150);
+    const box = [...d.querySelectorAll(".field")]
+      .find((f) => /Extra per hour/i.test(f.querySelector(".eyebrow")?.textContent ?? ""))
+      .querySelector("input");
+    setValue(dom.window, box, "10");
+    await wait(150);
+    btn(d, /Save changes/).click();
+    await wait(300);
+
+    const project = stored(dom).projects[0];
+    expect(project.bonusPerHour).toBe(10);
+    // The model not chosen is cleared, so the project never holds two answers
+    // to what acceptance pays.
+    expect(project.perTask).toBeNull();
+  }, 30_000);
 });

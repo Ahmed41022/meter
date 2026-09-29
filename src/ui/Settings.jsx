@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
-import { paysOnAcceptance, perTask } from "../domain/earnings.js";
+import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
+import { formatMoney } from "../domain/money.js";
 
 /**
  * What the form holds, in the shape the inputs want — strings, because that is
@@ -13,7 +14,14 @@ const formOf = (project) => ({
   name: project.name,
   company: companyOf(project) ?? "",
   rate: String(project.currentRate),
+  /**
+   * Which reward system acceptance pays under, with the amount for each kind
+   * kept side by side. Two boxes rather than one, so flipping between them to
+   * compare does not throw away the figure already typed into the other.
+   */
+  reward: rewardModel(project) ?? "none",
   each: perTask(project) === null ? "" : String(perTask(project)),
+  perHour: bonusPerHour(project) === null ? "" : String(bonusPerHour(project)),
   sessionGoal: project.sessionGoal || { type: "money", target: "" },
   overallGoal: project.overallGoal || { type: "money", target: "", period: "week" },
 });
@@ -35,24 +43,43 @@ export default function Settings({
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
 
-  const { name, company, rate, each, sessionGoal, overallGoal } = form;
+  const { name, company, rate, reward, each, perHour, sessionGoal, overallGoal } = form;
   // A rate that is not a number above zero has never been applied, and with an
   // explicit Save that silence would read as the button not working.
   const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
+
+  /**
+   * The arithmetic spelled out. "+10/hr" is precisely the thing that reads as
+   * "+10 per task" to anyone who has met the other reward system, and getting
+   * that wrong is what this whole setting exists to fix — so the panel shows
+   * 80 and 10 becoming 90 rather than leaving it to be inferred.
+   */
+  const asMoney = (n) => formatMoney(Math.round(n * 100), project.currency);
+  const rateNum = Number(rate);
+  const upliftNum = Number(perHour);
+  const previewable = Number.isFinite(rateNum) && rateNum > 0
+    && Number.isFinite(upliftNum) && upliftNum > 0;
+  const ratePreview = previewable ? asMoney(rateNum) : null;
+  const upliftPreview = previewable ? asMoney(upliftNum) : null;
+  const totalPreview = previewable ? asMoney(rateNum + upliftNum) : null;
 
   const asGoal = (goal) =>
     normaliseGoal(isOffClock(project) ? { ...goal, type: "time" } : goal);
 
   const save = () => {
     const parsed = Number(rate);
-    const piece = Number(each);
+    /** The amount, but only for the model actually chosen. */
+    const chosen = (kind, value) =>
+      (reward === kind && Number.isFinite(value) && value > 0 ? value : null);
     onPatch({
       name: name.trim() || project.name,
       company: company.trim(),
       ...(Number.isFinite(parsed) && parsed > 0 ? { currentRate: parsed } : {}),
-      // Cleared on purpose means cleared: null rather than skipped, so a project
-      // can stop being paid per item.
-      perTask: Number.isFinite(piece) && piece > 0 ? piece : null,
+      // Cleared on purpose means cleared, and the model NOT chosen is always
+      // cleared: null rather than skipped, so a project can stop being paid
+      // per item, and can never hold two answers to what acceptance pays.
+      bonusPerHour: chosen(REWARD.PER_HOUR, Number(perHour)),
+      perTask: chosen(REWARD.PER_TASK, Number(each)),
       sessionGoal: asGoal(sessionGoal),
       overallGoal: asGoal(overallGoal),
     });
@@ -124,12 +151,67 @@ export default function Settings({
             <input className="inp" type="number" min="0" step="any" value={rate}
                    onKeyDown={onKey} onChange={(e) => set({ rate: e.target.value })} />
           </label>
-          <label className="field">
-            <span className="eyebrow">Per accepted task ({project.currency})</span>
-            <input className="inp" type="number" min="0" step="any" placeholder="not paid per task"
-                   value={each} onKeyDown={onKey}
-                   onChange={(e) => set({ each: e.target.value })} />
-          </label>
+          <div className="sec-head" style={{ marginTop: 18 }}>
+            <span className="eyebrow">Acceptance reward</span>
+          </div>
+          {/* The two reward systems are alternatives, not options to combine:
+              a project holding both would have two answers to "what does
+              acceptance pay". Picking one clears the other on save. */}
+          <div className="modes" role="tablist" aria-label="What acceptance pays">
+            {[
+              ["none", "Nothing"],
+              [REWARD.PER_TASK, "A flat amount"],
+              [REWARD.PER_HOUR, "More per hour"],
+            ].map(([key, label]) => (
+              <button key={key} role="tab" aria-selected={reward === key}
+                      className={"seg-btn" + (reward === key ? " on" : "")}
+                      onClick={() => set({ reward: key })}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {reward === REWARD.PER_TASK && (
+            <label className="field" style={{ marginTop: 14 }}>
+              <span className="eyebrow">Per accepted task ({project.currency})</span>
+              <input className="inp" type="number" min="0" step="any"
+                     placeholder="what one accepted item pays"
+                     value={each} onKeyDown={onKey}
+                     onChange={(e) => set({ each: e.target.value })} />
+            </label>
+          )}
+          {reward === REWARD.PER_HOUR && (
+            <label className="field" style={{ marginTop: 14 }}>
+              <span className="eyebrow">Extra per hour once accepted ({project.currency})</span>
+              <input className="inp" type="number" min="0" step="any"
+                     placeholder="on top of the hourly rate"
+                     value={perHour} onKeyDown={onKey}
+                     onChange={(e) => set({ perHour: e.target.value })} />
+            </label>
+          )}
+
+          <div className="hint">
+            {reward === REWARD.PER_HOUR ? (
+              <>
+                Paid <strong>for every hour worked on the task</strong>, not once per task.
+                {upliftPreview && <> At {ratePreview} plus {upliftPreview} an hour, accepted
+                  work comes to {totalPreview} an hour, and a task that took twice as long is
+                  worth twice as much.</>}
+                {" "}Submitting files it as pending; marking the task accepted pays it.
+              </>
+            ) : reward === REWARD.PER_TASK ? (
+              <>
+                One flat amount per accepted item, however long it took — a task can override it
+                with its own price. Submitting files it as pending; marking the task accepted
+                pays it.
+              </>
+            ) : (
+              <>
+                Acceptance pays nothing extra here; the hourly rate is the whole of it. You can
+                still record a one-off reward across a batch of tasks from the task list.
+              </>
+            )}
+          </div>
           <div className="hint">
             A new rate applies to sessions you start from now on. Everything already in the ledger keeps
             the rate it was recorded at{hasRunningSession ? ", including the one running right now" : ""}.
@@ -240,8 +322,9 @@ export default function Settings({
           </div>
           <div className="hint">
             Paid once accepted means new sessions start out <strong>pending</strong>: their money
-            is reported on its own line rather than in your earnings, until you mark it paid.
-            Work that is rejected can be marked cancelled, which keeps the hours and drops the money.
+            is reported on its own line rather than in your earnings. Submitting the task settles
+            it — delivering the work is what earns the hourly money — and the acceptance reward
+            waits separately until you hear back.
           </div>
         </>
       )}

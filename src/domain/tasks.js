@@ -1,6 +1,7 @@
 import { elapsedMs } from "./time.js";
 import { earningsCents } from "./money.js";
 import { isBilled, isIdle } from "./sessions.js";
+import { taskState } from "./taskState.js";
 
 /**
  * A task is a record on the project, referenced by id — not a string stored on
@@ -237,6 +238,7 @@ export const taskTotals = (project, sessions, now) => {
         factor: taskId ? findTask(project, taskId)?.factor ?? null : null,
         price: taskId ? findTask(project, taskId)?.price ?? null : null,
         note: taskId ? findTask(project, taskId)?.note ?? null : null,
+        state: taskId ? taskState(findTask(project, taskId)) : null,
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }

@@ -19,9 +19,23 @@ ledger changed such that an older build can no longer read it.
   acceptance the absence of a line is not a zero, it is work that is done and
   not yet credited, and past thirty tasks that is not a thing you can see by
   reading down a column of amounts.
-- **Acceptance in batches.** Pick any number of tasks and record them accepted
-  in one go, each at its own price, or mark every line they are owed as paid.
-  Approval does not arrive one task at a time and neither should the ledger.
+- **Acceptance in batches.** Pick any number of tasks and move them through
+  their life in one go. Approval does not arrive one task at a time and
+  neither should the ledger.
+- **A second way to be paid for accepted work: an extra rate per hour.** Some
+  platforms top up by the hour rather than by the item — $80 as worked and $10
+  more for every hour once the task lands, so accepted work is worth $90 an
+  hour. A flat per-item amount got this wrong in both directions at once,
+  crediting the same for a task that took twenty minutes and one that took six
+  hours. A project now chooses which of the two it pays, in Settings, and
+  holds exactly one of them.
+- **Tasks have a life: submitted, accepted, rejected.** Submitting stops the
+  clock on a task for good — no more hours can be recorded against it, by the
+  meter or by hand, because the platform priced what it received — and settles
+  the hourly money, since delivering the work is what earns it. Only the
+  acceptance reward waits. Accepting pays that reward; rejecting cancels it
+  and leaves the hours paid, because the work was still done and delivered.
+  Reopening a task puts the hours back in reach and never moves the money.
 - **One reward across many tasks.** "Finish fifty and we pay you X" is a single
   payment naming all fifty. Each of them then reads as paid for without being
   given a share of it — splitting it fifty ways would invent a per-task price
@@ -74,6 +88,17 @@ ledger changed such that an older build can no longer read it.
   never written again, so no record holds two answers to one question.
 - A batch of rows changes pay state in one write rather than one write each —
   it was one stamp and one upload per row.
+- On work paid once accepted, the hourly money now settles when the task is
+  **submitted** rather than waiting for acceptance. Handing the work in is
+  what earns it; only the top-up depends on somebody else's decision. Money
+  already in the ledger keeps whatever state it was in.
+- The task list speaks the vocabulary the platforms use. What was "Accept"
+  is now **Submit**, and the answer that comes back later is **Accepted** or
+  **Rejected** — two different days, which the one button had conflated.
+- The task picker and the Today tab's one-click starts leave out tasks that
+  have been submitted. Offering one would be a start that does nothing, and
+  starting a meter closes whatever else is open, so the failure would not
+  have been quiet.
 - The task note is a box rather than a line, and keeps its line breaks. One
   task runs across many sittings and collects an id from each, so what goes in
   it is usually a list that grows.

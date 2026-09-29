@@ -12,13 +12,15 @@ import {
   addProject, liveProjects, patchProject, removeProject, setStatus,
 } from "../domain/projects.js";
 import {
-  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, priceFor, removeEarning,
+  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, removeEarning,
   restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
-  addTask, findTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
+  addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
   setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
+import { TASK } from "../domain/taskState.js";
+import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -634,23 +636,48 @@ export default function App({ store: injectedStore }) {
               flash(`${ids.length} marked ${status === PAY.PAID ? "paid" : status}.`, "Undo",
                     () => commit(() => snapshot));
             }}
-            /* One line per task, each at that task's own price — the
-               "$80 an hour and $10 more when it lands" case, where the batch
-               is only how the approval arrived, not how the money was priced. */
-            onAcceptTasks={(taskIds) => {
-              const at = Date.now();
+            /* Handing work in. The hours stop forever, the hourly money
+               settles — delivering is what earns it — and the acceptance
+               reward is filed pending. All three move inside `submitTasks`,
+               so no route can leave a task marked submitted whose sessions
+               were never settled.
+
+               The project is re-read from the state being committed rather
+               than taken from this render: two clicks in quick succession
+               would otherwise price the second against a stale task list. */
+            onSubmitTasks={(taskIds) => {
               const snapshot = stateRef.current;
-              commit((s) => taskIds.reduce((acc, taskId) => {
-                const each = priceFor(project, findTask(project, taskId));
-                if (each === null) return acc;
-                return addEarning(acc, project, {
-                  cents: Math.round(each * 100), kind: EARNING.PIECE, units: 1,
-                  taskIds: [taskId], status: PAY.PENDING,
-                  note: `Accepted · ${taskLabel(project, taskId)}`,
-                }, at, uid());
-              }, s));
-              flash(`${taskIds.length} accepted, pending payment.`, "Undo",
-                    () => commit(() => snapshot));
+              commit((s) => {
+                const live = s.projects.find((p) => p.id === project.id);
+                return live ? submitTasks(s, live, taskIds, Date.now(), uid) : s;
+              });
+              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} submitted. Hours closed, reward pending.`,
+                    "Undo", () => commit(() => snapshot));
+            }}
+            onAnswerTasks={(taskIds, answer) => {
+              const snapshot = stateRef.current;
+              commit((s) => {
+                const live = s.projects.find((p) => p.id === project.id);
+                return live ? answerTasks(s, live, taskIds, answer, Date.now()) : s;
+              });
+              flash(
+                answer === TASK.ACCEPTED
+                  ? `${taskIds.length} task${taskIds.length === 1 ? "" : "s"} accepted. Reward paid.`
+                  : `${taskIds.length} task${taskIds.length === 1 ? "" : "s"} rejected. The hours stay paid.`,
+                "Undo", () => commit(() => snapshot),
+              );
+            }}
+            /* Only the state moves. What was already paid for the work is a
+               separate fact, and reversing it quietly would be the ledger
+               changing behind you. */
+            onReopenTasks={(taskIds) => {
+              const snapshot = stateRef.current;
+              commit((s) => {
+                const live = s.projects.find((p) => p.id === project.id);
+                return live ? reopenTasks(s, live, taskIds, Date.now()) : s;
+              });
+              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} reopened. The money is untouched.`,
+                    "Undo", () => commit(() => snapshot));
             }}
             /* One payment for the whole batch — "finish fifty and we pay you
                X". It names every task without giving any of them a share:

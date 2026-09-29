@@ -24,6 +24,7 @@
 import { startedAt } from "./time.js";
 import { periodBoundary } from "./goals.js";
 import { acceptsTime } from "./projects.js";
+import { takesTimeIn } from "./taskState.js";
 
 /**
  * The last few things you were working on, newest first, one row per
@@ -52,6 +53,9 @@ export const recentPicks = (sessions, projects, limit = 5) => {
     if (picks.length >= limit) break;
     const project = byId.get(session.projectId);
     if (!project || !acceptsTime(project)) continue;
+    // A handed-in task takes no more hours either, and the same reasoning
+    // applies: this list must not offer a start that does nothing.
+    if (!takesTimeIn(project, session.taskId)) continue;
     const key = `${session.projectId}|${session.taskId ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
