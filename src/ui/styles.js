@@ -383,6 +383,12 @@ export const CSS = `
 .tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;
   letter-spacing:.08em;padding:2px 7px;border-radius:999px;background:var(--amber-soft);
   color:var(--amber);margin-left:8px;vertical-align:1px;}
+/* A task's place in its life. Submitted keeps the amber of the plain tag,
+   because amber already reads as waiting and that is what submitted is: the
+   work is in, the answer is not. Accepted and rejected are the two answers,
+   and they get the colours the rest of the app already uses for yes and no. */
+.tag.state-accepted{background:var(--jade-soft);color:var(--jade);}
+.tag.state-cancelled{background:var(--flag-soft);color:var(--flag);}
 
 .money{display:flex;align-items:baseline;gap:2px;color:var(--ink);line-height:.92;}
 .money-head{font-family:var(--mono);font-weight:500;font-size:clamp(38px,11vw,62px);

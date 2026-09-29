@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { wordsFor } from "./words.js";
 import { tasksFor } from "../domain/tasks.js";
+import { takesTime } from "../domain/taskState.js";
 import { isPieceOnly, perTask } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 
@@ -16,7 +17,10 @@ export default function TaskPrompt({
   project, initialTaskId = null, confirmLabel = "Start", onConfirm, onCancel,
   words = wordsFor(false),
 }) {
-  const tasks = tasksFor(project);
+  // Submitted work takes no more hours, so offering it here would be a
+  // choice that starts nothing — and starting CLOSES whatever else is open,
+  // so the failure would not be quiet.
+  const tasks = tasksFor(project).filter(takesTime);
   const [mode, setMode] = useState(tasks.length ? "existing" : "new");
   const [taskId, setTaskId] = useState(initialTaskId ?? NONE);
   const [draft, setDraft] = useState("");

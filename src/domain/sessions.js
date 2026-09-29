@@ -1,6 +1,7 @@
 import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
 import { acceptsTime } from "./projects.js";
 import { PAY, paysOnAcceptance } from "./earnings.js";
+import { takesTimeIn } from "./taskState.js";
 
 /**
  * A session is either billable work or time at the desk that wasn't worked.
@@ -98,6 +99,13 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
    * however the call got here.
    */
   if (!acceptsTime(project)) return state;
+  /**
+   * A submitted task takes no more hours, ever. The platform priced what it
+   * received, so minutes added afterwards are minutes nobody is paying for —
+   * and worse, they would silently change what the acceptance reward should
+   * have been on work already handed in.
+   */
+  if (!takesTimeIn(project, taskId)) return state;
 
   const closed = state.sessions.map((s) =>
     !s.deletedAt && isOpen(s) ? { ...closeOpenSegments(s, now), closedAt: now } : s
@@ -148,8 +156,10 @@ export const addManualSession = (
   state, project, { startedAt, endedAt, kind = KIND.BILLED, taskId = null }, now, id
 ) => {
   // Typed-in time is still new time: a project that stopped taking it stopped
-  // taking it by every route, not just the one with a Start button.
+  // taking it by every route, not just the one with a Start button. The same
+  // goes for a task that has been handed in.
   if (!acceptsTime(project)) return state;
+  if (!takesTimeIn(project, taskId)) return state;
   const start = Math.min(startedAt, endedAt);
   const end = Math.max(startedAt, endedAt);
   if (!(end > start)) return state; // a zero-length block records nothing

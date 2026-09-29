@@ -8,8 +8,8 @@ import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import {
-  PAY, earnedFrom, isCancelled, isPending, isPerTask, isPieceOnly, namesTask, perTask,
-  priceFor,
+  PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
+  perTask, priceFor, tasksOf,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
@@ -42,7 +42,7 @@ export default function ProjectView({
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
-  onSetEarningTasks, onAcceptTasks, onRewardTasks,
+  onSetEarningTasks, onSubmitTasks, onAnswerTasks, onReopenTasks, onRewardTasks,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
@@ -150,13 +150,19 @@ export default function ProjectView({
    * task. Anywhere else, "not claimed" against a task would be a warning
    * about money that was never owed, on every row, forever.
    */
-  const accepts = settles || taskRows.some((r) => r.price != null);
+  const accepts = settles || hasReward(project) || taskRows.some((r) => r.price != null);
   const pickable = taskRows.filter((r) => r.taskId).map((r) => r.taskId);
   const toggleTask = (id) =>
     setPickedTasks((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  /** The pending lines the selection covers — what "mark paid" would move. */
-  const owedIds = earnings
-    .filter((e) => !e.deletedAt && isPending(e) && pickedTasks.some((t) => namesTask(e, t)))
+  /**
+   * The pending lines that answering a task will never settle: a reward covering
+   * fifty tasks is not paid by accepting one of them. Accept handles
+   * everything else, so offering "mark paid" for the rest as well would be two
+   * buttons doing the same thing to the same line.
+   */
+  const sharedOwedIds = earnings
+    .filter((e) => !e.deletedAt && isPending(e) && tasksOf(e).length > 1
+      && pickedTasks.some((t) => namesTask(e, t)))
     .map((e) => e.id);
 
   const stopped = !acceptsTime(project);
@@ -461,10 +467,13 @@ export default function ProjectView({
 
           {accepts && pickedTasks.length > 0 && (
             <TaskSettle
-              project={project} taskIds={pickedTasks} owedIds={owedIds} allIds={pickable}
-              onAccept={(ids) => { onAcceptTasks(ids); setPickedTasks([]); }}
+              project={project} taskIds={pickedTasks} rows={taskRows}
+              sharedOwedIds={sharedOwedIds} allIds={pickable}
+              onSubmit={(ids) => { onSubmitTasks(ids); setPickedTasks([]); }}
+              onAnswer={(ids, answer) => { onAnswerTasks(ids, answer); setPickedTasks([]); }}
+              onReopen={(ids) => { onReopenTasks(ids); setPickedTasks([]); }}
               onReward={(entry) => { onRewardTasks(pickedTasks, entry); setPickedTasks([]); }}
-              onPay={() => { onSetPayStateMany(owedIds, PAY.PAID); setPickedTasks([]); }}
+              onPay={() => { onSetPayStateMany(sharedOwedIds, PAY.PAID); setPickedTasks([]); }}
               onSelectAll={() => setPickedTasks(pickable)}
               onClear={() => setPickedTasks([])} />
           )}

@@ -1,42 +1,52 @@
 import { useState } from "react";
-import { formatMoney } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { findTask } from "../domain/tasks.js";
-import { priceFor } from "../domain/earnings.js";
+import { TASK, isOpenTask, isSubmitted, taskState } from "../domain/taskState.js";
+import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/earnings.js";
 
 /**
- * Marking a batch of tasks off in one go.
+ * Moving a batch of tasks through their life.
  *
  * Acceptance does not arrive one task at a time. A platform reviews a week of
- * submissions and approves them together, and a payout covers everything
+ * submissions and answers them together, and a payout covers everything
  * approved that month — so recording it a row at a time is not merely slow,
  * it is the wrong shape, and past thirty or forty tasks it is the reason the
  * ledger stops being kept at all.
  *
- * Two different things can be recorded here, and they are not variants of each
- * other:
+ * Which buttons appear is decided by what is selected, not by a mode:
  *
- *  - ACCEPTED, one line per task, each at that task's own price. This is the
- *    "$80 an hour and $10 more when it lands" case, where every task earns its
- *    own money and only the approval happened in a batch.
- *  - ONE REWARD for the whole selection, a single line naming every task in
- *    it. This is "finish fifty and we pay you X", where there is one payment
- *    and splitting it fifty ways would invent a price nobody quoted.
+ *  - SUBMIT is offered for tasks still open. It freezes their hours forever,
+ *    settles the hourly money, and writes the acceptance reward as pending.
+ *  - ACCEPTED and REJECTED are offered for tasks already handed in, because
+ *    those are the only two answers that can come back.
+ *  - REOPEN undoes a state on tasks that have one, for the ordinary case of
+ *    having ticked the wrong row. It never touches money.
  *
- * Both file as pending, because approval and payment are different days.
+ * ONE REWARD sits apart from all of that. It is "finish fifty and we pay you
+ * X" — a single payment naming every task in the selection, where splitting it
+ * fifty ways would invent a price nobody quoted.
  */
 export default function TaskSettle({
-  project, taskIds, owedIds, allIds, onAccept, onReward, onPay, onSelectAll, onClear,
+  project, taskIds, rows, sharedOwedIds, allIds,
+  onSubmit, onAnswer, onReopen, onReward, onPay, onSelectAll, onClear,
 }) {
   const [rewarding, setRewarding] = useState(false);
   const [form, setForm] = useState({ amount: "", note: "" });
 
   const currency = project.currency;
-  const priceOf = (id) => priceFor(project, findTask(project, id));
-  // A task with no price records nothing, so it is counted out of the button
-  // rather than silently included in a total it will not contribute to.
-  const priced = taskIds.filter((id) => priceOf(id) !== null);
-  const unpriced = taskIds.length - priced.length;
-  const acceptCents = priced.reduce((sum, id) => sum + Math.round(priceOf(id) * 100), 0);
+  const model = rewardModel(project);
+  const msOf = (id) => rows.find((r) => r.taskId === id)?.billedMs ?? 0;
+
+  const open = taskIds.filter((id) => isOpenTask(findTask(project, id)));
+  const handedIn = taskIds.filter((id) => isSubmitted(findTask(project, id)));
+  const stated = taskIds.filter((id) => taskState(findTask(project, id)) !== null);
+
+  // What submitting the open ones would record. A null amount contributes
+  // nothing rather than counting as zero — an unpriced task records no line.
+  const owed = open.reduce(
+    (sum, id) => sum + (acceptanceCents(project, findTask(project, id), msOf(id)) ?? 0), 0,
+  );
+  const openMs = open.reduce((sum, id) => sum + msOf(id), 0);
 
   const cents = Math.round(Number(form.amount) * 100);
   const validReward = Number.isFinite(cents) && cents !== 0;
@@ -48,22 +58,46 @@ export default function TaskSettle({
     setRewarding(false);
   };
 
+  const these = open.length === 1 ? "this task" : `these ${open.length}`;
+  const them = open.length === 1 ? "it" : "them";
+
   return (
     <>
       <div className="selbar">
         <span className="selbar-count">
           {taskIds.length} selected
-          {acceptCents > 0 && ` · ${formatMoney(acceptCents, currency)}`}
+          {owed > 0 && ` · ${formatMoney(owed, currency)} to claim`}
         </span>
-        <button className="btn primary" disabled={priced.length === 0}
-                onClick={() => onAccept(priced)}>
-          Accept {priced.length}
-        </button>
+        {open.length > 0 && (
+          <button className="btn primary" onClick={() => onSubmit(open)}>
+            Submit {open.length}
+          </button>
+        )}
+        {handedIn.length > 0 && (
+          <>
+            <button className="btn primary" onClick={() => onAnswer(handedIn, TASK.ACCEPTED)}>
+              Accepted {handedIn.length}
+            </button>
+            <button className="btn ghost" onClick={() => onAnswer(handedIn, TASK.CANCELLED)}>
+              Rejected {handedIn.length}
+            </button>
+          </>
+        )}
         <button className="btn ghost" onClick={() => setRewarding((v) => !v)}>
           {rewarding ? "Cancel reward" : "One reward"}
         </button>
-        {owedIds.length > 0 && (
-          <button className="btn ghost" onClick={onPay}>Mark {owedIds.length} paid</button>
+        {/* Only what an answer will not reach. A reward shared across fifty
+            tasks is never settled by accepting one of them, so it still needs
+            a way to be marked paid. */}
+        {sharedOwedIds.length > 0 && (
+          <button className="btn ghost" onClick={onPay}>
+            Mark {sharedOwedIds.length} paid
+          </button>
+        )}
+        {stated.length > 0 && (
+          <button className="btn ghost" onClick={() => onReopen(stated)}>
+            Reopen {stated.length}
+          </button>
         )}
         {taskIds.length < allIds.length && (
           <button className="btn ghost" onClick={onSelectAll}>All {allIds.length}</button>
@@ -71,12 +105,27 @@ export default function TaskSettle({
         <button className="btn ghost" onClick={onClear}>Clear</button>
       </div>
 
-      {unpriced > 0 && (
+      {open.length > 0 && (
         <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
-          {unpriced} of the {taskIds.length} selected {unpriced === 1 ? "has" : "have"} no
-          price set, so Accept would record nothing for {unpriced === 1 ? "it" : "them"}.
-          Price {unpriced === 1 ? "it" : "them"} first, or cover the whole selection with one
-          reward.
+          Submitting stops the clock on {these} for good — no more hours can be
+          recorded against {them} — and settles the hourly money, which is what
+          handing the work in earns.
+          {model === REWARD.PER_HOUR ? (
+            <>
+              {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr
+              on {formatShortDuration(openMs)} is filed as pending until you hear back.
+            </>
+          ) : model === REWARD.PER_TASK ? (
+            <>
+              {" "}The per-item price is filed as pending until you hear back.
+              {owed === 0 && " Nothing is priced here yet, so no reward will be recorded."}
+            </>
+          ) : (
+            <>
+              {" "}This project pays nothing extra on acceptance, so no reward line is
+              written — set one in Settings if it should.
+            </>
+          )}
         </p>
       )}
 

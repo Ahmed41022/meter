@@ -18,6 +18,8 @@
  * has to say which of the two it is dividing.
  */
 
+import { earningsCents } from "./money.js";
+
 /**
  * What kind of money it is. Presentational rather than structural — every kind
  * behaves identically in every total — but the distinction is what lets a
@@ -86,6 +88,45 @@ export const isPieceOnly = (project) =>
   isPerTask(project) && !(Number(project?.currentRate) > 0);
 
 /**
+ * The EXTRA hourly rate an accepted task earns, on top of what the clock has
+ * already paid. Not the total: a project at 80 with a bonus of 10 pays 90 an
+ * hour for work that lands, and 80 for work that does not.
+ *
+ * This exists because the other shape of acceptance money — a flat amount per
+ * item — is simply wrong for platforms that pay by the hour and then top up.
+ * A flat 10 credits the same for a task that took twenty minutes and one that
+ * took six hours, which is wrong in both directions at once.
+ *
+ * Absent means no hourly bonus, which is what every project written before
+ * this existed says.
+ */
+export const bonusPerHour = (project) => {
+  const value = Number(project?.bonusPerHour);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+export const REWARD = { PER_TASK: "perTask", PER_HOUR: "perHour" };
+
+/**
+ * Which acceptance reward a project pays, or null for neither.
+ *
+ * Exactly one, never both. A project holding a flat price AND an hourly bonus
+ * would have two answers to "what does acceptance pay", and whichever this
+ * picked would surprise somebody — the same reasoning that stops a task
+ * holding both a rate and a percentage. The settings form is what keeps that
+ * true on the way in, by always writing the other field null; this reads it
+ * back, and prefers the hourly one so a project that somehow held both is
+ * never silently priced by the model it is no longer using.
+ */
+export const rewardModel = (project) => {
+  if (bonusPerHour(project) !== null) return REWARD.PER_HOUR;
+  if (perTask(project) !== null) return REWARD.PER_TASK;
+  return null;
+};
+
+export const hasReward = (project) => rewardModel(project) !== null;
+
+/**
  * What one accepted item pays under a given task.
  *
  * A project's `perTask` is the default; a task's own `price` overrides it, the
@@ -111,6 +152,27 @@ export const perTaskCents = (project, units, task = null) => {
   const n = Number(units);
   if (each === null || !Number.isFinite(n) || n <= 0) return null;
   return Math.round(each * 100 * n);
+};
+
+/**
+ * What acceptance pays for one task, in cents.
+ *
+ * `billedMs` is time actually worked under the task — billed only, never idle,
+ * because idle minutes are not minutes anybody tops up. The flat model ignores
+ * it: that one is priced per item and does not care how long it took.
+ *
+ * Null where there is nothing to record — no reward model, no price to
+ * multiply, or no billed time under an hourly bonus — rather than a confident
+ * zero, which would write a ledger line worth nothing.
+ */
+export const acceptanceCents = (project, task, billedMs = 0) => {
+  const model = rewardModel(project);
+  if (model === REWARD.PER_HOUR) {
+    const cents = earningsCents(bonusPerHour(project), billedMs);
+    return cents > 0 ? cents : null;
+  }
+  if (model === REWARD.PER_TASK) return perTaskCents(project, 1, task);
+  return null;
 };
 
 /**

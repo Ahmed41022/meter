@@ -1,6 +1,7 @@
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { taskPay } from "../domain/earnings.js";
 import { UNASSIGNED } from "../domain/tasks.js";
+import { TASK } from "../domain/taskState.js";
 
 /**
  * What one task is owed, in the words that matter once there are forty of them.
@@ -28,6 +29,19 @@ function PayLine({ pay, currency }) {
     </div>
   );
 }
+
+/**
+ * What a task's state is called on screen.
+ *
+ * "Rejected" rather than "cancelled": cancelled is how the money is stored,
+ * because that is what happens to it, but what happened to the WORK is that
+ * somebody turned it down, and the row is about the work.
+ */
+const STATE_WORD = {
+  [TASK.SUBMITTED]: "submitted",
+  [TASK.ACCEPTED]: "accepted",
+  [TASK.CANCELLED]: "rejected",
+};
 
 /** Time and money per task. Idle sits on its own line, never added into the
  *  earned column. An off-clock project has no earned column at all — a row of
@@ -60,7 +74,12 @@ export default function TaskBreakdown({
                    onChange={() => onToggleSelect(r.taskId)} />
           ) : <span className="row-check" aria-hidden="true" />)}
           <div>
-            <div className="trow-label">{r.label}</div>
+            <div className="trow-label">
+              {r.label}
+              {r.state && (
+                <span className={"tag state-" + r.state}>{STATE_WORD[r.state]}</span>
+              )}
+            </div>
             <div className="trow-sub">
               {offClock
                 ? `${r.sessions} entr${r.sessions === 1 ? "y" : "ies"}`
