@@ -201,6 +201,27 @@ describe("the built file", () => {
       expect(rule?.[1], `${cls} must be block`).toContain("display:block");
     }
   });
+
+  it("keeps the activity calendar's month labels on their own columns", async () => {
+    /**
+     * Regression, and one no other test could have caught: a flex item
+     * defaults to `min-width:auto`, which refuses to shrink below its content.
+     * With `white-space:nowrap` on it, every labelled column came out as wide
+     * as the word rather than the 10px basis asked for, and the error
+     * compounded left to right — by the far end of the year September sat 80px
+     * past the week it named, printed over empty space off the end of the
+     * grid. The `overflow:visible` beside it is what says the box is meant to
+     * stay narrow and let the text spill.
+     *
+     * Only a real browser can measure that, so what is pinned here is the one
+     * declaration that makes the stated basis take effect.
+     */
+    const css = readFileSync(DIST, "utf8");
+    const rule = css.match(/\.hm-month\{([^}]*)/);
+    expect(rule?.[1], "the month label must be able to shrink to its basis")
+      .toContain("min-width:0");
+    expect(rule?.[1]).toContain("flex:0 0 var(--hm-cell)");
+  });
 });
 
 describe("a full session, end to end", () => {
