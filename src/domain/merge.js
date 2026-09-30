@@ -30,7 +30,7 @@ import { isBilled } from "./sessions.js";
 
 /** The lists that hold records with ids. Anything else on the state is a scalar
  *  and handled separately. */
-export const COLLECTIONS = ["projects", "sessions", "objectives", "earnings"];
+export const COLLECTIONS = ["projects", "sessions", "objectives", "earnings", "companies"];
 
 /** Absent means older than anything stamped, which is what every record written
  *  before sync existed is. It loses to a record that has been touched since, and

@@ -21,6 +21,7 @@ import {
 } from "../domain/tasks.js";
 import { TASK } from "../domain/taskState.js";
 import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
+import { payPeriodFor, setPayPeriod } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -691,6 +692,11 @@ export default function App({ store: injectedStore }) {
               flash(`Reward recorded across ${taskIds.length} tasks.`, "Undo",
                     () => commit(() => snapshot));
             }}
+            payPeriod={payPeriodFor(state, project)}
+            /* Keyed by company name rather than by project: every project
+               under one client shares the schedule, which is the point. */
+            onSetPayPeriod={(company, rule) =>
+              commit((s) => setPayPeriod(s, company, rule, Date.now()))}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
             onSetStatus={(status) => {
               commit((s) => setStatus(s, project.id, status, Date.now()));
@@ -731,6 +737,7 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
+            companyRules={state.companies ?? []}
             now={now}
             today={dayKey(now)}
             onOpenProject={openProject}

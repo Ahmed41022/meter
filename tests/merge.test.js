@@ -80,20 +80,38 @@ describe("a delete surviving a merge", () => {
 
 describe("merging whole ledgers", () => {
   const ledger = (over = {}) => ({
-    projects: [], sessions: [], objectives: [], earnings: [], ...over,
+    projects: [], sessions: [], objectives: [], earnings: [], companies: [], ...over,
   });
 
   it("reconciles every collection that holds records", () => {
-    expect(COLLECTIONS).toEqual(["projects", "sessions", "objectives", "earnings"]);
+    // Pinned on purpose: a new collection has to be added here deliberately,
+    // by somebody who has just checked that the merge handles it.
+    expect(COLLECTIONS)
+      .toEqual(["projects", "sessions", "objectives", "earnings", "companies"]);
     const mine = ledger({ projects: [rec("p1", 1, { name: "old" })], sessions: [rec("s1", 1)] });
     const theirs = ledger({
       projects: [rec("p1", 9, { name: "new" })],
       earnings: [rec("e1", 1)],
+      companies: [rec("co:acme", 1)],
     });
     const out = mergeState(mine, theirs);
     expect(out.projects[0].name).toBe("new");
     expect(out.sessions.map((r) => r.id)).toEqual(["s1"]);
     expect(out.earnings.map((r) => r.id)).toEqual(["e1"]);
+    expect(out.companies.map((r) => r.id)).toEqual(["co:acme"]);
+  });
+
+  it("settles two devices editing one client's payday on the later edit", () => {
+    // The company id is the folded name, so both devices write the same row
+    // rather than creating two schedules that quietly disagree.
+    const weekly = { kind: "weekly", cutoff: 1, payday: 3, after: 0 };
+    const friday = { kind: "weekly", cutoff: 1, payday: 5, after: 0 };
+    const out = mergeState(
+      ledger({ companies: [rec("co:outlier", 100, { name: "Outlier", payPeriod: weekly })] }),
+      ledger({ companies: [rec("co:outlier", 300, { name: "Outlier", payPeriod: friday })] }),
+    );
+    expect(out.companies).toHaveLength(1);
+    expect(out.companies[0].payPeriod).toEqual(friday);
   });
 
   it("keeps the later backup stamp, so it does not nag for a file that exists", () => {

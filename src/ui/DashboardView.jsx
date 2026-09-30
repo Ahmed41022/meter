@@ -17,6 +17,7 @@ import {
 } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
+import { upcomingPay } from "../domain/payout.js";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
 // and the heading directly under it says "All time" in full.
@@ -129,9 +130,29 @@ const targetsFor = (projects, work, now, rateOf) =>
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], now, today,
+  projects, sessions, earnings = [], objectives = [], companyRules = [], now, today,
   onOpenProject, onToggleObjective,
 }) {
+  /**
+   * What is coming in, and when.
+   *
+   * Recomputed once a day rather than on every tick of `now`: the forecast
+   * turns on which calendar day it is, and every session it reads is one
+   * filed under a task already submitted, which by definition is closed and
+   * no longer accruing.
+   */
+  const pay = useMemo(
+    () => upcomingPay({ projects, sessions, earnings, companies: companyRules }, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the day, not the second
+    [projects, sessions, earnings, companyRules, today],
+  );
+  /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
+  const payTotal = currenciesByValue(
+    pay.due.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
+  ).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
+  const payDay = (at) => new Date(at).toLocaleDateString(undefined, {
+    weekday: "short", day: "numeric", month: "long",
+  });
   // Remembered, because reopening the app to a span you did not choose is a
   // small daily annoyance and the answer is one string. Validated on read: a
   // stored value from a future version, or a hand-edited one, must not leave
@@ -424,6 +445,47 @@ export default function DashboardView({
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {(pay.due.length > 0 || pay.waiting.length > 0) && (
+        <div className="sec">
+          <div className="sec-head">
+            <span className="eyebrow">Getting paid</span>
+            <span className="eyebrow">
+              {pay.due.length === 0 ? "nothing dated" : payTotal}
+            </span>
+          </div>
+          <div className="panel">
+            {pay.due.map((row) => (
+              <div className="trow" key={row.company + row.at + row.currency}>
+                <div>
+                  <div className="trow-label">{payDay(row.at)}</div>
+                  <div className="trow-sub">
+                    {row.company || "No company"} · {row.items} task{row.items === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
+              </div>
+            ))}
+            {pay.waiting.map((row) => (
+              <div className="trow" key={"w" + row.company + row.currency}>
+                <div>
+                  <div className="trow-label">Waiting on a decision</div>
+                  <div className="trow-sub owed">
+                    {row.company || "No company"} · {row.items} reward{row.items === 1 ? "" : "s"}
+                    {" "}· no date until it is accepted
+                  </div>
+                </div>
+                <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
+              </div>
+            ))}
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Dates come from each client&apos;s payday, set in a project&apos;s settings. The hours
+              ride from the day a task was submitted; a reward rides from the day it was
+              accepted. Anything whose payday has passed has dropped off.
+            </div>
           </div>
         </div>
       )}
