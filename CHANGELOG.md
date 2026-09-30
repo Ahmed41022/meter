@@ -109,6 +109,13 @@ ledger changed such that an older build can no longer read it.
 
 ### Fixed
 
+- **The activity calendar printed its month labels in the wrong place.** A flex
+  item defaults to refusing to shrink below its own text, so each labelled
+  column came out 18px wide instead of the 10px asked for, and the error
+  compounded left to right. By the far end of the year September sat 80px past
+  the week it named, printed over empty space off the end of the grid — which
+  read as September missing from every year.
+
 - **A stray backtick in a CSS comment ended the stylesheet**, which is one
   template literal, and took the whole app down with it. Caught by the test
   suite before it left the working tree; the comment now says so.
