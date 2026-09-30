@@ -102,3 +102,26 @@ export const setTaskStateMany = (state, projectId, taskIds, next, now) => {
 
 export const setTaskState = (state, projectId, taskId, next, now) =>
   setTaskStateMany(state, projectId, [taskId], next, now);
+
+/**
+ * Corrects the day the work went in, after the fact.
+ *
+ * Needed because the app used to stamp the moment you ticked the box, and a
+ * task handed in on Saturday but ticked off on Monday was filed a whole pay
+ * period late. The date decides which payday the money falls in and nothing
+ * else, so moving it moves a forecast and never touches an amount.
+ */
+export const setSubmittedAt = (state, projectId, taskId, at) => ({
+  ...state,
+  projects: state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    return {
+      ...p,
+      tasks: (p.tasks ?? []).map((t) => {
+        if (t.id !== taskId || taskState(t) === null) return t;
+        if (!Number.isFinite(at)) return t;
+        return { ...t, submittedAt: at };
+      }),
+    };
+  }),
+});

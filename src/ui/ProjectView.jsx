@@ -161,6 +161,17 @@ export default function ProjectView({
    * everything else, so offering "mark paid" for the rest as well would be two
    * buttons doing the same thing to the same line.
    */
+  /**
+   * When the last sitting on the picked tasks ended.
+   *
+   * The default date for submitting, because work is nearly always handed in
+   * as it is finished — and when a pay cutoff falls between finishing and
+   * remembering to tick the box, the difference is a whole payday.
+   */
+  const lastWorkedAt = sessions
+    .filter((s) => pickedTasks.includes(s.taskId))
+    .reduce((latest, s) => Math.max(latest, lastActivityAt(s) ?? 0), 0) || null;
+
   const sharedOwedIds = earnings
     .filter((e) => !e.deletedAt && isPending(e) && tasksOf(e).length > 1
       && pickedTasks.some((t) => namesTask(e, t)))
@@ -470,8 +481,9 @@ export default function ProjectView({
             <TaskSettle
               project={project} taskIds={pickedTasks} rows={taskRows}
               sharedOwedIds={sharedOwedIds} allIds={pickable}
-              onSubmit={(ids) => { onSubmitTasks(ids); setPickedTasks([]); }}
-              onAnswer={(ids, answer) => { onAnswerTasks(ids, answer); setPickedTasks([]); }}
+              now={now} lastWorkedAt={lastWorkedAt}
+              onSubmit={(ids, at) => { onSubmitTasks(ids, at); setPickedTasks([]); }}
+              onAnswer={(ids, answer, at) => { onAnswerTasks(ids, answer, at); setPickedTasks([]); }}
               onReopen={(ids) => { onReopenTasks(ids); setPickedTasks([]); }}
               onReward={(entry) => { onRewardTasks(pickedTasks, entry); setPickedTasks([]); }}
               onPay={() => { onSetPayStateMany(sharedOwedIds, PAY.PAID); setPickedTasks([]); }}

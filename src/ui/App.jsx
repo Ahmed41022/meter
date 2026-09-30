@@ -19,7 +19,7 @@ import {
   addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
   setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
-import { TASK } from "../domain/taskState.js";
+import { TASK, setSubmittedAt } from "../domain/taskState.js";
 import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
 import { payPeriodFor, setPayPeriod } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
@@ -578,12 +578,14 @@ export default function App({ store: injectedStore }) {
             }}
             onRevertCorrection={(sessionId) =>
               commit((s) => revertCorrection(s, sessionId))}
-            onSaveTask={(taskId, { label, rate, price, note }) =>
-              commit((s) => setTaskNote(
-                setTaskPrice(
-                  setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
-                  project.id, taskId, price),
-                project.id, taskId, note))}
+            onSaveTask={(taskId, { label, rate, price, note, submittedAt }) =>
+              commit((s) => setSubmittedAt(
+                setTaskNote(
+                  setTaskPrice(
+                    setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
+                    project.id, taskId, price),
+                  project.id, taskId, note),
+                project.id, taskId, submittedAt))}
             onDeleteTask={(taskId) => {
               const snapshot = stateRef.current;
               // Objectives pointing at the task are unfiled with it, so the
@@ -646,20 +648,20 @@ export default function App({ store: injectedStore }) {
                The project is re-read from the state being committed rather
                than taken from this render: two clicks in quick succession
                would otherwise price the second against a stale task list. */
-            onSubmitTasks={(taskIds) => {
+            onSubmitTasks={(taskIds, at) => {
               const snapshot = stateRef.current;
               commit((s) => {
                 const live = s.projects.find((p) => p.id === project.id);
-                return live ? submitTasks(s, live, taskIds, Date.now(), uid) : s;
+                return live ? submitTasks(s, live, taskIds, Date.now(), uid, at) : s;
               });
               flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} submitted. Hours closed, reward pending.`,
                     "Undo", () => commit(() => snapshot));
             }}
-            onAnswerTasks={(taskIds, answer) => {
+            onAnswerTasks={(taskIds, answer, at) => {
               const snapshot = stateRef.current;
               commit((s) => {
                 const live = s.projects.find((p) => p.id === project.id);
-                return live ? answerTasks(s, live, taskIds, answer, Date.now()) : s;
+                return live ? answerTasks(s, live, taskIds, answer, at ?? Date.now()) : s;
               });
               flash(
                 answer === TASK.ACCEPTED

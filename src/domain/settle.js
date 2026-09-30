@@ -71,8 +71,15 @@ const rewardNote = (project, taskId, billedMs) => {
  * says the clock money has landed, the other that a top-up is owed. A project
  * with no reward model at all still submits, still freezes, and still settles
  * its hours; it simply writes no extra line.
+ *
+ * `at` is the day the work actually went in; `now` is the clock. They are
+ * separate because they answer different questions — `now` values the hours,
+ * `at` decides which pay period the money falls in. Stamping the moment the
+ * box was ticked put work delivered on a Saturday into the following week
+ * whenever the box was ticked after the Monday cutoff: a whole payday late,
+ * for a reason nothing on screen explained.
  */
-export const submitTasks = (state, project, taskIds, now, nextId) => {
+export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
   const open = (taskIds ?? []).filter((id) => isOpenTask(findTask(project, id)));
   if (open.length === 0) return state;
 
@@ -96,12 +103,12 @@ export const submitTasks = (state, project, taskIds, now, nextId) => {
         taskIds: [taskId],
         status: PAY.PENDING,
         note: rewardNote(project, taskId, billedMs),
-      }, now, nextId());
+      }, at, nextId());
     }
   }
 
   next = setPayStateMany(next, settling, PAY.PAID);
-  return setTaskStateMany(next, project.id, open, TASK.SUBMITTED, now);
+  return setTaskStateMany(next, project.id, open, TASK.SUBMITTED, at);
 };
 
 /**
@@ -111,7 +118,7 @@ export const submitTasks = (state, project, taskIds, now, nextId) => {
  * still waiting are moved: a reward already marked paid by hand stays paid,
  * and one already cancelled is not resurrected by a stray second click.
  */
-export const answerTasks = (state, project, taskIds, answer, now) => {
+export const answerTasks = (state, project, taskIds, answer, at) => {
   const ids = taskIds ?? [];
   if (ids.length === 0) return state;
   const earnings = state.earnings ?? [];
@@ -127,7 +134,7 @@ export const answerTasks = (state, project, taskIds, answer, now) => {
   const next = setPayStateMany(
     state, moving, answer === TASK.ACCEPTED ? PAY.PAID : PAY.CANCELLED,
   );
-  return setTaskStateMany(next, project.id, ids, answer, now);
+  return setTaskStateMany(next, project.id, ids, answer, at);
 };
 
 /**

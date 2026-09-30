@@ -239,6 +239,7 @@ export const taskTotals = (project, sessions, now) => {
         price: taskId ? findTask(project, taskId)?.price ?? null : null,
         note: taskId ? findTask(project, taskId)?.note ?? null : null,
         state: taskId ? taskState(findTask(project, taskId)) : null,
+        submittedAt: taskId ? findTask(project, taskId)?.submittedAt ?? null : null,
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }

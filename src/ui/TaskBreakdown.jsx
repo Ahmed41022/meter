@@ -79,6 +79,15 @@ export default function TaskBreakdown({
               {r.state && (
                 <span className={"tag state-" + r.state}>{STATE_WORD[r.state]}</span>
               )}
+              {/* The day it went in, printed because it decides which payday
+                  the money falls in and is otherwise invisible until the
+                  Overview quotes a date you cannot account for. */}
+              {r.submittedAt && (
+                <span className="trow-when">
+                  {new Date(r.submittedAt).toLocaleDateString(undefined,
+                    { weekday: "short", day: "numeric", month: "short" })}
+                </span>
+              )}
             </div>
             <div className="trow-sub">
               {offClock
