@@ -100,6 +100,8 @@ ledger changed such that an older build can no longer read it.
 
 ### Changed
 
+- The Overview panel is called **Upcoming payments**.
+
 - An earning's task is stored as `taskIds`, a list, because one payment can
   cover a batch. The singular `taskId` an earlier build wrote is still read and
   never written again, so no record holds two answers to one question.
@@ -125,6 +127,15 @@ ledger changed such that an older build can no longer read it.
   hours off work still being done.
 
 ### Fixed
+
+- **Submitting dated the work by when you ticked the box.** Work handed in on
+  Saturday and marked off on Monday crossed the weekly cutoff and was forecast
+  a whole payday late, with nothing on screen to explain why. The settle bar
+  now carries the day it actually went in — defaulting to when the last
+  sitting on those tasks ended, because work is nearly always handed in as it
+  is finished — and a date recorded wrong can be corrected on the task
+  afterwards. The day decides which pay period the money falls in and nothing
+  else; it never reaches an amount.
 
 - **The activity calendar printed its month labels in the wrong place.** A flex
   item defaults to refusing to shrink below its own text, so each labelled

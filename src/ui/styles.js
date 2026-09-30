@@ -178,6 +178,10 @@ export const CSS = `
 .selbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;
   border:1px solid var(--jade);background:var(--jade-soft);border-radius:11px;
   margin-bottom:12px;}
+/* The date the action will be stamped with, inline in the bar. It is narrow
+   on purpose: it is one day, not a field anyone types into often. */
+.selbar-when{display:flex;align-items:center;gap:8px;}
+.selbar-when .inp{width:auto;padding:6px 9px;font-size:12px;}
 .selbar-count{font-weight:600;font-size:13.5px;color:var(--jade);flex:1;min-width:110px;}
 .selbar .btn{flex:0 0 auto;min-width:0;padding:9px 14px;font-size:13px;}
 .chip{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
@@ -333,6 +337,8 @@ export const CSS = `
 .trow:first-child{padding-top:0;}
 .trow:last-child{border-bottom:0;padding-bottom:0;}
 .trow-label{font-weight:600;font-size:14.5px;}
+.trow-when{margin-left:8px;font-size:11px;font-weight:400;color:var(--muted);
+  font-family:var(--mono);}
 .trow-sub{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
 .trow-sub.idle{color:var(--amber);}
 /* Not mono, unlike the figures around it: this is prose the user wrote. */

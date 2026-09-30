@@ -26,16 +26,38 @@ import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/ea
  * X" — a single payment naming every task in the selection, where splitting it
  * fifty ways would invent a price nobody quoted.
  */
+const pad = (n) => String(n).padStart(2, "0");
+const toInput = (t) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+/** Midday, so a timezone cannot nudge the chosen day across a boundary and
+ *  land the money in the wrong pay period — the one thing this date decides. */
+const fromInput = (text, fallback) => {
+  const at = new Date(`${text}T12:00`).getTime();
+  return Number.isFinite(at) ? at : fallback;
+};
+
 export default function TaskSettle({
-  project, taskIds, rows, sharedOwedIds, allIds,
+  project, taskIds, rows, sharedOwedIds, allIds, now = Date.now(), lastWorkedAt = null,
   onSubmit, onAnswer, onReopen, onReward, onPay, onSelectAll, onClear,
 }) {
   const [rewarding, setRewarding] = useState(false);
   const [form, setForm] = useState({ amount: "", note: "" });
+  /**
+   * The day the work actually went in, which is not the day you tick the box.
+   *
+   * It defaults to when the last sitting on these tasks ended rather than to
+   * now, because you almost always hand work in as you finish it — and the
+   * difference is a whole payday whenever a cutoff falls between the two.
+   * Editable, because only you know when it really went.
+   */
+  const [when, setWhen] = useState(() => toInput(lastWorkedAt ?? now));
 
   const currency = project.currency;
   const model = rewardModel(project);
   const msOf = (id) => rows.find((r) => r.taskId === id)?.billedMs ?? 0;
+  const happenedAt = () => fromInput(when, now);
 
   const open = taskIds.filter((id) => isOpenTask(findTask(project, id)));
   const handedIn = taskIds.filter((id) => isSubmitted(findTask(project, id)));
@@ -69,19 +91,27 @@ export default function TaskSettle({
           {owed > 0 && ` · ${formatMoney(owed, currency)} to claim`}
         </span>
         {open.length > 0 && (
-          <button className="btn primary" onClick={() => onSubmit(open)}>
+          <button className="btn primary" onClick={() => onSubmit(open, happenedAt())}>
             Submit {open.length}
           </button>
         )}
         {handedIn.length > 0 && (
           <>
-            <button className="btn primary" onClick={() => onAnswer(handedIn, TASK.ACCEPTED)}>
+            <button className="btn primary" onClick={() => onAnswer(handedIn, TASK.ACCEPTED, happenedAt())}>
               Accepted {handedIn.length}
             </button>
-            <button className="btn ghost" onClick={() => onAnswer(handedIn, TASK.CANCELLED)}>
+            <button className="btn ghost" onClick={() => onAnswer(handedIn, TASK.CANCELLED, happenedAt())}>
               Rejected {handedIn.length}
             </button>
           </>
+        )}
+        {(open.length > 0 || handedIn.length > 0) && (
+          <label className="selbar-when">
+            <span className="eyebrow">On</span>
+            <input className="inp" type="date" value={when}
+                   aria-label="The day this happened"
+                   onChange={(e) => setWhen(e.target.value)} />
+          </label>
         )}
         <button className="btn ghost" onClick={() => setRewarding((v) => !v)}>
           {rewarding ? "Cancel reward" : "One reward"}
@@ -109,7 +139,10 @@ export default function TaskSettle({
         <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
           Submitting stops the clock on {these} for good — no more hours can be
           recorded against {them} — and settles the hourly money, which is what
-          handing the work in earns.
+          handing the work in earns. The date beside the buttons is the day the
+          work went in, not the day you tick the box: it decides which pay period
+          the money falls in, so a Saturday ticked off on Monday would otherwise
+          slip a whole payday.
           {model === REWARD.PER_HOUR ? (
             <>
               {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr

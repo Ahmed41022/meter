@@ -452,7 +452,7 @@ export default function DashboardView({
       {(pay.due.length > 0 || pay.waiting.length > 0) && (
         <div className="sec">
           <div className="sec-head">
-            <span className="eyebrow">Getting paid</span>
+            <span className="eyebrow">Upcoming payments</span>
             <span className="eyebrow">
               {pay.due.length === 0 ? "nothing dated" : payTotal}
             </span>

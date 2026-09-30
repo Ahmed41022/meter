@@ -5,7 +5,7 @@ import {
 } from "../src/domain/payPeriod.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
-import { TASK } from "../src/domain/taskState.js";
+import { TASK, setSubmittedAt } from "../src/domain/taskState.js";
 import { PAY } from "../src/domain/earnings.js";
 import { KIND, startSession, stopSession } from "../src/domain/sessions.js";
 import { addTask } from "../src/domain/tasks.js";
@@ -238,6 +238,50 @@ describe("what is coming in", () => {
     expect(due).toHaveLength(1);
     expect(day(due[0].at)).toBe(day(on(2026, 10, 28)));
     expect(due[0].cents).toBe(3_000);
+  });
+
+  it("files work by the day it went in, not the day the box was ticked", () => {
+    /*
+     * The bug this fixes, on Outlier's rule: in before Monday, paid the
+     * following Wednesday.
+     *
+     * Work handed in on Saturday 26 September is before the Monday cutoff, so
+     * it belongs to the period paying Wednesday 30 September. Ticking Submit
+     * on the Wednesday used to stamp THAT day, which is past the cutoff, and
+     * quietly pushed the money to the 7th of October — a whole payday late,
+     * for a reason nothing on screen explained.
+     */
+    const saturday = on(2026, 9, 26);
+    const ticked = on(2026, 9, 30);
+
+    const byTick = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
+    expect(day(upcomingPay(byTick, ticked).due[0].at)).toBe(day(on(2026, 10, 7)));
+
+    const byDay = submitTasks(seeded(), project, ["t1"], ticked, () => "e1", saturday);
+    expect(day(upcomingPay(byDay, ticked).due[0].at)).toBe(day(on(2026, 9, 30)));
+  });
+
+  it("still values the hours by the clock, not by the day chosen", () => {
+    // The chosen day decides which period the money falls in and nothing
+    // else. It must never reach an amount.
+    const ticked = on(2026, 9, 30);
+    const byTick = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
+    const byDay = submitTasks(seeded(), project, ["t1"], ticked, () => "e1", on(2026, 9, 26));
+    const total = (x) => upcomingPay(x, ticked).due.reduce((n, r) => n + r.cents, 0);
+    expect(total(byDay)).toBe(total(byTick));
+  });
+
+  it("lets a date recorded wrong be put right afterwards", () => {
+    const ticked = on(2026, 9, 30);
+    let s = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
+    expect(day(upcomingPay(s, ticked).due[0].at)).toBe(day(on(2026, 10, 7)));
+    s = setSubmittedAt(s, "p1", "t1", on(2026, 9, 26));
+    expect(day(upcomingPay(s, ticked).due[0].at)).toBe(day(on(2026, 9, 30)));
+  });
+
+  it("will not invent a handed-in date for a task still being worked", () => {
+    const s = setSubmittedAt(seeded(), "p1", "t1", on(2026, 9, 26));
+    expect(s.projects[0].tasks[0].submittedAt).toBeUndefined();
   });
 
   it("does not let the answer re-date the hours behind you", () => {

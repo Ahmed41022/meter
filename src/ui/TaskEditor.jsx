@@ -2,6 +2,13 @@ import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
 import { taskRateInput } from "../domain/tasks.js";
+import { taskState } from "../domain/taskState.js";
+
+const pad = (n) => String(n).padStart(2, "0");
+const toInput = (t) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 /**
  * Rename, reprice or remove one task. The rate field is deliberately optional:
@@ -18,6 +25,13 @@ export default function TaskEditor({
   const [rate, setRate] = useState(taskRateInput(task));
   const [price, setPrice] = useState(task.price == null ? "" : String(task.price));
   const [note, setNote] = useState(task.note ?? "");
+  /**
+   * The day the work went in, correctable because the app used to stamp the
+   * moment you ticked the box. A task handed in on Saturday and ticked off on
+   * Monday crossed the cutoff and was forecast a whole payday late.
+   */
+  const handedIn = task.submittedAt ?? task.stateAt ?? null;
+  const [went, setWent] = useState(handedIn === null ? "" : toInput(handedIn));
   const [confirming, setConfirming] = useState(false);
   const piece = projectPrice !== null;
 
@@ -26,6 +40,8 @@ export default function TaskEditor({
     rate: rate.trim() === "" ? null : rate,
     price: price.trim() === "" ? null : price,
     note,
+    // Midday, so a timezone cannot nudge the day across a pay cutoff.
+    submittedAt: went ? new Date(went + "T12:00").getTime() : null,
   });
 
   if (confirming) {
@@ -79,6 +95,18 @@ export default function TaskEditor({
                   placeholder="ids, a link, what it is — one per line"
                   onChange={(e) => setNote(e.target.value)} />
       </label>
+      {taskState(task) && (
+        <label className="field">
+          <span className="eyebrow">Handed in on</span>
+          <input className="inp" type="date" value={went}
+                 onChange={(e) => setWent(e.target.value)} />
+          <span className="hint" style={{ marginTop: 8, display: "block" }}>
+            The day the work actually went in, which decides which payday its money
+            falls in. It is not the day you ticked Submit, and correcting it here moves
+            only the forecast — never an amount.
+          </span>
+        </label>
+      )}
       <div className="hint" style={{ marginBottom: 0 }}>
         Setting a rate reprices every session filed under this task, including ones already
         finished. Useful when the rate you&apos;re actually paid is settled after the work.
