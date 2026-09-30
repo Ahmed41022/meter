@@ -3,6 +3,7 @@ import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
+import { PERIOD, WEEKDAYS, describePeriod, nextPayout } from "../domain/payPeriod.js";
 
 /**
  * What the form holds, in the shape the inputs want — strings, because that is
@@ -10,9 +11,37 @@ import { formatMoney } from "../domain/money.js";
  * there is anything to save, without having to guess how the ledger normalised
  * the last answer.
  */
-const formOf = (project) => ({
+/** A schedule in the shape the selects want, with both kinds' answers kept
+ *  side by side so switching between them to compare loses neither. */
+const periodForm = (rule) => ({
+  kind: rule?.kind ?? "none",
+  weeklyCutoff: rule?.kind === PERIOD.WEEKLY ? rule.cutoff : 1,
+  weeklyPayday: rule?.kind === PERIOD.WEEKLY ? rule.payday : 3,
+  monthlyCutoff: rule?.kind === PERIOD.MONTHLY ? String(rule.cutoff) : "1",
+  monthlyPayday: rule?.kind === PERIOD.MONTHLY ? String(rule.payday) : "15",
+  after: rule?.after ?? 0,
+});
+
+/** The selects back into a rule the domain will accept, or null for none. */
+const periodOf = (f) => {
+  if (f.kind === PERIOD.WEEKLY) {
+    return { kind: PERIOD.WEEKLY, cutoff: f.weeklyCutoff, payday: f.weeklyPayday, after: f.after };
+  }
+  if (f.kind === PERIOD.MONTHLY) {
+    return {
+      kind: PERIOD.MONTHLY,
+      cutoff: Number(f.monthlyCutoff),
+      payday: Number(f.monthlyPayday),
+      after: f.after,
+    };
+  }
+  return null;
+};
+
+const formOf = (project, payPeriod) => ({
   name: project.name,
   company: companyOf(project) ?? "",
+  period: periodForm(payPeriod),
   rate: String(project.currentRate),
   /**
    * Which reward system acceptance pays under, with the amount for each kind
@@ -28,8 +57,9 @@ const formOf = (project) => ({
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
+  payPeriod = null, onSetPayPeriod, now = Date.now(),
 }) {
-  const [form, setForm] = useState(() => formOf(project));
+  const [form, setForm] = useState(() => formOf(project, payPeriod));
   /**
    * What the ledger holds, in the same terms.
    *
@@ -37,13 +67,25 @@ export default function Settings({
    * "120" comes back as the number 120, and a panel that decided it was still
    * unsaved would never put its Save button away.
    */
-  const [saved, setSaved] = useState(() => formOf(project));
+  const [saved, setSaved] = useState(() => formOf(project, payPeriod));
   const [confirming, setConfirming] = useState(false);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const setPeriod = (patch) => setForm((f) => ({ ...f, period: { ...f.period, ...patch } }));
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
 
-  const { name, company, rate, reward, each, perHour, sessionGoal, overallGoal } = form;
+  const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
+
+  /**
+   * The schedule belongs to the company, not to this project, so it is keyed
+   * to the company already SAVED rather than to whatever is in the box. A rule
+   * filed under a half-typed name would be a rule for a client that does not
+   * exist, and the moment the name was finished it would vanish.
+   */
+  const payee = companyOf(project);
+  const rule = periodOf(period);
+  const example = describePeriod(rule);
+  const nextOne = rule ? nextPayout(rule, now) : null;
   // A rate that is not a number above zero has never been applied, and with an
   // explicit Save that silence would read as the button not working.
   const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
@@ -83,6 +125,10 @@ export default function Settings({
       sessionGoal: asGoal(sessionGoal),
       overallGoal: asGoal(overallGoal),
     });
+    // One Save for the panel, two writes underneath: the schedule is the
+    // company's and outlives any one project, so it cannot ride along in the
+    // project patch.
+    if (payee) onSetPayPeriod?.(payee, rule);
     setSaved(form);
   };
 
@@ -244,6 +290,109 @@ export default function Settings({
             Projects sharing a company are totalled together on the Overview — what each
             one earned, the hours, and what an hour actually came to across all of them.
           </div>
+
+          <div className="sec-head" style={{ marginTop: 22 }}>
+            <span className="eyebrow">Payday</span>
+            {payee && <span className="eyebrow">{payee}</span>}
+          </div>
+          {!payee ? (
+            <div className="hint" style={{ marginTop: 0 }}>
+              A payday belongs to the client, not to one project, so name the company above
+              and save — then its schedule can be set here and every project under it will
+              use the same one.
+            </div>
+          ) : (
+            <>
+              <div className="modes" role="tablist" aria-label="How this client pays">
+                {[["none", "No schedule"], [PERIOD.WEEKLY, "Weekly"], [PERIOD.MONTHLY, "Monthly"]]
+                  .map(([key, label]) => (
+                    <button key={key} role="tab" aria-selected={period.kind === key}
+                            className={"seg-btn" + (period.kind === key ? " on" : "")}
+                            onClick={() => setPeriod({ kind: key })}>
+                      {label}
+                    </button>
+                  ))}
+              </div>
+
+              {period.kind === PERIOD.WEEKLY && (
+                <div className="pair" style={{ marginTop: 14 }}>
+                  <label className="field">
+                    <span className="eyebrow">Work in before</span>
+                    <select className="inp" value={period.weeklyCutoff}
+                            onChange={(e) => setPeriod({ weeklyCutoff: Number(e.target.value) })}>
+                      {WEEKDAYS.map(([n, label]) => <option key={n} value={n}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">Is paid on</span>
+                    <select className="inp" value={period.weeklyPayday}
+                            onChange={(e) => setPeriod({ weeklyPayday: Number(e.target.value) })}>
+                      {WEEKDAYS.map(([n, label]) => <option key={n} value={n}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">Which one</span>
+                    <select className="inp" value={period.after}
+                            onChange={(e) => setPeriod({ after: Number(e.target.value) })}>
+                      <option value={0}>The following one</option>
+                      <option value={1}>A week after that</option>
+                      <option value={2}>Two weeks after that</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              {period.kind === PERIOD.MONTHLY && (
+                <div className="pair" style={{ marginTop: 14 }}>
+                  <label className="field">
+                    <span className="eyebrow">Work in before the</span>
+                    <input className="inp" type="number" min="1" max="31" step="1"
+                           value={period.monthlyCutoff} onKeyDown={onKey}
+                           onChange={(e) => setPeriod({ monthlyCutoff: e.target.value })} />
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">Is paid on the</span>
+                    <input className="inp" type="number" min="1" max="31" step="1"
+                           value={period.monthlyPayday} onKeyDown={onKey}
+                           onChange={(e) => setPeriod({ monthlyPayday: e.target.value })} />
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">Which one</span>
+                    <select className="inp" value={period.after}
+                            onChange={(e) => setPeriod({ after: Number(e.target.value) })}>
+                      <option value={0}>The next one</option>
+                      <option value={1}>A month after that</option>
+                      <option value={2}>Two months after that</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              {/* Read back in words, with a real date against it. A schedule
+                  you cannot check is a schedule you cannot tell you have set
+                  up backwards, and the two weekday boxes are easy to swap. */}
+              <div className="hint">
+                {example ? (
+                  <>
+                    <strong>{example}</strong>{" "}
+                    {nextOne !== null && (
+                      <>Money for work handed in right now would arrive{" "}
+                        <strong>{new Date(nextOne).toLocaleDateString(undefined, {
+                          weekday: "long", day: "numeric", month: "long",
+                        })}</strong>.{" "}</>
+                    )}
+                    The hours ride from the day you submit a task; an acceptance reward rides
+                    from the day it is accepted, because until then there is no money to date.
+                  </>
+                ) : (
+                  <>
+                    No schedule, so nothing is forecast for {payee}. Set one and the Overview
+                    will say what lands and when.
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
 

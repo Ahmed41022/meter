@@ -43,6 +43,7 @@ export default function ProjectView({
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
   onSetEarningTasks, onSubmitTasks, onAnswerTasks, onReopenTasks, onRewardTasks,
+  payPeriod = null, onSetPayPeriod,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
@@ -730,6 +731,7 @@ export default function ProjectView({
         {settingsOpen && (
           <Settings project={project} projects={projects} onPatch={onPatch}
                     onDeleteProject={onDeleteProject} onSetStatus={onSetStatus}
+                    payPeriod={payPeriod} onSetPayPeriod={onSetPayPeriod} now={now}
                     hasRunningSession={!!running} />
         )}
       </div>

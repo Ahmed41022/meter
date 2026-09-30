@@ -73,10 +73,26 @@ export const setTaskStateMany = (state, projectId, taskIds, next, now) => {
           if (next == null) {
             delete copy.state;
             delete copy.stateAt;
-          } else {
-            copy.state = next;
-            copy.stateAt = now;
+            delete copy.submittedAt;
+            return copy;
           }
+          copy.state = next;
+          copy.stateAt = now;
+          /**
+           * When the work went in, kept apart from when it was answered.
+           *
+           * Two dates, because the two kinds of money ride different clocks:
+           * the hourly money is earned by submitting and the reward by being
+           * accepted, and those can be a fortnight apart. One field would be
+           * overwritten by the answer and would silently re-date the hours to
+           * a period they were never part of.
+           *
+           * Set once and then left alone, so an answer never moves it. A task
+           * reopened and handed in again starts a new one, which is right: it
+           * is genuinely going in on a different day.
+           */
+          if (next === TASK.SUBMITTED) copy.submittedAt = now;
+          else if (copy.submittedAt == null) copy.submittedAt = now;
           return copy;
         }),
       };

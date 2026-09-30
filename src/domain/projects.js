@@ -202,7 +202,7 @@ export const validateProject = ({ name, rate, perTask }, { needsRate = true, mod
  * "env building" is looking for `orion_env_building`, and a plain substring
  * match would not find it.
  */
-const fold = (s) => (s ?? "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+export const fold = (s) => (s ?? "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
 
 /** An empty query matches everything, rather than nothing: a cleared search box
  *  should show the list again, not an empty one. */

@@ -9,6 +9,23 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **A payday for each client, and a Getting paid panel that uses it.** You set
+  the schedule yourself — weekly (“work in before Monday is paid the following
+  Wednesday”) or monthly (“work in before the 1st is paid on the 15th”) — and
+  the Overview says what lands on which day. Knowing what you have earned and
+  knowing when it arrives are different questions, and the app only answered
+  the first.
+  - The schedule belongs to the **company**, not the project, so every project
+    under one client shares it instead of being kept in step by hand. Two
+    spellings of a name fold to one record, so two devices cannot end up with
+    two schedules that disagree.
+  - The hours ride from the day a task was **submitted**; an acceptance reward
+    rides from the day it was **accepted**. A reward still waiting on a
+    decision has no date at all and is reported apart, because “owed on
+    Wednesday” and “owed if they say yes” are different kinds of hope.
+  - Anything whose payday has passed drops off. It arrived, or it is a
+    conversation with the client rather than a forecast.
+
 - **Money says which task it was for.** Every earning names its task, in the
   list, in the CSV export and on the task itself. A row that read `$10.00 ·
   Per accepted item` told you an amount and a date, which is as much as a bank
