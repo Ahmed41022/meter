@@ -24,11 +24,26 @@
  *            clamp to its last day, so the 31st is the 28th in February
  *            rather than silently becoming the 3rd of March.
  *
+ * A cutoff is an INSTANT, not a day, because that is how the platforms state
+ * it: "the week closes Sunday 7pm Eastern" is a Sunday evening, and work
+ * handed in at nine that night is next week's. So a rule may carry the minute
+ * it closes and the zone that minute is read on — and the zone is the
+ * load-bearing half. Seven o'clock in New York is two in the morning in
+ * Cairo, so a cutoff typed as 19:00 without a zone would close seven hours
+ * early and push a whole evening's work a week late. Both are absent on older
+ * rules, which then mean midnight on this device's own clock: exactly what
+ * they meant before either field existed.
+ *
+ * The PAYDAY stays a date. Money arriving at nine or at five arrived the same
+ * day, and the platforms say as much — processing runs through the day.
+ *
  * Every date here is built from calendar fields and never by adding
  * milliseconds, for the same reason the rest of the app is: a week containing
  * a daylight-saving shift is 167 or 169 hours long, and a payday computed by
  * arithmetic would drift an hour every spring until it landed on the wrong
- * day entirely.
+ * day entirely. The same holds across zones, where the shift happens on a
+ * different date again — so an offset is never remembered, only ever read off
+ * the zone's own clock at the instant in question.
  *
  * Like the rest of `domain/`, nothing here reads the clock.
  */
@@ -44,28 +59,101 @@ export const WEEKDAYS = [
 ];
 
 const weekdayName = (n) => WEEKDAYS.find(([i]) => i === n)?.[1] ?? "";
-const isoDay = (t) => ((new Date(t).getDay() + 6) % 7) + 1;
-
-const startOfDay = (t) => {
-  const d = new Date(t);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-};
-
-const addDays = (t, n) => {
-  const d = new Date(t);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n).getTime();
-};
-
-/** The `day`th of a month, or its last day where the month is shorter. Day 0
- *  of the next month is the last day of this one. */
-const dayInMonth = (year, month, day) => {
-  const last = new Date(year, month + 1, 0).getDate();
-  return new Date(year, month, Math.min(Math.max(day, 1), last)).getTime();
-};
 
 const whole = (value, low, high, fallback = null) => {
   const n = Math.trunc(Number(value));
   return Number.isFinite(n) && n >= low && n <= high ? n : fallback;
+};
+
+/* ── calendar arithmetic, on this device's clock or on somebody else's ────── */
+
+/** The parts of an instant as a named zone's own clock reads them. */
+const zoneWall = (t, zone) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(t);
+  const got = {};
+  for (const p of parts) if (p.type !== "literal") got[p.type] = Number(p.value);
+  return got;
+};
+
+/**
+ * How far a zone stands from UTC at a given instant, in milliseconds.
+ *
+ * Read off the zone's own clock rather than from a table, so daylight saving
+ * needs no knowing — including the years a country changes its mind about it,
+ * which Egypt has done twice in a decade.
+ */
+const zoneOffset = (t, zone) => {
+  const w = zoneWall(t, zone);
+  return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second)
+    - Math.floor(t / 1000) * 1000;
+};
+
+/**
+ * The instant at which a zone's clock reads the given wall time.
+ *
+ * Inverting a zone takes two passes. The first offset is read at the wrong
+ * instant — the wall time treated as though it were already UTC — which lands
+ * within a day of the answer; the second is read within hours of it, close
+ * enough that only a daylight-saving change inside that gap could move it
+ * again. At the gap itself an hour does not exist and at the fold it happens
+ * twice; either answer is a defensible cutoff, and both are an hour from the
+ * one anybody would have guessed.
+ */
+const instantInZone = (y, month, day, minutes, zone) => {
+  const wall = Date.UTC(y, month, day, Math.floor(minutes / 60), minutes % 60);
+  const once = wall - zoneOffset(wall, zone);
+  return wall - zoneOffset(once, zone);
+};
+
+/** A day as the rule's own clock reads it: calendar fields and the weekday. */
+const dayOf = (t, zone) => {
+  if (!zone) {
+    const d = new Date(t);
+    return {
+      y: d.getFullYear(), m: d.getMonth(), d: d.getDate(),
+      iso: ((d.getDay() + 6) % 7) + 1,
+    };
+  }
+  const w = zoneWall(t, zone);
+  // The wall fields read back as UTC give the weekday on that clock, which is
+  // not this device's whenever the two are on opposite sides of midnight.
+  const asUtc = new Date(Date.UTC(w.year, w.month - 1, w.day));
+  return {
+    y: w.year, m: w.month - 1, d: w.day,
+    iso: ((asUtc.getUTCDay() + 6) % 7) + 1,
+  };
+};
+
+/** When a calendar day reaches `minutes` past midnight, on the rule's clock.
+ *  Day numbers may overflow their month and roll forward into the next. */
+const stamp = ({ y, m, d }, minutes, zone) => (zone
+  ? instantInZone(y, m, d, minutes, zone)
+  : new Date(y, m, d, Math.floor(minutes / 60), minutes % 60).getTime());
+
+const plusDays = (day, n) => ({ ...day, d: day.d + n });
+
+/** The `day`th of a month, or its last day where the month is shorter. */
+const clampDay = (y, m, day) =>
+  Math.min(Math.max(day, 1), new Date(y, m + 1, 0).getDate());
+
+const nextMonth = ({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 });
+
+/** A zone only where this device knows the name. An unknown one throws inside
+ *  `Intl` on every render, so it is dropped here and the rule falls back to
+ *  the local clock — hours out at worst, rather than a blank screen. */
+const knownZone = (value) => {
+  const name = String(value ?? "").trim();
+  if (!name) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return name;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -77,48 +165,71 @@ const whole = (value, low, high, fallback = null) => {
  */
 export const normalisePeriod = (rule) => {
   if (!rule) return null;
+  // Absent means midnight on this device's clock, which is what every rule
+  // written before these two fields existed already meant.
+  const when = { closesAt: whole(rule.closesAt, 0, 1439, 0), zone: knownZone(rule.zone) };
   if (rule.kind === PERIOD.WEEKLY) {
     const cutoff = whole(rule.cutoff, 1, 7);
     const payday = whole(rule.payday, 1, 7);
     if (cutoff === null || payday === null) return null;
-    return { kind: PERIOD.WEEKLY, cutoff, payday, after: whole(rule.after, 0, 8, 0) };
+    return { kind: PERIOD.WEEKLY, cutoff, payday, after: whole(rule.after, 0, 8, 0), ...when };
   }
   if (rule.kind === PERIOD.MONTHLY) {
     const cutoff = whole(rule.cutoff, 1, 31);
     const payday = whole(rule.payday, 1, 31);
     if (cutoff === null || payday === null) return null;
-    return { kind: PERIOD.MONTHLY, cutoff, payday, after: whole(rule.after, 0, 6, 0) };
+    return { kind: PERIOD.MONTHLY, cutoff, payday, after: whole(rule.after, 0, 6, 0), ...when };
   }
   return null;
 };
 
 /**
- * The start of the next `day` weekday STRICTLY after `at`.
+ * The next weekly cutoff STRICTLY after `at`.
  *
  * Strictly, because the rule says work in *before* the cutoff. Work recorded
  * at the exact instant the cutoff falls is not before it, and rounding that
  * the friendly way would quietly promise money a week early.
  */
-const nextWeekday = (day, at) => {
-  const candidate = addDays(startOfDay(at), (day - isoDay(at) + 7) % 7);
-  return candidate > at ? candidate : addDays(candidate, 7);
+const nextWeekly = ({ cutoff, closesAt, zone }, at) => {
+  const today = dayOf(at, zone);
+  const ahead = (cutoff - today.iso + 7) % 7;
+  const candidate = stamp(plusDays(today, ahead), closesAt, zone);
+  // Only a cutoff falling today can already have passed; any later day starts
+  // after `at` whatever minute it closes at.
+  return candidate > at ? candidate : stamp(plusDays(today, ahead + 7), closesAt, zone);
 };
 
-/** The first `day` weekday on or after `from`. On, because a period that
- *  closes on Monday and pays on Monday pays that same day. */
-const weekdayOnOrAfter = (day, from) =>
-  addDays(startOfDay(from), (day - isoDay(from) + 7) % 7);
-
-const nextMonthDay = (day, at) => {
-  const d = new Date(at);
-  const candidate = dayInMonth(d.getFullYear(), d.getMonth(), day);
-  return candidate > at ? candidate : dayInMonth(d.getFullYear(), d.getMonth() + 1, day);
+/** The first `day` weekday on or after the day `from` falls on. On, because a
+ *  period that closes on Monday and pays on Monday pays that same day. */
+const weekdayOnOrAfter = (day, from, zone) => {
+  const d = dayOf(from, zone);
+  return stamp(plusDays(d, (day - d.iso + 7) % 7), 0, zone);
 };
 
-const monthDayOnOrAfter = (day, from) => {
-  const d = new Date(from);
-  const candidate = dayInMonth(d.getFullYear(), d.getMonth(), day);
-  return candidate >= from ? candidate : dayInMonth(d.getFullYear(), d.getMonth() + 1, day);
+const addWeeks = (t, n, zone) =>
+  (n === 0 ? t : stamp(plusDays(dayOf(t, zone), n * 7), 0, zone));
+
+const nextMonthly = ({ cutoff, closesAt, zone }, at) => {
+  const d = dayOf(at, zone);
+  const here = stamp({ ...d, d: clampDay(d.y, d.m, cutoff) }, closesAt, zone);
+  if (here > at) return here;
+  const n = nextMonth(d);
+  return stamp({ ...n, d: clampDay(n.y, n.m, cutoff) }, closesAt, zone);
+};
+
+/**
+ * The `day`th of the month on or after the day `from` falls on.
+ *
+ * Compared as day NUMBERS rather than as instants, so a period closing on the
+ * 1st at seven in the evening and paying on the 1st still pays that same day
+ * — which is what it says, and what it did before a cutoff could carry a time.
+ */
+const monthDayOnOrAfter = (day, from, zone) => {
+  const d = dayOf(from, zone);
+  const target = clampDay(d.y, d.m, day);
+  if (target >= d.d) return stamp({ ...d, d: target }, 0, zone);
+  const n = nextMonth(d);
+  return stamp({ ...n, d: clampDay(n.y, n.m, day) }, 0, zone);
 };
 
 /**
@@ -129,27 +240,64 @@ const monthDayOnOrAfter = (day, from) => {
  * close, not from the work: two tasks submitted on different days of the same
  * week are paid together, which is the whole reason a pay period exists.
  */
+/**
+ * The instant the current period shuts, or null without a rule.
+ *
+ * Exported for the editor, which has to be able to say what a cutoff set on
+ * somebody else's clock comes to on yours. "Sunday 19:00 New York" is not a
+ * fact anybody can act on until it reads as two o'clock on Monday morning.
+ */
+export const nextClose = (rule, at) => {
+  const r = normalisePeriod(rule);
+  if (!r || !Number.isFinite(at)) return null;
+  return r.kind === PERIOD.WEEKLY ? nextWeekly(r, at) : nextMonthly(r, at);
+};
+
 export const nextPayout = (rule, at) => {
   const r = normalisePeriod(rule);
   if (!r || !Number.isFinite(at)) return null;
   if (r.kind === PERIOD.WEEKLY) {
-    const closes = nextWeekday(r.cutoff, at);
-    return addDays(weekdayOnOrAfter(r.payday, closes), r.after * 7);
+    const closes = nextWeekly(r, at);
+    return addWeeks(weekdayOnOrAfter(r.payday, closes, r.zone), r.after, r.zone);
   }
-  const closes = nextMonthDay(r.cutoff, at);
-  const first = monthDayOnOrAfter(r.payday, closes);
+  const closes = nextMonthly(r, at);
+  const first = monthDayOnOrAfter(r.payday, closes, r.zone);
   if (!r.after) return first;
   // Counted from the payday NUMBER rather than from the clamped date, so a
   // rule paying on the 31st does not become the 28th for ever after it once
   // passes through February.
-  const d = new Date(first);
-  return dayInMonth(d.getFullYear(), d.getMonth() + r.after, r.payday);
+  const d = dayOf(first, r.zone);
+  const y = d.y + Math.floor((d.m + r.after) / 12);
+  const m = (d.m + r.after) % 12;
+  return stamp({ y, m, d: clampDay(y, m, r.payday) }, 0, r.zone);
 };
 
 const ordinal = (n) => {
   const tens = n % 100;
   if (tens >= 11 && tens <= 13) return `${n}th`;
   return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+};
+
+const clock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}`
+  + `:${String(minutes % 60).padStart(2, "0")}`;
+
+/** A zone named the way somebody would say it: the last path segment, with
+ *  the underscores the IANA database spells it with taken back out. */
+export const zoneLabel = (zone) =>
+  String(zone ?? "").split("/").pop().replace(/_/g, " ");
+
+/**
+ * The time of day the period closes, where there is one worth printing.
+ *
+ * Silent for a plain midnight cutoff on the local clock, so a rule that has
+ * never been given a time reads exactly as it did before it could have one.
+ * A zone always prints its time, even midnight: once another clock is in play
+ * the hour is the whole point.
+ */
+const closing = (r) => {
+  if (!r.closesAt && !r.zone) return "";
+  const time = ` at ${clock(r.closesAt)}`;
+  return r.zone ? `${time} ${zoneLabel(r.zone)} time` : time;
 };
 
 /** The rule in words, for the editor. A schedule you cannot read back is a
@@ -159,10 +307,12 @@ export const describePeriod = (rule) => {
   if (!r) return "";
   if (r.kind === PERIOD.WEEKLY) {
     const later = r.after === 0 ? "the following" : `the ${ordinal(r.after + 1)}`;
-    return `Work in before ${weekdayName(r.cutoff)} is paid ${later} ${weekdayName(r.payday)}.`;
+    return `Work in before ${weekdayName(r.cutoff)}${closing(r)}`
+      + ` is paid ${later} ${weekdayName(r.payday)}.`;
   }
   const later = r.after === 0 ? "" : ` ${r.after} month${r.after === 1 ? "" : "s"} later`;
-  return `Work in before the ${ordinal(r.cutoff)} is paid on the ${ordinal(r.payday)}${later}.`;
+  return `Work in before the ${ordinal(r.cutoff)}${closing(r)}`
+    + ` is paid on the ${ordinal(r.payday)}${later}.`;
 };
 
 /* ── the company record the rule lives on ─────────────────────────────────── */

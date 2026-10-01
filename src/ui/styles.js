@@ -188,6 +188,17 @@ export const CSS = `
   background:var(--jade-soft);color:var(--jade);border-radius:999px;padding:5px 12px;
   border:0;cursor:pointer;font-family:inherit;}
 .chip:hover{background:var(--jade-soft-hi);}
+
+/* Ordering the task list. Quiet until chosen: four filled pills would
+   outshout the rows they only arrange, and the one in use has to be obvious
+   at a glance or the list reads as sorted by nothing at all. */
+.sortbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:-4px 0 12px;}
+.sortbtn{font-family:inherit;font-size:12px;font-weight:600;padding:5px 11px;
+  border-radius:999px;border:1px solid var(--line-2);background:none;
+  color:var(--muted);cursor:pointer;}
+.sortbtn:hover:not(.on){border-color:var(--line-hi);color:var(--ink-2);}
+.sortbtn.on{background:var(--jade-soft);border-color:var(--jade);color:var(--jade);}
+
 /* The filtered task's note, kept beside the sessions rather than above them. */
 .filter-note{margin:10px 0 12px;padding:10px 13px;border-radius:10px;
   background:var(--raise);border:1px solid var(--line-2);
