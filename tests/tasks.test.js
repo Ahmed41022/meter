@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
   resolveTaskId, sessionsUnderTask, setTaskNote, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
-  parseTaskRate, taskRateInput, UNASSIGNED,
+  parseTaskRate, taskRateInput, ORDER, sortTaskRows, UNASSIGNED,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -531,5 +531,72 @@ describe("a note on a task", () => {
     s = addTask(s, "p1", { id: "t2", label: "1235" }, T);
     s = setTaskNote(s, "p1", "t1", "only mine");
     expect(findTask(proj(s), "t2")).not.toHaveProperty("note");
+  });
+});
+
+describe("reading the task list in a chosen order", () => {
+  /*
+   * Rows built by hand rather than driven through sessions. The sort is a
+   * pure function of four fields, and a fixture that had to earn each one
+   * through a meter would hide which field each assertion is about.
+   */
+  const row = (taskId, billedCents, billedMs, idleMs, submittedAt) => ({
+    taskId, label: taskId, billedCents, billedMs, idleMs, submittedAt,
+  });
+
+  //          id     earned  billed      idle       handed in
+  const rows = [
+    row("big", 30_000, 2 * HOUR, 0, T + 3 * HOUR),
+    row("slow", 20_000, 9 * HOUR, 5 * HOUR, T + 1 * HOUR),
+    row("quick", 10_000, 1 * HOUR, 1 * HOUR, T + 5 * HOUR),
+    row("open", 5_000, 4 * HOUR, 0, undefined),
+  ];
+  const ids = (list) => list.map((r) => r.taskId);
+
+  it("leaves the order alone when asked for one it does not have", () => {
+    expect(sortTaskRows(rows, "whatever")).toBe(rows);
+  });
+
+  it("orders by what a task is worth", () => {
+    expect(ids(sortTaskRows(rows, ORDER.PAY))).toEqual(["big", "slow", "quick", "open"]);
+    expect(ids(sortTaskRows(rows, ORDER.PAY, false))).toEqual(["open", "quick", "slow", "big"]);
+  });
+
+  it("takes the amount from whoever asked, not from the clock alone", () => {
+    // On work paid per accepted item the hours earn nothing by the hour, so
+    // the caller supplies what the row is actually worth. Reversing the
+    // figures must reverse the list.
+    const payOf = (r) => -r.billedCents;
+    expect(ids(sortTaskRows(rows, ORDER.PAY, true, payOf)))
+      .toEqual(["open", "quick", "slow", "big"]);
+  });
+
+  it("orders by the day the work went in", () => {
+    expect(ids(sortTaskRows(rows, ORDER.SUBMITTED))).toEqual(["quick", "big", "slow", "open"]);
+  });
+
+  it("keeps a task that was never handed in at the bottom either way round", () => {
+    /*
+     * The absence of a date is not an early date. Reversing "handed in"
+     * should bring the oldest submission to the top — not every task that has
+     * no submission at all, which would bury the answer under the rows that
+     * cannot have it.
+     */
+    expect(ids(sortTaskRows(rows, ORDER.SUBMITTED, false)))
+      .toEqual(["slow", "big", "quick", "open"]);
+  });
+
+  it("orders by the hours and by the hours lost", () => {
+    expect(ids(sortTaskRows(rows, ORDER.TIME))).toEqual(["slow", "open", "big", "quick"]);
+    expect(ids(sortTaskRows(rows, ORDER.IDLE))).toEqual(["slow", "quick", "big", "open"]);
+    // Two tasks with no idle time at all keep the order they came in, which is
+    // the earned-first one the breakdown already returns.
+    expect(ids(sortTaskRows(rows, ORDER.IDLE)).slice(2)).toEqual(["big", "open"]);
+  });
+
+  it("does not disturb the list it was given", () => {
+    const before = ids(rows);
+    sortTaskRows(rows, ORDER.TIME);
+    expect(ids(rows)).toEqual(before);
   });
 });

@@ -6,20 +6,25 @@
  * written down would be wrong the moment a schedule changed, and it would be
  * wrong silently.
  *
- * The two kinds of money ride different clocks, because they are earned by
- * different events:
+ * Both kinds of money belong to the period the work was SUBMITTED in. That is
+ * the platforms' own rule, stated plainly: a task straddling two pay periods
+ * counts toward the week you handed it in, not the week somebody got round to
+ * reviewing it. A reward is therefore not scheduled from the day the answer
+ * came back —
  *
- *   HOURLY  earned by SUBMITTING. The work was done and delivered, so it is
- *           scheduled from the day it went in, whatever anyone later decides
- *           about it.
- *   REWARD  earned by ACCEPTANCE. It is scheduled from the day the answer came
- *           back, because until then there is no money to schedule and a date
- *           printed against it would be a promise nobody made.
+ *   HOURLY  earned by submitting, and dated from it. Whatever anyone later
+ *           decides about the work, the hours went in when they went in.
+ *   REWARD  earned by ACCEPTANCE but dated from submission, because the
+ *           period it falls in was settled the day the work was handed over.
+ *           With one exception, which is the whole subtlety: a decision that
+ *           arrives after that period's money has already gone out cannot be
+ *           in it. Then, and only then, it rides to the next payday after the
+ *           answer — the next run that can still carry it.
  *
- * A reward still waiting on a decision therefore has no date at all, and is
- * reported apart rather than folded into a total that reads as expected
- * income. That distinction is the point of the panel: "owed on Wednesday" and
- * "owed if they say yes" are different kinds of hope.
+ * A reward still waiting on a decision has no date at all, and is reported
+ * apart rather than folded into a total that reads as expected income. That
+ * distinction is the point of the panel: "owed on Wednesday" and "owed if
+ * they say yes" are different kinds of hope.
  *
  * Anything whose payday has already passed is left out. It arrived, or it is a
  * conversation with the client rather than a forecast.
@@ -49,6 +54,29 @@ const hourlyCents = (sessions, project, taskId, now) => sessions
 const into = (map, key, seed) => {
   if (!map.has(key)) map.set(key, { ...seed, cents: 0, items: 0 });
   return map.get(key);
+};
+
+/**
+ * When an accepted reward arrives.
+ *
+ * The payday of the period the work was SUBMITTED in — unless that payday had
+ * already come by the time the answer did, in which case the money could not
+ * have been on it and goes out on the next run after the decision.
+ *
+ * What matters is the PAYDAY, not the period. A period closing on Monday and
+ * paying on Wednesday is shut by Monday lunchtime, but the money has not gone
+ * anywhere yet: an acceptance that afternoon still makes that Wednesday.
+ * Comparing the two periods instead would push it a week out, which is the
+ * same off-by-one-payday mistake in a different place.
+ *
+ * A decision landing on the payday itself waits for the next run. Processing
+ * takes the day, so it might just make it — but a forecast that promises
+ * money early is worse than one that is a week pessimistic once.
+ */
+const rewardPayday = (rule, wentIn, answered) => {
+  const onSubmission = nextPayout(rule, wentIn);
+  if (onSubmission === null) return nextPayout(rule, answered);
+  return answered <= onSubmission ? onSubmission : nextPayout(rule, answered);
 };
 
 /**
@@ -95,9 +123,10 @@ export const upcomingPay = (state, now) => {
         }
       }
 
-      // The reward, scheduled from the day the answer came back — and only
-      // then. One line per task, since a reward shared across many is not
-      // this task's to schedule.
+      // The reward, scheduled from the period the work went in and only
+      // carried forward where that period has already paid out. One line per
+      // task, since a reward shared across many is not this task's to
+      // schedule.
       for (const earning of earnings) {
         if (tasksOf(earning).length !== 1 || tasksOf(earning)[0] !== task.id) continue;
         if (isPending(earning)) {
@@ -110,7 +139,7 @@ export const upcomingPay = (state, now) => {
           continue;
         }
         if (status !== TASK.ACCEPTED || !Number.isFinite(answered)) continue;
-        const at = nextPayout(rule, answered);
+        const at = rewardPayday(rule, Number.isFinite(wentIn) ? wentIn : answered, answered);
         if (at === null || at < today) continue;
         const row = into(due, `${company}|${at}|${earning.currency}`,
                          { company, at, currency: earning.currency });

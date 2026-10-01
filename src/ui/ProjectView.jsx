@@ -9,11 +9,12 @@ import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import {
   PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
-  perTask, priceFor, tasksOf,
+  perTask, priceFor, taskPay, tasksOf,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
-  findTask, rateFor, sessionsUnderTask, taskLabel, taskTotals, UNASSIGNED,
+  ORDER, ORDERS, findTask, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
+  taskTotals, UNASSIGNED,
 } from "../domain/tasks.js";
 import TaskPrompt from "./TaskPrompt.jsx";
 import TaskBreakdown from "./TaskBreakdown.jsx";
@@ -60,6 +61,10 @@ export default function ProjectView({
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
   const [bulkPrompt, setBulkPrompt] = useState(false);
   const [pickedTasks, setPickedTasks] = useState([]); // task ids picked for settling
+  // How the task list reads. Most-earned-first to begin with, as it always
+  // was; the other orders answer questions that one cannot.
+  const [order, setOrder] = useState(ORDER.PAY);
+  const [orderDesc, setOrderDesc] = useState(true);
   const [editingTask, setEditingTask] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
   const focusRow = useRef(null);
@@ -140,8 +145,8 @@ export default function ProjectView({
   const toggleSelect = (id) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
-  const taskRows = taskTotals(project, [...sessions, ...idleSessions], now);
-  const hasTasks = taskRows.some((r) => r.taskId);
+  const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now);
+  const hasTasks = rawTaskRows.some((r) => r.taskId);
 
   /**
    * Whether a task on this project is the kind of thing that gets accepted.
@@ -151,7 +156,25 @@ export default function ProjectView({
    * task. Anywhere else, "not claimed" against a task would be a warning
    * about money that was never owed, on every row, forever.
    */
-  const accepts = settles || hasReward(project) || taskRows.some((r) => r.price != null);
+  const accepts = settles || hasReward(project) || rawTaskRows.some((r) => r.price != null);
+
+  /**
+   * What a task is worth, for ordering by it.
+   *
+   * The clock's money plus whatever reward names this task and this task
+   * alone. A shared reward is left out rather than divided, exactly as the row
+   * itself leaves it out: a fiftieth of a milestone payment is not a figure
+   * anybody quoted, and sorting by it would rank rows on an invented number.
+   */
+  const payOf = (r) => {
+    if (!r.taskId || !accepts) return r.billedCents;
+    const pay = taskPay(earnings, r.taskId);
+    return r.billedCents + pay.settled + pay.pending;
+  };
+  // Off the clock there is no amount to sort by — the money columns are not
+  // merely zero there, they are absent.
+  const orders = offClock ? ORDERS.filter(([key]) => key !== ORDER.PAY) : ORDERS;
+  const taskRows = sortTaskRows(rawTaskRows, order, orderDesc, payOf);
   const pickable = taskRows.filter((r) => r.taskId).map((r) => r.taskId);
   const toggleTask = (id) =>
     setPickedTasks((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -476,6 +499,27 @@ export default function ProjectView({
               </span>
             )}
           </div>
+
+          {/* How the list reads. Quiet until chosen, because the sort is a
+              tool you reach for rather than a figure to be read. Clicking the
+              order already on turns it round — "least idle first" is a real
+              question and does not deserve a control of its own. */}
+          {taskRows.length > 1 && (
+            <div className="sortbar" role="group" aria-label="Order the tasks by">
+              <span className="eyebrow">Sort</span>
+              {orders.map(([key, label]) => (
+                <button key={key} className={"sortbtn" + (order === key ? " on" : "")}
+                        aria-pressed={order === key}
+                        onClick={() => {
+                          if (order === key) setOrderDesc((v) => !v);
+                          else { setOrder(key); setOrderDesc(true); }
+                        }}>
+                  {label}
+                  {order === key && <span aria-hidden="true">{orderDesc ? " ↓" : " ↑"}</span>}
+                </button>
+              ))}
+            </div>
+          )}
 
           {accepts && pickedTasks.length > 0 && (
             <TaskSettle

@@ -263,3 +263,61 @@ export const taskTotals = (project, sessions, now) => {
     (a, b) => b.billedCents - a.billedCents || b.billedMs - a.billedMs
   );
 };
+
+/* ── reading the list in a different order ────────────────────────────────── */
+
+/**
+ * The questions a list of tasks gets asked.
+ *
+ * Most-earned-first answers "what is this project actually worth", which is
+ * why it is the order `taskTotals` returns. But it is one question of four,
+ * and the other three are not reachable from it: which batch is still owed
+ * and when it went in, where the hours went, and where they leaked. A fixed
+ * order quietly decides that only the first of those is ever worth asking.
+ */
+export const ORDER = {
+  PAY: "pay", SUBMITTED: "submitted", TIME: "time", IDLE: "idle",
+};
+
+export const ORDERS = [
+  [ORDER.PAY, "Amount"],
+  [ORDER.SUBMITTED, "Handed in"],
+  [ORDER.TIME, "Time taken"],
+  [ORDER.IDLE, "Idle"],
+];
+
+const ORDER_OF = {
+  [ORDER.PAY]: (row, payOf) => payOf(row),
+  [ORDER.SUBMITTED]: (row) => row.submittedAt,
+  [ORDER.TIME]: (row) => row.billedMs,
+  [ORDER.IDLE]: (row) => row.idleMs,
+};
+
+const absent = (v) => !Number.isFinite(v);
+
+/**
+ * Task rows in a chosen order.
+ *
+ * Rows with nothing to compare sink to the bottom whichever way round the
+ * sort is pointing. Reversing "handed in" should bring the oldest submission
+ * to the top, not forty tasks that were never handed in at all — the absence
+ * of a date is not an early date, and treating it as one would bury the
+ * answer under every row that cannot have one.
+ *
+ * Ties keep the order they arrived in, which is `taskTotals`' own earned-first
+ * one, so a column of equal zeroes still reads sensibly underneath.
+ */
+export const sortTaskRows = (rows, order, desc = true, payOf = (r) => r.billedCents) => {
+  const value = ORDER_OF[order];
+  if (!value) return rows;
+  return rows
+    .map((row, i) => ({ row, i, v: value(row, payOf) }))
+    .sort((a, b) => {
+      if (absent(a.v) || absent(b.v)) {
+        if (absent(a.v) && absent(b.v)) return a.i - b.i;
+        return absent(a.v) ? 1 : -1;
+      }
+      return (desc ? b.v - a.v : a.v - b.v) || a.i - b.i;
+    })
+    .map((k) => k.row);
+};

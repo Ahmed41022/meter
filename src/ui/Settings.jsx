@@ -3,7 +3,9 @@ import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
-import { PERIOD, WEEKDAYS, describePeriod, nextPayout } from "../domain/payPeriod.js";
+import {
+  PERIOD, WEEKDAYS, describePeriod, nextClose, nextPayout,
+} from "../domain/payPeriod.js";
 
 /**
  * What the form holds, in the shape the inputs want — strings, because that is
@@ -11,6 +13,46 @@ import { PERIOD, WEEKDAYS, describePeriod, nextPayout } from "../domain/payPerio
  * there is anything to save, without having to guess how the ledger normalised
  * the last answer.
  */
+/** A minute of the day as `<input type="time">` wants it, and back. */
+const timeText = (minutes) => `${String(Math.floor((minutes ?? 0) / 60)).padStart(2, "0")}`
+  + `:${String((minutes ?? 0) % 60).padStart(2, "0")}`;
+const minutesOf = (text) => {
+  const [h, m] = String(text ?? "").split(":");
+  const n = Number(h) * 60 + Number(m);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * The clocks a cutoff can be read on.
+ *
+ * The device's own comes first, because that is what a rule with no zone
+ * means and what most people want. Then the handful the platforms actually
+ * quote their cutoffs in, then everything the browser knows — four hundred
+ * entries nobody scrolls through, but the one zone somebody needs is always
+ * among them, and a select types ahead.
+ */
+const QUOTED_ZONES = [
+  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+  "UTC", "Europe/London", "Europe/Berlin", "Asia/Kolkata", "Asia/Singapore",
+  "Australia/Sydney",
+];
+const localZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+};
+const allZones = () => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return QUOTED_ZONES;
+  }
+};
+const ZONES = allZones();
+const HERE = localZone();
+
 /** A schedule in the shape the selects want, with both kinds' answers kept
  *  side by side so switching between them to compare loses neither. */
 const periodForm = (rule) => ({
@@ -20,12 +62,21 @@ const periodForm = (rule) => ({
   monthlyCutoff: rule?.kind === PERIOD.MONTHLY ? String(rule.cutoff) : "1",
   monthlyPayday: rule?.kind === PERIOD.MONTHLY ? String(rule.payday) : "15",
   after: rule?.after ?? 0,
+  // Shared by both kinds: when in the day the period closes, and on whose
+  // clock. Empty means this device's, which is what an unset rule has always
+  // meant.
+  closesAt: timeText(rule?.closesAt ?? 0),
+  zone: rule?.zone ?? "",
 });
 
 /** The selects back into a rule the domain will accept, or null for none. */
 const periodOf = (f) => {
+  const when = { closesAt: minutesOf(f.closesAt), zone: f.zone || null };
   if (f.kind === PERIOD.WEEKLY) {
-    return { kind: PERIOD.WEEKLY, cutoff: f.weeklyCutoff, payday: f.weeklyPayday, after: f.after };
+    return {
+      kind: PERIOD.WEEKLY, cutoff: f.weeklyCutoff, payday: f.weeklyPayday,
+      after: f.after, ...when,
+    };
   }
   if (f.kind === PERIOD.MONTHLY) {
     return {
@@ -33,6 +84,7 @@ const periodOf = (f) => {
       cutoff: Number(f.monthlyCutoff),
       payday: Number(f.monthlyPayday),
       after: f.after,
+      ...when,
     };
   }
   return null;
@@ -86,6 +138,14 @@ export default function Settings({
   const rule = periodOf(period);
   const example = describePeriod(rule);
   const nextOne = rule ? nextPayout(rule, now) : null;
+  /**
+   * The cutoff instant on this device's clock, where that is worth saying.
+   *
+   * Only when another zone is named and it is not this one: "19:00 your time
+   * is 19:00 your time" is noise, and the whole point of printing it is the
+   * cases where seven in the evening is two in the morning.
+   */
+  const closesHere = period.zone && period.zone !== HERE ? nextClose(rule, now) : null;
   // A rate that is not a number above zero has never been applied, and with an
   // explicit Save that silence would read as the button not working.
   const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
@@ -368,6 +428,35 @@ export default function Settings({
                 </div>
               )}
 
+              {/* When in the day the period shuts, and on whose clock.
+                  Shared by both kinds, because both have the same problem:
+                  "closes Sunday 7pm Eastern" is an instant, and read on the
+                  wrong clock it is hours out — which for a cutoff is not
+                  hours, it is a whole payday. */}
+              {period.kind !== "none" && (
+                <div className="pair" style={{ marginTop: 14 }}>
+                  <label className="field">
+                    <span className="eyebrow">Closing at</span>
+                    <input className="inp" type="time" value={period.closesAt}
+                           onChange={(e) => setPeriod({ closesAt: e.target.value })} />
+                  </label>
+                  <label className="field">
+                    <span className="eyebrow">By which clock</span>
+                    <select className="inp" value={period.zone}
+                            onChange={(e) => setPeriod({ zone: e.target.value })}>
+                      <option value="">Mine{HERE ? ` — ${HERE}` : ""}</option>
+                      <optgroup label="Commonly quoted">
+                        {QUOTED_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+                      </optgroup>
+                      <optgroup label="Everywhere else">
+                        {ZONES.filter((z) => !QUOTED_ZONES.includes(z))
+                          .map((z) => <option key={z} value={z}>{z}</option>)}
+                      </optgroup>
+                    </select>
+                  </label>
+                </div>
+              )}
+
               {/* Read back in words, with a real date against it. A schedule
                   you cannot check is a schedule you cannot tell you have set
                   up backwards, and the two weekday boxes are easy to swap. */}
@@ -381,8 +470,19 @@ export default function Settings({
                           weekday: "long", day: "numeric", month: "long",
                         })}</strong>.{" "}</>
                     )}
-                    The hours ride from the day you submit a task; an acceptance reward rides
-                    from the day it is accepted, because until then there is no money to date.
+                    Both the hours and the acceptance reward ride from the day you submit a
+                    task, because that is the period the work belongs to — a decision arriving
+                    after that payday has gone rides to the next one instead.
+                    {closesHere !== null && (
+                      <>
+                        {" "}The cutoff is read in {period.zone}, so the period you are in
+                        now shuts at{" "}
+                        <strong>{new Date(closesHere).toLocaleString(undefined, {
+                          weekday: "long", hour: "2-digit", minute: "2-digit",
+                        })}</strong>{" "}
+                        your time — that instant, not the hour you typed.
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
