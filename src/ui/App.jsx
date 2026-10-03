@@ -12,8 +12,8 @@ import {
   addProject, liveProjects, patchProject, removeProject, setStatus,
 } from "../domain/projects.js";
 import {
-  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, removeEarning,
-  restoreEarning, setEarningTasks, setPayState, setPayStateMany,
+  EARNING, PAY, addEarning, earningsFor, isPerTask, liveEarnings, paysOnAcceptance,
+  removeEarning, restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
   addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
@@ -657,7 +657,12 @@ export default function App({ store: injectedStore }) {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? submitTasks(s, live, taskIds, Date.now(), uid, at) : s;
               });
-              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} submitted. Hours closed, reward pending.`,
+              // What submitting did depends on how the project pays, and the
+              // two outcomes are not close enough to share a sentence.
+              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} submitted. `
+                    + (paysOnAcceptance(project)
+                      ? "The clock is closed; nothing is earned until they are accepted."
+                      : "The clock is closed and the hours are settled."),
                     "Undo", () => commit(() => snapshot));
             }}
             onAnswerTasks={(taskIds, answer, at) => {
@@ -666,23 +671,27 @@ export default function App({ store: injectedStore }) {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? answerTasks(s, live, taskIds, answer, at ?? Date.now()) : s;
               });
+              const count = `${taskIds.length} task${taskIds.length === 1 ? "" : "s"}`;
               flash(
                 answer === TASK.ACCEPTED
-                  ? `${taskIds.length} task${taskIds.length === 1 ? "" : "s"} accepted. Reward paid.`
-                  : `${taskIds.length} task${taskIds.length === 1 ? "" : "s"} rejected. The hours stay paid.`,
+                  ? `${count} accepted. The hours and the reward are paid.`
+                  : `${count} rejected. The money is cancelled; the hours stay on the record.`,
                 "Undo", () => commit(() => snapshot),
               );
             }}
-            /* Only the state moves. What was already paid for the work is a
-               separate fact, and reversing it quietly would be the ledger
-               changing behind you. */
+            /* Settled money stays where it is: reversing it quietly would be
+               the ledger changing behind you. Hours a rejection cancelled do
+               come back, because an open task is one being worked on and
+               reopening is exactly what undoes that rejection. */
             onReopenTasks={(taskIds) => {
               const snapshot = stateRef.current;
               commit((s) => {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? reopenTasks(s, live, taskIds, Date.now()) : s;
               });
-              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} reopened. The money is untouched.`,
+              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} reopened. `
+                    + "They take time again; settled money is untouched and hours a "
+                    + "rejection cancelled are back.",
                     "Undo", () => commit(() => snapshot));
             }}
             /* One payment for the whole batch — "finish fifty and we pay you

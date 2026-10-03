@@ -470,9 +470,10 @@ export default function Settings({
                           weekday: "long", day: "numeric", month: "long",
                         })}</strong>.{" "}</>
                     )}
-                    Both the hours and the acceptance reward ride from the day you submit a
-                    task, because that is the period the work belongs to — a decision arriving
-                    after that payday has gone rides to the next one instead.
+                    A task is paid in the run for the period its ANSWER fell in, hours and
+                    acceptance reward together — so one accepted after its own period shut
+                    rides the next run. Work nobody has reviewed yet has no date at all,
+                    only the soonest it could arrive.
                     {closesHere !== null && (
                       <>
                         {" "}The cutoff is read in {period.zone}, so the period you are in
@@ -528,6 +529,16 @@ export default function Settings({
           <span className="savebar-note quiet">Saved</span>
         )}
       </div>
+
+      {/* The bar is the boundary between the two halves of this panel, and
+          saying so is the difference between "nothing happened" and "it has
+          already happened". Everything above is typed and staged; everything
+          below is one click with an immediate consequence, which is why it
+          has no Save of its own to go looking for. */}
+      <p className="hint" style={{ marginTop: 10 }}>
+        Everything above here is saved together with that button. Everything below takes
+        effect the moment you press it.
+      </p>
 
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Counts as</span>

@@ -783,7 +783,7 @@ describe("re-filing old sessions", () => {
     const { window } = dom;
     const d = await open(dom);
 
-    const boxes = [...d.querySelectorAll(".row-check")];
+    const boxes = [...d.querySelectorAll(".row .row-check")];
     boxes[0].click();
     boxes[2].click();
     await wait(180);
@@ -811,7 +811,7 @@ describe("re-filing old sessions", () => {
     const d = await open(dom);
     const before = JSON.parse(window.localStorage.getItem("meter:v1")).sessions[0];
 
-    d.querySelectorAll(".row-check")[0].click();
+    d.querySelectorAll(".row .row-check")[0].click();
     await wait(150);
     btn(d, /Assign to task/i).click();
     await wait(180);
@@ -826,6 +826,42 @@ describe("re-filing old sessions", () => {
     expect(after.taskId).not.toBeNull();
   }, 30_000);
 
+  it("lets a plain hourly project turn work down", async () => {
+    /*
+     * Acme pays by the hour, as worked, with no acceptance reward and no
+     * per-item price. Offering the lifecycle only where money is claimed per
+     * task left this project unable to mark anything rejected at all - and a
+     * project paid once accepted but with no uplift, which is the ordinary
+     * shape of an hourly rate plus a review, could not even submit.
+     *
+     * Rejecting here cancels the money and keeps the hours, exactly as it
+     * does anywhere else.
+     */
+    const tasks = [{ id: "t1", label: "1234", createdAt: Date.now() }];
+    const dom = await boot(seed({ tasks, assign: ["t1", "t1", "t1", "t1"] }));
+    const { window } = dom;
+    const d = await open(dom);
+
+    d.querySelector(".trow .row-check").click();
+    await wait(200);
+    btn(d, /^Submit 1$/).click();
+    await wait(300);
+    expect(JSON.parse(window.localStorage.getItem("meter:v1"))
+      .projects[0].tasks[0].state).toBe("submitted");
+
+    d.querySelector(".trow .row-check").click();
+    await wait(200);
+    btn(d, /^Rejected 1$/).click();
+    await wait(300);
+
+    const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
+    expect(saved.projects[0].tasks[0].state).toBe("cancelled");
+    expect(saved.sessions.filter((x) => x.taskId === "t1")
+      .every((x) => x.status === "cancelled")).toBe(true);
+    // The time is still there. Only the money went.
+    expect(saved.sessions.filter((x) => x.taskId === "t1")).toHaveLength(4);
+  }, 30_000);
+
   it("corrects a session filed under the wrong task", async () => {
     const tasks = [{ id: "t1", label: "1234", createdAt: Date.now() },
                    { id: "t2", label: "5678", createdAt: Date.now() }];
@@ -833,7 +869,7 @@ describe("re-filing old sessions", () => {
     const { window } = dom;
     const d = await open(dom);
 
-    d.querySelectorAll(".row-check")[1].click();
+    d.querySelectorAll(".row .row-check")[1].click();
     await wait(150);
     btn(d, /Assign to task/i).click();
     await wait(180);
@@ -862,7 +898,7 @@ describe("re-filing old sessions", () => {
     expect(amounts()["1234"]).toMatch(/900\.00/); // 2h
     expect(amounts()["5678"]).toMatch(/900\.00/);
 
-    d.querySelectorAll(".row-check")[0].click();
+    d.querySelectorAll(".row .row-check")[0].click();
     await wait(150);
     btn(d, /Assign to task/i).click();
     await wait(180);
