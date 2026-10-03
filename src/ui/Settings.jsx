@@ -570,10 +570,11 @@ export default function Settings({
             </button>
           </div>
           <div className="hint">
-            Paid once accepted means new sessions start out <strong>pending</strong>: their money
-            is reported on its own line rather than in your earnings. Submitting the task settles
-            it — delivering the work is what earns the hourly money — and the acceptance reward
-            waits separately until you hear back.
+            Paid once accepted means nothing counts as earned until somebody says yes. Sessions
+            start out <strong>pending</strong> and stay that way when you submit, reported on
+            their own line rather than in your earnings; the acceptance reward waits beside them.
+            Accepting pays both. A rejection cancels both, and the hours stay on the record with
+            their time and without their money.
           </div>
         </>
       )}

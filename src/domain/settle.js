@@ -80,10 +80,15 @@ const rewardNote = (project, taskId, billedMs) => {
  * Tasks already in a state are skipped rather than recorded twice — ticking a
  * row that was submitted last week should not write it a second reward.
  *
- * The hourly settle and the reward are deliberately separate movements: one
- * says the clock money has landed, the other that a top-up is owed. A project
- * with no reward model at all still submits, still freezes, and still settles
- * its hours; it simply writes no extra line.
+ * Whether the hours are SETTLED here or merely frozen is the project's own
+ * answer. Where it is paid as worked, handing the work in is the last event
+ * that could matter and the money lands. Where it is paid once accepted,
+ * nothing has been earned yet: the work is delivered and under review, which
+ * is precisely what pending means, and calling it earned would book money
+ * that a rejection is about to take straight back out again.
+ *
+ * The reward is a separate movement either way, and always pending — whether
+ * a top-up lands is somebody else's decision and days away.
  *
  * `at` is the day the work actually went in; `now` is the clock. They are
  * separate because they answer different questions — `now` values the hours,
@@ -101,8 +106,9 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
 
   for (const taskId of open) {
     const billedMs = billedMsForTask(next, project.id, taskId, now);
-    // Every session under the task, pending or not. Marking an already
-    // settled one paid is a no-op, and asking first would cost a second pass.
+    // Every session under the task, whatever state it is in. The task's state
+    // decides what its money is worth, so moving them all leaves no row behind
+    // disagreeing with the rest of the batch.
     for (const s of sessionsUnder(next, project.id, taskId)) settling.push(s.id);
 
     const cents = acceptanceCents(project, findTask(project, taskId), billedMs);
@@ -120,7 +126,9 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
     }
   }
 
-  next = setPayStateMany(next, settling, PAY.PAID);
+  next = setPayStateMany(
+    next, settling, paysOnAcceptance(project) ? PAY.PENDING : PAY.PAID,
+  );
   return setTaskStateMany(next, project.id, open, TASK.SUBMITTED, at);
 };
 

@@ -25,6 +25,10 @@ const hourly = {
 const flat = { ...hourly, bonusPerHour: undefined, perTask: 10 };
 /** Paid by the hour with nothing extra on acceptance. */
 const plain = { ...hourly, bonusPerHour: undefined };
+/** Paid as the work happens, with acceptance deciding nothing about the
+ *  money. The hours land when they are handed in, because by then every event
+ *  that could affect them has happened. */
+const asWorked = { ...plain, paysOnAcceptance: false };
 
 const proj = (s) => s.projects[0];
 const seed = (project, taskId = "t1") =>
@@ -134,14 +138,38 @@ describe("submitting a batch", () => {
     expect(lines.map((e) => e.taskIds)).toEqual([["t1"], ["t2"]]);
   });
 
-  it("settles the hourly money, which submitting is what earns", () => {
+  it("leaves the hours pending where the money waits on acceptance", () => {
+    /*
+     * Handing work in is not being paid for it. On a project paid per
+     * accepted task the work is delivered and under review, which is exactly
+     * what pending means — booking it as earned would credit money that a
+     * rejection is about to take straight back out.
+     */
     let s = seed(hourly);
     s = worked(s, 3);
-    // Pending from the moment it started, because the project pays on
-    // acceptance.
     expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
     s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
+  });
+
+  it("settles the hours on submission where the work is paid as worked", () => {
+    // Nothing downstream can change what this is worth, so handing it in is
+    // the last event that matters and the money lands.
+    let s = seed(asWorked);
+    s = worked(s, 3);
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
     expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+  });
+
+  it("pays the hours out when the answer finally comes back yes", () => {
+    // The other half of leaving them pending: acceptance is what settles
+    // them, so the money is not stranded in pending for ever.
+    let s = seed(hourly);
+    s = worked(s, 3);
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PAID);
   });
 
   it("marks the task submitted", () => {
@@ -151,13 +179,14 @@ describe("submitting a batch", () => {
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.SUBMITTED);
   });
 
-  it("still submits and settles a project with no reward at all", () => {
+  it("still submits and moves the money for a project with no reward at all", () => {
     let s = seed(plain);
     s = worked(s, 3);
     s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
     expect(rewards(s)).toHaveLength(0);
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.SUBMITTED);
-    expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+    // No reward line, but the hours still follow the project's own rule.
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
   });
 
   it("will not write a second reward for a task already handed in", () => {
