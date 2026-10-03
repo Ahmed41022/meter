@@ -453,8 +453,11 @@ export default function DashboardView({
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">Upcoming payments</span>
+            {/* Only the answered money, and it says so. The rows below carry
+                dates of their own now, so a bare figure here would read as
+                their total and be short by everything still under review. */}
             <span className="eyebrow">
-              {pay.due.length === 0 ? "nothing dated" : payTotal}
+              {pay.due.length === 0 ? "nothing confirmed yet" : `${payTotal} confirmed`}
             </span>
           </div>
           <div className="panel">
@@ -470,21 +473,25 @@ export default function DashboardView({
               </div>
             ))}
             {pay.waiting.map((row) => (
-              <div className="trow" key={"w" + row.company + row.currency}>
+              <div className="trow" key={"w" + row.company + row.at + row.currency}>
                 <div>
-                  <div className="trow-label">Waiting on a decision</div>
+                  {/* The earliest it could come, never a date it is expected
+                      on. A review that lands after this day pushes the money
+                      to the next run, and nothing here knows when it will. */}
+                  <div className="trow-label owed">Not before {payDay(row.at)}</div>
                   <div className="trow-sub owed">
-                    {row.company || "No company"} · {row.items} reward{row.items === 1 ? "" : "s"}
-                    {" "}· no date until it is accepted
+                    {row.company || "No company"} · {row.items} waiting on a review
                   </div>
                 </div>
                 <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
               </div>
             ))}
             <div className="hint" style={{ marginBottom: 0 }}>
-              Dates come from each client&apos;s payday, set in a project&apos;s settings. The hours
-              ride from the day a task was submitted; a reward rides from the day it was
-              accepted. Anything whose payday has passed has dropped off.
+              Dates come from each client&apos;s payday, set in a project&apos;s settings, and
+              run from the day a task was handed in rather than the day it was answered.
+              Work still under review has no date, only a floor: it makes its own period
+              if somebody gets to it in time, and the next one if they do not. Anything
+              whose payday has passed has dropped off.
             </div>
           </div>
         </div>
