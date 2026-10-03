@@ -339,23 +339,30 @@ describe("what is coming in", () => {
     expect(upcomingPay(seeded(), T)).toEqual({ due: [], waiting: [] });
   });
 
-  it("dates the hourly money from the day the work went in", () => {
-    const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    const { due } = upcomingPay(s, T);
-    expect(due).toHaveLength(1);
-    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
-    expect(due[0].cents).toBe(24_000); // 3h at 80
-    expect(due[0].company).toBe("Outlier");
-  });
-
-  it("will not date a reward nobody has decided on yet", () => {
+  it("gives work still under review a floor, not a date", () => {
+    /*
+     * The rule turns on where the review falls relative to the payday, so
+     * until somebody has reviewed it the date is a fact about the future. It
+     * makes Wednesday the 7th if they get to it in time and the week after
+     * if they do not, and nothing here can know which.
+     */
     const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     const { due, waiting } = upcomingPay(s, T);
-    // The 3h bonus at 10/hr is real money, but it has no date and must not be
-    // folded into a figure that reads as expected income.
+    expect(due).toEqual([]);
     expect(waiting).toHaveLength(1);
-    expect(waiting[0].cents).toBe(3_000);
-    expect(due.every((r) => r.cents === 24_000)).toBe(true);
+    expect(day(waiting[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(waiting[0].company).toBe("Outlier");
+  });
+
+  it("keeps one task's money together while it waits", () => {
+    // The hours and the reward hang on the same answer, so putting half under
+    // a confident date and half under none said two things about one task.
+    const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].cents).toBe(27_000); // 3h at 80, plus 3h of the 10/hr uplift
+    // One task, however many lines its money is recorded on.
+    expect(waiting[0].items).toBe(1);
   });
 
   it("pays an accepted reward on the week the work went in, not the week it was read", () => {
@@ -440,10 +447,10 @@ describe("what is coming in", () => {
     const ticked = on(2026, 9, 30);
 
     const byTick = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
-    expect(day(upcomingPay(byTick, ticked).due[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(day(upcomingPay(byTick, ticked).waiting[0].at)).toBe(day(on(2026, 10, 7)));
 
     const byDay = submitTasks(seeded(), project, ["t1"], ticked, () => "e1", saturday);
-    expect(day(upcomingPay(byDay, ticked).due[0].at)).toBe(day(on(2026, 9, 30)));
+    expect(day(upcomingPay(byDay, ticked).waiting[0].at)).toBe(day(on(2026, 9, 30)));
   });
 
   it("still values the hours by the clock, not by the day chosen", () => {
@@ -452,16 +459,16 @@ describe("what is coming in", () => {
     const ticked = on(2026, 9, 30);
     const byTick = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
     const byDay = submitTasks(seeded(), project, ["t1"], ticked, () => "e1", on(2026, 9, 26));
-    const total = (x) => upcomingPay(x, ticked).due.reduce((n, r) => n + r.cents, 0);
+    const total = (x) => upcomingPay(x, ticked).waiting.reduce((n, r) => n + r.cents, 0);
     expect(total(byDay)).toBe(total(byTick));
   });
 
   it("lets a date recorded wrong be put right afterwards", () => {
     const ticked = on(2026, 9, 30);
     let s = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
-    expect(day(upcomingPay(s, ticked).due[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(day(upcomingPay(s, ticked).waiting[0].at)).toBe(day(on(2026, 10, 7)));
     s = setSubmittedAt(s, "p1", "t1", on(2026, 9, 26));
-    expect(day(upcomingPay(s, ticked).due[0].at)).toBe(day(on(2026, 9, 30)));
+    expect(day(upcomingPay(s, ticked).waiting[0].at)).toBe(day(on(2026, 9, 30)));
   });
 
   it("will not invent a handed-in date for a task still being worked", () => {
@@ -473,7 +480,7 @@ describe("what is coming in", () => {
     // One stateAt for both would have moved three hours of settled work into
     // a period it was never part of, silently, weeks after the fact.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    const beforeAnswer = upcomingPay(s, T).due.find((r) => r.cents === 24_000).at;
+    const beforeAnswer = upcomingPay(s, T).waiting[0].at;
     s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 20));
     const afterAnswer = upcomingPay(s, T).due.find((r) => r.cents === 24_000).at;
     expect(afterAnswer).toBe(beforeAnswer);
@@ -491,14 +498,14 @@ describe("what is coming in", () => {
   it("drops a payday that has already been and gone", () => {
     const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     // Looking back from a month later: that money arrived.
-    expect(upcomingPay(s, on(2026, 11, 20)).due).toEqual([]);
+    expect(upcomingPay(s, on(2026, 11, 20))).toEqual({ due: [], waiting: [] });
   });
 
   it("forecasts nothing for a company with no schedule", () => {
     let s = seeded();
     s = setPayPeriod(s, "Outlier", null, T);
     const after = submitTasks(s, project, ["t1"], T, () => "e1");
-    expect(upcomingPay(after, T).due).toEqual([]);
+    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [] });
   });
 
   it("sums a payday across tasks, because that is one payment", () => {
@@ -510,10 +517,11 @@ describe("what is coming in", () => {
       let n = 0;
       return () => `e${++n}`;
     })());
-    const { due } = upcomingPay(s, T);
-    expect(due).toHaveLength(1);
-    expect(due[0].items).toBe(2);
-    expect(due[0].cents).toBe(24_000 + 8_000);
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].items).toBe(2);
+    // Two tasks: 3h and 1h at 80, each with the 10/hr uplift beside it.
+    expect(waiting[0].cents).toBe(24_000 + 8_000 + 3_000 + 1_000);
   });
 
   it("keeps two clients on their own paydays", () => {
@@ -528,12 +536,12 @@ describe("what is coming in", () => {
     s = submitTasks(s, s.projects[0], ["t1"], T, () => "e1");
     s = submitTasks(s, s.projects[1], ["u1"], T, () => "e2");
 
-    const { due } = upcomingPay(s, T);
-    expect(due).toHaveLength(2);
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(2);
     // Soonest first: Outlier's Wednesday before Alignerr's Friday.
-    expect(due.map((r) => r.company)).toEqual(["Outlier", "Alignerr"]);
-    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
-    expect(day(due[1].at)).toBe(day(on(2026, 10, 9)));
+    expect(waiting.map((r) => r.company)).toEqual(["Outlier", "Alignerr"]);
+    expect(day(waiting[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(day(waiting[1].at)).toBe(day(on(2026, 10, 9)));
   });
 
   it("never mixes currencies into one figure", () => {
@@ -547,16 +555,16 @@ describe("what is coming in", () => {
     s = submitTasks(s, s.projects[0], ["t1"], T, () => "e1");
     s = submitTasks(s, s.projects[1], ["u1"], T, () => "e2");
 
-    const { due } = upcomingPay(s, T);
-    expect(due).toHaveLength(2);
-    expect(new Set(due.map((r) => r.currency))).toEqual(new Set(["USD", "EGP"]));
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(2);
+    expect(new Set(waiting.map((r) => r.currency))).toEqual(new Set(["USD", "EGP"]));
   });
 
   it("leaves off-clock time out, as every other earnings figure does", () => {
     let s = seeded();
     s.projects = [{ ...proj(s), offClock: true }];
     const after = submitTasks(s, proj(s), ["t1"], T, () => "e1");
-    expect(upcomingPay(after, T).due).toEqual([]);
+    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [] });
   });
 
   it("does not schedule a reward shared across many tasks", () => {
@@ -566,6 +574,10 @@ describe("what is coming in", () => {
       ...s,
       earnings: s.earnings.map((e) => ({ ...e, taskIds: ["t1", "other"], status: PAY.PENDING })),
     };
-    expect(upcomingPay(s, T).waiting).toEqual([]);
+    // The hours are still this task's and still waiting; the milestone is
+    // not, so the figure is 3h at 80 and nothing more.
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].cents).toBe(24_000);
   });
 });
