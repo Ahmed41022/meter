@@ -13,27 +13,28 @@
  * arriving after that period's money has already gone out cannot be in it,
  * and rides the next run that can still carry it.
  *
- * Which means an ANSWERED task has a date and an unanswered one does not, and
- * the reason is worth being exact about. The rule turns on where the review
- * falls relative to the payday, so until the review has happened the date is
- * a fact about the future. Submitted work pays on its submission week only if
- * somebody gets to it in time; miss that and it is the week after, or the one
- * after that. Printing the submission week's payday against it would be
- * forecasting somebody else's diary.
+ * Which means an ANSWERED task has a date and an unanswered one does not. A
+ * payout run covers the tasks accepted during a period, so the acceptance is
+ * the event that puts money in a particular run; until somebody has reviewed
+ * it, which run it makes is a fact about the future.
  *
  * So the panel reports two different things:
  *
- *   DUE      answered work. Accepted, dated, and as close to a promise as
- *            this app is willing to make.
+ *   DUE      answered work, dated from the period its answer fell in, and as
+ *            close to a promise as this app is willing to make.
  *   WAITING  submitted work, hours and reward together, because both turn on
  *            the same decision and splitting them put half a task's money
  *            under a confident date and half under none. It carries the
- *            EARLIEST day it could arrive rather than no date at all: that
- *            much is known — nothing can pay before its own period closes —
- *            and "not before Friday" is worth more than silence.
+ *            EARLIEST day it could arrive rather than no date at all: an
+ *            answer cannot come before now, so the period we are in is the
+ *            soonest it could make, and "not before Friday" is worth more
+ *            than silence.
  *
  * Rejected work appears in neither. It earns nothing, so there is nothing to
  * date.
+ *
+ * Each row carries the tasks behind it, so a figure can be opened and
+ * accounted for rather than taken on trust.
  *
  * Anything whose payday has already passed is left out. It arrived, or it is a
  * conversation with the client rather than a forecast.
@@ -70,37 +71,26 @@ const hourlyCents = (sessions, project, taskId, now) => sessions
  * would report a single task as two.
  */
 const into = (map, key, seed) => {
-  if (!map.has(key)) map.set(key, { ...seed, cents: 0, tasks: new Set() });
+  if (!map.has(key)) map.set(key, { ...seed, key, cents: 0, tasks: [] });
   return map.get(key);
 };
 
-/** The bucket as the rest of the app reads it: a count, not a set. */
-const rows = (map) => [...map.values()]
-  .map(({ tasks, ...row }) => ({ ...row, items: tasks.size }))
-  .sort((a, b) => a.at - b.at || a.company.localeCompare(b.company));
-
 /**
- * When an accepted reward arrives.
+ * The buckets as the panel reads them, biggest task first inside each.
  *
- * The payday of the period the work was SUBMITTED in — unless that payday had
- * already come by the time the answer did, in which case the money could not
- * have been on it and goes out on the next run after the decision.
- *
- * What matters is the PAYDAY, not the period. A period closing on Monday and
- * paying on Wednesday is shut by Monday lunchtime, but the money has not gone
- * anywhere yet: an acceptance that afternoon still makes that Wednesday.
- * Comparing the two periods instead would push it a week out, which is the
- * same off-by-one-payday mistake in a different place.
- *
- * A decision landing on the payday itself waits for the next run. Processing
- * takes the day, so it might just make it — but a forecast that promises
- * money early is worse than one that is a week pessimistic once.
+ * The key is prefixed with which list it came from, because a dated row and a
+ * not-before row can agree on company, day and currency — which is the common
+ * case, not a corner one — and anything keying off it would then treat the
+ * two as the same row.
  */
-const rewardPayday = (rule, wentIn, answered) => {
-  const onSubmission = nextPayout(rule, wentIn);
-  if (onSubmission === null) return nextPayout(rule, answered);
-  return answered <= onSubmission ? onSubmission : nextPayout(rule, answered);
-};
+const rows = (map, kind) => [...map.values()]
+  .map((row) => ({
+    ...row,
+    key: `${kind}|${row.key}`,
+    items: row.tasks.length,
+    tasks: [...row.tasks].sort((a, b) => b.cents - a.cents),
+  }))
+  .sort((a, b) => a.at - b.at || a.company.localeCompare(b.company));
 
 /**
  * Money with a date, and money still waiting on somebody.
@@ -126,49 +116,57 @@ export const upcomingPay = (state, now) => {
     for (const task of tasksFor(project)) {
       const status = taskState(task);
       if (status === null || status === TASK.CANCELLED) continue;
-      const wentIn = Number.isFinite(task.submittedAt) ? task.submittedAt : task.stateAt;
-      const answered = task.stateAt;
-      // Submitted and unanswered: the earliest it could land, which is its own
-      // period's payday. A review arriving after that pushes it further out,
-      // and there is no telling today which it will be.
       const pendingReview = status === TASK.SUBMITTED;
 
-      /**
-       * One task's money goes to one place.
+      /*
+       * The payday is the one for the period the ANSWER fell in.
        *
-       * While it waits on a review, the hours and the reward hang on the same
-       * answer, so they belong in the same row under the same caveat. Once it
-       * is answered they are both dated, and the whole point of dating them
-       * from submission is that they land together.
+       * Not the period the work was handed in during, which is the mistake
+       * this replaces. A task submitted on the Sunday and accepted on the
+       * Wednesday missed its own period: that period shut on the Monday, and
+       * the run it pays belongs to the batch that was already closed. Dating
+       * it from submission put the money on a payday that had been and gone,
+       * so it dropped off this panel as though it had already arrived.
+       *
+       * Nobody has answered a submitted task yet, so there is no such period
+       * to find. The earliest one there could be is the period we are in now,
+       * which makes its payday a floor — the soonest the money could land,
+       * never a date it is expected on.
        */
-      const file = (cents, cur, at) => {
-        if (cents <= 0 || at === null || at < today) return;
-        const [map, key] = pendingReview
-          ? [waiting, `${company}|${at}|${cur}`]
-          : [due, `${company}|${at}|${cur}`];
-        const row = into(map, key, { company, at, currency: cur });
-        row.cents += cents;
-        row.tasks.add(task.id);
+      const at = pendingReview
+        ? nextPayout(rule, now)
+        : nextPayout(rule, task.stateAt);
+      if (at === null || at < today) continue;
+
+      /*
+       * What this task is owed, by currency, because a reward recorded in one
+       * currency cannot be added to hours in another. Hours and reward
+       * together: under a single per-accepted payment they are one piece of
+       * money that happens to be written down in two places, and they land on
+       * the same day for the same reason.
+       */
+      const owed = new Map();
+      const add = (cur, cents) => {
+        if (cents > 0) owed.set(cur, (owed.get(cur) ?? 0) + cents);
       };
-
-      if (Number.isFinite(wentIn)) {
-        file(hourlyCents(sessions, project, task.id, now), currency,
-             nextPayout(rule, wentIn));
-      }
-
-      // One line per task: a reward shared across many is not this task's to
-      // schedule, and `tasksOf` length is what tells them apart.
+      add(currency, hourlyCents(sessions, project, task.id, now));
+      // A reward shared across many tasks is not this one's to schedule, and
+      // the number of tasks it names is what tells them apart.
       for (const earning of earnings) {
         if (tasksOf(earning).length !== 1 || tasksOf(earning)[0] !== task.id) continue;
-        if (pendingReview) {
-          file(earning.cents, earning.currency, nextPayout(rule, wentIn));
-        } else if (status === TASK.ACCEPTED && Number.isFinite(answered)) {
-          file(earning.cents, earning.currency,
-               rewardPayday(rule, Number.isFinite(wentIn) ? wentIn : answered, answered));
-        }
+        add(earning.currency, earning.cents);
+      }
+
+      for (const [cur, cents] of owed) {
+        const row = into(pendingReview ? waiting : due, `${company}|${at}|${cur}`,
+                         { company, at, currency: cur });
+        row.cents += cents;
+        row.tasks.push({
+          taskId: task.id, label: task.label, project: project.name, cents, status,
+        });
       }
     }
   }
 
-  return { due: rows(due), waiting: rows(waiting) };
+  return { due: rows(due, "due"), waiting: rows(waiting, "wait") };
 };

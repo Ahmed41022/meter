@@ -342,6 +342,16 @@ export const CSS = `
 .trow.clickable:hover .trow-label{color:var(--jade);}
 .trow.on .trow-label{color:var(--jade);}
 
+/* The tasks behind one payday, opened from its row. Indented and in the mono
+   face so it reads as the working underneath a figure rather than as more
+   rows of the same kind. */
+.paylist{margin:-4px 0 10px;padding:8px 0 2px 18px;border-left:2px solid var(--line-2);
+  margin-left:2px;}
+.payline{display:flex;justify-content:space-between;gap:12px;align-items:baseline;
+  font-family:var(--mono);font-size:12px;color:var(--ink-2);padding:3px 0;}
+.payline-of{color:var(--muted);}
+.payline-amt{font-variant-numeric:tabular-nums;white-space:nowrap;}
+
 .task-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);
   font-size:11.5px;color:var(--muted);background:var(--line-2);border-radius:999px;
   padding:3px 10px;margin-top:9px;}
@@ -352,6 +362,15 @@ export const CSS = `
   padding:13px 0;border-bottom:1px solid var(--line-2);}
 .trow:first-child{padding-top:0;}
 .trow:last-child{border-bottom:0;padding-bottom:0;}
+
+/* A payday and its breakdown are one band, so the divider belongs to the pair
+   rather than to the header line - otherwise an open row is ruled off from its
+   own tasks. These must sit AFTER the .trow rules they correct: each .trow is
+   now an only child of its wrapper, so :first-child and :last-child match every
+   one of them and would otherwise strip the padding from all. */
+.payrow{border-bottom:1px solid var(--line-2);}
+.payrow > .trow{border-bottom:0;padding:13px 0;}
+.payrow:first-child > .trow{padding-top:0;}
 .trow-label{font-weight:600;font-size:14.5px;}
 .trow-when{margin-left:8px;font-size:11px;font-weight:400;color:var(--muted);
   font-family:var(--mono);}

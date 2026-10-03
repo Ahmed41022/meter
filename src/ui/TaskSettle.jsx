@@ -52,14 +52,20 @@ export default function TaskSettle({
   const [rewarding, setRewarding] = useState(false);
   const [form, setForm] = useState({ amount: "", note: "" });
   /**
-   * The day the work actually went in, which is not the day you tick the box.
+   * The day the thing being recorded actually happened.
    *
-   * It defaults to when the last sitting on these tasks ended rather than to
-   * now, because you almost always hand work in as you finish it — and the
-   * difference is a whole payday whenever a cutoff falls between the two.
-   * Editable, because only you know when it really went.
+   * Which day that is depends on what you are recording, so the default does
+   * too. SUBMITTING is dated from the last sitting on these tasks, because
+   * work is nearly always handed in as it is finished. An ANSWER is dated
+   * from today, because you are entering it as you read it — and nothing
+   * about when you did the work says when somebody else got round to it.
+   *
+   * The answer's date is the one that now decides a payday, so getting its
+   * default wrong is a whole pay period, not a cosmetic nicety.
    */
-  const [when, setWhen] = useState(() => toInput(lastWorkedAt ?? now));
+  const [when, setWhen] = useState(() => toInput(
+    taskIds.some((id) => isOpenTask(findTask(project, id))) ? (lastWorkedAt ?? now) : now,
+  ));
 
   const currency = project.currency;
   const model = rewardModel(project);
@@ -154,10 +160,9 @@ export default function TaskSettle({
               + " rather than in your earnings until you hear back."
             : " It also settles the hourly money, which is what handing the work"
               + " in earns here."}
-          {" "}The date beside the buttons is the day the
-          work went in, not the day you tick the box: it decides which pay period
-          the money falls in, so a Saturday ticked off on Monday would otherwise
-          slip a whole payday.
+          {" "}The date beside the buttons is the day this happened, not the day
+          you tick the box. On an answer it decides which pay period the money
+          falls in, so an acceptance recorded late slips a whole payday.
           {model === REWARD.PER_HOUR ? (
             <>
               {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr
