@@ -91,7 +91,9 @@ export default function TodayView({
         <div className="panel">
           {todayRows.length === 0 ? (
             <div className="empty">Nothing recorded today yet.</div>
-          ) : todayRows.map(({ project, billedMs, billedCents, idleMs, pendingCents }) => (
+          ) : todayRows.map(({
+            project, billedMs, billedCents, idleMs, pendingCents, cancelledCents,
+          }) => (
             <div className="trow clickable" key={project.id} onClick={() => onOpen(project.id)}>
               <div>
                 <div className="trow-label">{project.name}</div>
@@ -110,6 +112,9 @@ export default function TodayView({
                   {money(billedCents) || "—"}
                   {money(pendingCents) && (
                     <span className="trow-pending">{money(pendingCents)} pending</span>
+                  )}
+                  {money(cancelledCents) && (
+                    <span className="trow-pending">{money(cancelledCents)} cancelled</span>
                   )}
                 </span>
               )}

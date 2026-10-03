@@ -255,8 +255,24 @@ describe("what a window was worth", () => {
     const result = performanceIn([session(at(2026, 8, 1), at(2026, 8, 2))], from, to, 0);
     expect(result).toEqual({
       billedMs: 0, idleMs: 0,
-      billedCents: {}, idleCents: {}, pendingCents: {}, timedCents: {},
+      billedCents: {}, idleCents: {}, pendingCents: {}, timedCents: {}, cancelledCents: {},
     });
+  });
+
+  it("agrees with the heat map about a day whose work was rejected", () => {
+    // The grid distributes every segment it is given; the headline used to
+    // skip cancelled sessions outright. The same day came out as five hours
+    // in one place and nothing in the other.
+    const rejected = [
+      session(at(2026, 8, 24, 9), at(2026, 8, 24, 12), { status: "cancelled" }),
+      session(at(2026, 8, 24, 13), at(2026, 8, 24, 15), { status: "cancelled" }),
+    ];
+    const headline = performanceIn(rejected, from, to, 0);
+    const grid = [...dailyTotals(rejected, from, to, 0).values()]
+      .reduce((a, cell) => a + cell.billedMs, 0);
+    expect(headline.billedMs).toBe(5 * HOUR);
+    expect(grid).toBe(headline.billedMs);
+    expect(headline.billedCents).toEqual({});
   });
 
   it("counts a still-running session up to the caller's now", () => {

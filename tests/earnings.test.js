@@ -157,7 +157,29 @@ describe("reporting money that no clock measured", () => {
       [earning("e1", 999_00, { status: PAY.CANCELLED })]);
     expect(r.billedCents.USD ?? 0).toBe(0);
     expect(r.pendingCents.USD ?? 0).toBe(0);
-    expect(r.billedMs).toBe(0);
+    // The work was done and then turned down. Two hours happened.
+    expect(r.billedMs).toBe(2 * HOUR);
+  });
+
+  it("names the amount a cancellation took away, so the zero has a reason", () => {
+    const r = performanceIn(
+      [session("s1", 2, { status: PAY.CANCELLED })], from, to, now, undefined,
+      [earning("e1", 999_00, { status: PAY.CANCELLED })]);
+    expect(r.cancelledCents.USD).toBe(4_100 + 999_00);
+  });
+
+  it("keeps a project whose work was all turned down in the breakdown", () => {
+    // Hours against no money is the whole point of the row: the time was
+    // spent. Dropping it hid a week of work and left the heat map shading
+    // days the figures above it called empty.
+    const project = { id: "p1", name: "Taiga", currency: "USD", currentRate: 20.5 };
+    const rows = byProject(
+      [project], [session("s1", 2, { status: PAY.CANCELLED })], from, to, now,
+      (x) => x.rate);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].billedMs).toBe(2 * HOUR);
+    expect(rows[0].billedCents.USD ?? 0).toBe(0);
+    expect(rows[0].cancelledCents.USD).toBe(4_100);
   });
 
   it("keeps a piece-rate project in the breakdown though it has no session", () => {

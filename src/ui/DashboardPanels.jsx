@@ -86,6 +86,8 @@ export function ByCompanyPanel({ show, companies, named, shares }) {
                     {share !== null && ` · ${Math.round(share * 100)}% of revenue`}
                     {row.currency && (row.pendingCents[row.currency] ?? 0) !== 0
                       && ` · ${formatMoney(row.pendingCents[row.currency], row.currency)} pending`}
+                    {row.currency && (row.cancelledCents[row.currency] ?? 0) !== 0
+                      && ` · ${formatMoney(row.cancelledCents[row.currency], row.currency)} cancelled`}
                     {row.projects.length > 1 && ` · ${row.projects.length} projects`}
                   </span>
                 </div>
@@ -130,7 +132,9 @@ export function ByProjectPanel({
             <div className="empty">
               No project logged time in this period.
             </div>
-          ) : shownRows.map(({ project, billedMs, idleMs, billedCents, pendingCents, perHour }) => {
+          ) : shownRows.map(({
+            project, billedMs, idleMs, billedCents, pendingCents, cancelledCents, perHour,
+          }) => {
             // One colour for every bar. These are projects, not an ordered
             // scale, so shading them by size would double-encode the length.
             const cents = billedCents[project.currency] ?? 0;
@@ -155,6 +159,11 @@ export function ByProjectPanel({
                       acceptance reads as having earned nothing. */}
                   {(pendingCents[project.currency] ?? 0) !== 0
                     && ` · ${formatMoney(pendingCents[project.currency], project.currency)} pending`}
+                  {/* And a project whose work was turned down reads as having
+                      earned nothing for no stated reason, with the hours
+                      sitting right beside the zero. */}
+                  {(cancelledCents[project.currency] ?? 0) !== 0
+                    && ` · ${formatMoney(cancelledCents[project.currency], project.currency)} cancelled`}
                 </span>
               </button>
             );

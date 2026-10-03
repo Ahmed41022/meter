@@ -17,7 +17,7 @@ import { elapsedMs } from "./time.js";
 import { rateFor, taskLabel } from "./tasks.js";
 import { earningsCents } from "./money.js";
 import { isBilled } from "./sessions.js";
-import { payStateOf, tasksOf } from "./earnings.js";
+import { isCancelled, payStateOf, tasksOf } from "./earnings.js";
 import { companyOf } from "./projects.js";
 
 const HOUR = 3_600_000;
@@ -99,10 +99,12 @@ export const toCsv = (state, now) => {
         hours(ms),
         rate ?? "",
         s.currency ?? "",
-        // Idle time is not income. It carries its hours so the file still
-        // accounts for the day, and a zero in the money column so no total
-        // built from it can ever include time that was never billable.
-        isBilled(s) ? amount(earningsCents(rate, ms)) : "0.00",
+        // Idle time is not income, and neither is work that was rejected.
+        // Both carry their hours so the file still accounts for the day, and
+        // a zero in the money column so no total built from it can ever
+        // include money that was never billable or never arrived. The status
+        // column above says which of the two it was.
+        isBilled(s) && !isCancelled(s) ? amount(earningsCents(rate, ms)) : "0.00",
         s.manual ? "typed in" : "timed",
         "",
       ],

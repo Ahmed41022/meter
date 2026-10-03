@@ -109,6 +109,17 @@ export default function ProjectsView({
     const waiting = life ? 0
       : mine.filter(isPending).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
         + earnings.filter((e) => e.projectId === p.id && isPending(e)).reduce((a, e) => a + e.cents, 0);
+    /**
+     * What was earned here and then taken back.
+     *
+     * In no total — it never arrived. But a card showing hours against a
+     * smaller figure than the hours imply, or against nothing at all, reads
+     * as a bug in the app rather than as a batch that was turned down. The
+     * amount is the missing half of that sentence.
+     */
+    const voided = life ? 0
+      : mine.filter(isCancelled).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+        + earnings.filter((e) => e.projectId === p.id && isCancelled(e)).reduce((a, e) => a + e.cents, 0);
     const open = openCount(p.id);
     const company = life ? null : companyOf(p);
     const stopped = isPaused(p) || projectDone(p);
@@ -141,6 +152,7 @@ export default function ProjectsView({
           <span className="card-dur">
             {life ? "tracked" : (ms ? formatShortDuration(ms) : "no time yet")}
             {waiting !== 0 && ` · ${formatMoney(waiting, p.currency)} pending`}
+            {voided !== 0 && ` · ${formatMoney(voided, p.currency)} cancelled`}
           </span>
         </span>
       </button>

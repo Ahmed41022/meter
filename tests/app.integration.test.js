@@ -4599,7 +4599,13 @@ describe("the Today tab", () => {
     await wait(250);
     const overview = d.querySelector(".grand-amt").textContent;
 
-    expect(here.startsWith(overview)).toBe(true);
+    // Past midnight the seeded session falls on yesterday and today really is
+    // empty. The two screens then say so in their own words — "nothing yet"
+    // against a dash — and what has to agree is that neither quotes a figure,
+    // not that the strings match.
+    const blank = (text) => text === "—" || /nothing yet/i.test(text);
+    if (blank(overview)) expect(blank(here)).toBe(true);
+    else expect(here.startsWith(overview)).toBe(true);
   }, 20_000);
 
   it("opens the session a row names", async () => {
