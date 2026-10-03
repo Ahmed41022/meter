@@ -19,7 +19,7 @@ import {
   addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
   setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
-import { TASK, setSubmittedAt } from "../domain/taskState.js";
+import { TASK, setAnsweredAt, setSubmittedAt } from "../domain/taskState.js";
 import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
 import { payPeriodFor, setPayPeriod } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
@@ -578,14 +578,17 @@ export default function App({ store: injectedStore }) {
             }}
             onRevertCorrection={(sessionId) =>
               commit((s) => revertCorrection(s, sessionId))}
-            onSaveTask={(taskId, { label, rate, price, note, submittedAt }) =>
-              commit((s) => setSubmittedAt(
-                setTaskNote(
-                  setTaskPrice(
-                    setTaskRate(renameTask(s, project.id, taskId, label), project.id, taskId, rate),
-                    project.id, taskId, price),
-                  project.id, taskId, note),
-                project.id, taskId, submittedAt))}
+            onSaveTask={(taskId, { label, rate, price, note, submittedAt, answeredAt }) =>
+              commit((s) => setAnsweredAt(
+                setSubmittedAt(
+                  setTaskNote(
+                    setTaskPrice(
+                      setTaskRate(renameTask(s, project.id, taskId, label),
+                                  project.id, taskId, rate),
+                      project.id, taskId, price),
+                    project.id, taskId, note),
+                  project.id, taskId, submittedAt),
+                project.id, taskId, answeredAt))}
             onDeleteTask={(taskId) => {
               const snapshot = stateRef.current;
               // Objectives pointing at the task are unfiled with it, so the
