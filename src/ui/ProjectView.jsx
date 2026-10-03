@@ -104,11 +104,21 @@ export default function ProjectView({
   const minuteInHour = Math.floor((shownMs % MS_PER_HOUR) / 60_000);
   const hoursBilled = Math.floor(shownMs / MS_PER_HOUR);
 
-  const totalCents = sessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
+  /**
+   * What a sitting is worth here, which is nothing once it has been rejected.
+   *
+   * The hours are a separate question and keep their own totals: the work was
+   * done, it simply was not paid for. Every money figure in the app draws the
+   * same line, so a rejected batch reduces what you earned without pretending
+   * you were not at the desk.
+   */
+  const moneyOf = (s, ms) => (isCancelled(s) ? 0 : earningsCents(rateFor(project, s), ms));
+
+  const totalCents = sessions.reduce((a, s) => a + moneyOf(s, elapsedMs(s, now)), 0);
   const totalMs = sessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
   const idleMs = idleSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
-  const idleCents = idleSessions.reduce((a, s) => a + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
+  const idleCents = idleSessions.reduce((a, s) => a + moneyOf(s, elapsedMs(s, now)), 0);
   const share = utilisation(totalMs, idleMs);
 
   // A goal saved as money before the project moved off the clock would render
@@ -129,7 +139,7 @@ export default function ProjectView({
     : { from: 0, to: Infinity };
   const inGoalWindow = (s) => sessionMsInWindow(s, goalWindow.from, goalWindow.to, now);
   const periodCents = overallGoal
-    ? sessions.reduce((a, s) => a + earningsCents(rateFor(project, s), inGoalWindow(s)), 0) : 0;
+    ? sessions.reduce((a, s) => a + moneyOf(s, inGoalWindow(s)), 0) : 0;
   const periodMs = overallGoal ? sessions.reduce((a, s) => a + inGoalWindow(s), 0) : 0;
   const overallValue = overallGoal
     ? (overallGoal.type === "money" ? periodCents / 100 : periodMs / 60000) : 0;
@@ -708,6 +718,7 @@ export default function ProjectView({
             </div>
           ) : visible.map((s) => (
             <div className={"row pick" + (isIdle(s) ? " is-idle" : "")
+                   + (isCancelled(s) ? " is-void" : "")
                    + (selected.includes(s.id) ? " sel" : "")
                    + (s.id === focusSession ? " focus" : "")}
                  ref={s.id === focusSession ? focusRow : null}

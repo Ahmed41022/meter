@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { findTask } from "../domain/tasks.js";
-import { TASK, isOpenTask, isSubmitted, taskState } from "../domain/taskState.js";
+import { TASK, isOpenTask, taskState } from "../domain/taskState.js";
 import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/earnings.js";
 
 /**
@@ -17,10 +17,14 @@ import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/ea
  *
  *  - SUBMIT is offered for tasks still open. It freezes their hours forever,
  *    settles the hourly money, and writes the acceptance reward as pending.
- *  - ACCEPTED and REJECTED are offered for tasks already handed in, because
- *    those are the only two answers that can come back.
+ *  - ACCEPTED and REJECTED are offered for every task already handed in,
+ *    answered or not. They are the only two answers that can come back, and
+ *    an answer can be changed its mind about: rejecting is what cancels a
+ *    task's pay, so the opposite button has to stay within reach afterwards
+ *    or one wrong click costs a week's money with no way back to it.
  *  - REOPEN undoes a state on tasks that have one, for the ordinary case of
- *    having ticked the wrong row. It never touches money.
+ *    having ticked the wrong row. It gives back hours a rejection cancelled
+ *    and leaves settled money alone.
  *
  * ONE REWARD sits apart from all of that. It is "finish fifty and we pay you
  * X" — a single payment naming every task in the selection, where splitting it
@@ -60,7 +64,9 @@ export default function TaskSettle({
   const happenedAt = () => fromInput(when, now);
 
   const open = taskIds.filter((id) => isOpenTask(findTask(project, id)));
-  const handedIn = taskIds.filter((id) => isSubmitted(findTask(project, id)));
+  // Anything handed in can be answered, including something answered before.
+  // Re-answering is idempotent, so offering it costs nothing and withholding
+  // it would strand a mistaken rejection.
   const stated = taskIds.filter((id) => taskState(findTask(project, id)) !== null);
 
   // What submitting the open ones would record. A null amount contributes
@@ -95,17 +101,17 @@ export default function TaskSettle({
             Submit {open.length}
           </button>
         )}
-        {handedIn.length > 0 && (
+        {stated.length > 0 && (
           <>
-            <button className="btn primary" onClick={() => onAnswer(handedIn, TASK.ACCEPTED, happenedAt())}>
-              Accepted {handedIn.length}
+            <button className="btn primary" onClick={() => onAnswer(stated, TASK.ACCEPTED, happenedAt())}>
+              Accepted {stated.length}
             </button>
-            <button className="btn ghost" onClick={() => onAnswer(handedIn, TASK.CANCELLED, happenedAt())}>
-              Rejected {handedIn.length}
+            <button className="btn ghost" onClick={() => onAnswer(stated, TASK.CANCELLED, happenedAt())}>
+              Rejected {stated.length}
             </button>
           </>
         )}
-        {(open.length > 0 || handedIn.length > 0) && (
+        {(open.length > 0 || stated.length > 0) && (
           <label className="selbar-when">
             <span className="eyebrow">On</span>
             <input className="inp" type="date" value={when}

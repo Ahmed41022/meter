@@ -1,6 +1,7 @@
 import { elapsedMs } from "./time.js";
 import { earningsCents } from "./money.js";
 import { isBilled, isIdle } from "./sessions.js";
+import { isCancelled } from "./earnings.js";
 import { taskState } from "./taskState.js";
 
 /**
@@ -249,13 +250,17 @@ export const taskTotals = (project, sessions, now) => {
   for (const s of sessions) {
     const b = bucket(s.taskId);
     const ms = elapsedMs(s, now);
+    // Work a rejection cancelled keeps its hours and loses its money. The
+    // time happened and still counts; the money never arrived and belongs in
+    // no figure, here or anywhere else.
+    const cents = isCancelled(s) ? 0 : earningsCents(rateFor(project, s), ms);
     b.sessions += 1;
     if (isBilled(s)) {
       b.billedMs += ms;
-      b.billedCents += earningsCents(rateFor(project, s), ms);
+      b.billedCents += cents;
     } else if (isIdle(s)) {
       b.idleMs += ms;
-      b.idleCents += earningsCents(rateFor(project, s), ms);
+      b.idleCents += cents;
     }
   }
 

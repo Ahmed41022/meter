@@ -479,13 +479,13 @@ describe("what is coming in", () => {
     expect(afterAnswer).toBe(beforeAnswer);
   });
 
-  it("keeps the hours when work is rejected, and drops the reward", () => {
+  it("forecasts nothing at all for work that was rejected", () => {
+    // Payment is per accepted task, so a rejection leaves no money to date:
+    // not the reward, and not the hours either. The hours stay on the record
+    // and in every time figure; they simply have no payday.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     s = answerTasks(s, project, ["t1"], TASK.CANCELLED, T);
-    const { due, waiting } = upcomingPay(s, T);
-    expect(waiting).toHaveLength(0);
-    expect(due).toHaveLength(1);
-    expect(due[0].cents).toBe(24_000);
+    expect(upcomingPay(s, T)).toEqual({ due: [], waiting: [] });
   });
 
   it("drops a payday that has already been and gone", () => {

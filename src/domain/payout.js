@@ -44,9 +44,12 @@ const startOfDay = (t) => {
 };
 
 /** What the clock earned under one task, at whatever rate each sitting is
- *  valued at. Idle time is left out, as it is from every earnings figure. */
+ *  valued at. Idle time is left out, as it is from every earnings figure, and
+ *  so is work a rejection cancelled — there is no payday for money that is
+ *  never coming. */
 const hourlyCents = (sessions, project, taskId, now) => sessions
-  .filter((s) => !s.deletedAt && s.projectId === project.id && s.taskId === taskId && isBilled(s))
+  .filter((s) => !s.deletedAt && s.projectId === project.id && s.taskId === taskId
+    && isBilled(s) && !isCancelled(s))
   .reduce((total, s) => total + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
 
 /** Sums into a keyed bucket, so several tasks landing on one payday read as

@@ -4667,9 +4667,10 @@ describe("paid more per hour once accepted", () => {
     expect(stored(dom).projects[0].tasks.map((t) => t.state)).toEqual(["accepted", "accepted"]);
   }, 30_000);
 
-  it("cancels the reward when it comes back no, and keeps the hours paid", async () => {
-    // Submitting is what earned the hourly money. A rejection is about the
-    // top-up, not a clawback of work that was done and delivered.
+  it("cancels the hours along with the reward when it comes back no", async () => {
+    // Payment is per accepted task out of one amount, so rejected work earns
+    // nothing: the reward and the hours go together. The sessions themselves
+    // stay in the ledger, keeping their time and losing their money.
     const { dom, d } = await open();
     await submitAll(d);
     btn(d, /^Select all 2$/).click();
@@ -4678,7 +4679,27 @@ describe("paid more per hour once accepted", () => {
     await wait(300);
 
     expect(stored(dom).earnings.every((e) => e.status === "cancelled")).toBe(true);
+    expect(stored(dom).sessions.every((x) => x.status === "cancelled")).toBe(true);
+    expect(stored(dom).sessions).toHaveLength(2);
+  }, 30_000);
+
+  it("puts the money back if the rejection was the wrong button", async () => {
+    // One click destroys a whole batch's pay, so the opposite click has to
+    // restore it. No state should be reachable only by editing the ledger.
+    const { dom, d } = await open();
+    await submitAll(d);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Rejected 2$/).click();
+    await wait(300);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accepted 2$/).click();
+    await wait(300);
+
+    expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
     expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
+    expect(stored(dom).projects[0].tasks.map((t) => t.state)).toEqual(["accepted", "accepted"]);
   }, 30_000);
 
   it("will not take another hour on work already submitted", async () => {
