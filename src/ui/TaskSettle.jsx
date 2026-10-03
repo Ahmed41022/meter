@@ -2,7 +2,9 @@ import { useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { findTask } from "../domain/tasks.js";
 import { TASK, isOpenTask, taskState } from "../domain/taskState.js";
-import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/earnings.js";
+import {
+  REWARD, acceptanceCents, bonusPerHour, paysOnAcceptance, rewardModel,
+} from "../domain/earnings.js";
 
 /**
  * Moving a batch of tasks through their life.
@@ -16,7 +18,8 @@ import { REWARD, acceptanceCents, bonusPerHour, rewardModel } from "../domain/ea
  * Which buttons appear is decided by what is selected, not by a mode:
  *
  *  - SUBMIT is offered for tasks still open. It freezes their hours forever,
- *    settles the hourly money, and writes the acceptance reward as pending.
+ *    settles the hourly money where the project is paid as worked, and
+ *    writes the acceptance reward as pending.
  *  - ACCEPTED and REJECTED are offered for every task already handed in,
  *    answered or not. They are the only two answers that can come back, and
  *    an answer can be changed its mind about: rejecting is what cancels a
@@ -144,8 +147,14 @@ export default function TaskSettle({
       {open.length > 0 && (
         <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
           Submitting stops the clock on {these} for good — no more hours can be
-          recorded against {them} — and settles the hourly money, which is what
-          handing the work in earns. The date beside the buttons is the day the
+          recorded against {them}.
+          {paysOnAcceptance(project)
+            ? " The money stays pending: on this project nothing is earned until"
+              + " somebody accepts the work, so it is reported on its own line"
+              + " rather than in your earnings until you hear back."
+            : " It also settles the hourly money, which is what handing the work"
+              + " in earns here."}
+          {" "}The date beside the buttons is the day the
           work went in, not the day you tick the box: it decides which pay period
           the money falls in, so a Saturday ticked off on Monday would otherwise
           slip a whole payday.

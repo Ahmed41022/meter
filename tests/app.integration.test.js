@@ -4641,10 +4641,17 @@ describe("paid more per hour once accepted", () => {
     expect(earnings.every((e) => e.units === undefined)).toBe(true);
   }, 30_000);
 
-  it("settles the hourly money the moment the work is handed in", async () => {
+  it("keeps the hourly money pending when the work is handed in", async () => {
+    // This project pays once accepted, so handing the work in delivers it
+    // without earning anything. Only the answer coming back can do that.
     const { dom, d } = await open();
     expect(stored(dom).sessions.every((x) => x.status === "pending")).toBe(true);
     await submitAll(d);
+    expect(stored(dom).sessions.every((x) => x.status === "pending")).toBe(true);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accepted 2$/).click();
+    await wait(300);
     expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
   }, 30_000);
 
