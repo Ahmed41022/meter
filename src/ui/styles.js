@@ -137,6 +137,11 @@ export const CSS = `
 .legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
 .swatch{width:9px;height:9px;border-radius:3px;flex:none;}
 .row.is-idle .row-amt{color:var(--amber);}
+/* A rejected sitting still prints what it would have been worth, because the
+   hours and the rate are both still true. Struck through and muted so the
+   column cannot be added up into a total the ledger does not agree with. */
+.row.is-void .row-amt{color:var(--muted);text-decoration:line-through;
+  text-decoration-thickness:1px;}
 
 /* task picker */
 .picker{display:flex;gap:9px;align-items:flex-end;margin-top:20px;flex-wrap:wrap;}

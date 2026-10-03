@@ -12,9 +12,22 @@
  *            done and delivered. The acceptance reward is written PENDING,
  *            because whether it lands is somebody else's decision and days
  *            away.
- *   ACCEPT   the decision came back yes. The reward is paid.
- *   REJECT   it came back no. The reward is cancelled; the hourly money is
- *            NOT clawed back, because submitting is what earned it.
+ *   ACCEPT   the decision came back yes. Everything the task earned is paid.
+ *   REJECT   it came back no, and so nothing was earned: the reward is
+ *            cancelled, and so are the hours.
+ *
+ * Rejection taking the hours with it is the platforms' rule rather than a
+ * guess. Payment is per ACCEPTED task, and since the old split was
+ * consolidated into one amount there is no half of it left to be paid out of:
+ * work that does not pass review earns nothing. The hours themselves stay on
+ * record either way — they happened, and they still count toward every time
+ * figure. It is only the money that goes.
+ *
+ * That makes the answer the one destructive act in the app, so the task's
+ * STATE is authoritative over its money and every transition is reversible.
+ * Accepting a task that was rejected restores what the rejection took, rather
+ * than leaving the hours paid and the reward dead; one wrong click on a batch
+ * of fifty must not be able to zero a week's pay with no way back.
  *
  * Reopening exists for the undo, and for the ordinary case of having ticked
  * the wrong row.
@@ -26,7 +39,7 @@ import { findTask, taskLabel } from "./tasks.js";
 import { TASK, isOpenTask, setTaskStateMany } from "./taskState.js";
 import {
   EARNING, PAY, REWARD, acceptanceCents, addEarning, bonusPerHour, earningsForTask,
-  isCancelled, isPending, rewardModel, setPayStateMany, tasksOf,
+  isCancelled, paysOnAcceptance, rewardModel, setPayStateMany, tasksOf,
 } from "./earnings.js";
 
 /** Sessions filed under one task of one project, live ones only. */
@@ -114,9 +127,17 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
 /**
  * The answer came back.
  *
- * `TASK.ACCEPTED` pays the reward, `TASK.CANCELLED` cancels it. Only lines
- * still waiting are moved: a reward already marked paid by hand stays paid,
- * and one already cancelled is not resurrected by a stray second click.
+ * Both the reward and the hours move with it, in the same direction, because
+ * under a single per-accepted payment they are one piece of money that
+ * happens to be recorded in two places. Yes pays them; no cancels them.
+ *
+ * Everything the task owns moves, including records already in the state
+ * being asked for — which is what makes a wrong answer undoable. Re-answering
+ * is idempotent rather than cumulative, so a second click changes nothing and
+ * the opposite click puts it all back.
+ *
+ * A reward shared across many tasks is the one exception, as always: it is
+ * not this task's to settle or to cancel, and `soleRewardsFor` leaves it be.
  */
 export const answerTasks = (state, project, taskIds, answer, at) => {
   const ids = taskIds ?? [];
@@ -125,10 +146,8 @@ export const answerTasks = (state, project, taskIds, answer, at) => {
   const moving = [];
 
   for (const taskId of ids) {
-    for (const e of soleRewardsFor(earnings, taskId)) {
-      if (answer === TASK.ACCEPTED && isPending(e)) moving.push(e.id);
-      if (answer === TASK.CANCELLED && !isCancelled(e)) moving.push(e.id);
-    }
+    for (const e of soleRewardsFor(earnings, taskId)) moving.push(e.id);
+    for (const s of sessionsUnder(state, project.id, taskId)) moving.push(s.id);
   }
 
   const next = setPayStateMany(
@@ -140,10 +159,26 @@ export const answerTasks = (state, project, taskIds, answer, at) => {
 /**
  * Puts tasks back to open so they take time again.
  *
- * The money is left exactly where it is. Reopening says the work is not
+ * Settled money is left exactly where it is. Reopening says the work is not
  * finished after all, which is a statement about hours; what was already paid
  * for it is a separate fact, and quietly reversing a settled line would be
  * the ledger changing behind you.
+ *
+ * Hours a REJECTION cancelled are the exception, and they come back. An open
+ * task is one being worked on, and leaving its sessions cancelled would show
+ * live work as worth nothing — the rejection that zeroed them is precisely
+ * what reopening undoes. They return to what a session on this project
+ * starts as, which is pending where the project is paid on acceptance and
+ * settled where it is not.
+ *
+ * The reward stays cancelled, because submitting again writes a fresh one;
+ * restoring this one too would leave the task owed twice.
  */
-export const reopenTasks = (state, project, taskIds, now) =>
-  setTaskStateMany(state, project.id, taskIds, null, now);
+export const reopenTasks = (state, project, taskIds, now) => {
+  const undo = (taskIds ?? []).flatMap((taskId) =>
+    sessionsUnder(state, project.id, taskId).filter(isCancelled).map((s) => s.id));
+  const next = undo.length === 0 ? state : setPayStateMany(
+    state, undo, paysOnAcceptance(project) ? PAY.PENDING : PAY.PAID,
+  );
+  return setTaskStateMany(next, project.id, taskIds, null, now);
+};

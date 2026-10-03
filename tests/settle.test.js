@@ -252,18 +252,54 @@ describe("hearing back", () => {
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.ACCEPTED);
   });
 
-  it("cancels the reward when the answer is no, and keeps the hours paid", () => {
-    // Submitting is what earned the hourly money. A rejection is about the
-    // top-up, not a clawback of work that was done and delivered.
+  it("takes the hours with the reward when the answer is no", () => {
+    /*
+     * Payment is per accepted task out of one consolidated amount, so work
+     * that does not pass review earns nothing at all — there is no half of it
+     * left to keep. The hours stay on the record; only the money goes.
+     */
     const s = answerTasks(submitted(), hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
     expect(isCancelled(rewards(s)[0])).toBe(true);
-    expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.CANCELLED);
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.CANCELLED);
+    // The time itself is untouched: it happened, whatever they decided.
+    expect(s.sessions[0].segments).toEqual(submitted().sessions[0].segments);
   });
 
-  it("does not resurrect a reward already cancelled", () => {
+  it("gives it all back when a rejection is answered the other way", () => {
+    /*
+     * The answer is the one act in the app that destroys money, so it has to
+     * be undoable. Accepting a task that was rejected restores the hours AND
+     * the reward: leaving one paid and the other dead would be a state no
+     * sequence of honest clicks should be able to reach.
+     */
     let s = answerTasks(submitted(), hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
     s = answerTasks(s, hourly, ["t1"], TASK.ACCEPTED, T + 6 * HOUR);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PAID);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+    expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.ACCEPTED);
+  });
+
+  it("answers the same way twice without compounding anything", () => {
+    const once = answerTasks(submitted(), hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
+    const twice = answerTasks(once, hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
+    expect(twice.sessions).toEqual(once.sessions);
+    expect(twice.earnings).toEqual(once.earnings);
+  });
+
+  it("brings cancelled hours back when the task is reopened", () => {
+    /*
+     * An open task is one being worked on. Leaving its sessions cancelled
+     * would show live work as worth nothing, and the rejection that zeroed
+     * them is exactly what reopening undoes. This project is paid on
+     * acceptance, so they return to pending rather than straight to paid.
+     */
+    let s = answerTasks(submitted(), hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
+    s = reopenTasks(s, hourly, ["t1"], T + 6 * HOUR);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
+    expect(taskState(findTask(proj(s), "t1"))).toBeNull();
+    // The reward stays dead: submitting again writes a fresh one, and
+    // restoring this one too would leave the task owed twice.
     expect(isCancelled(rewards(s)[0])).toBe(true);
   });
 
