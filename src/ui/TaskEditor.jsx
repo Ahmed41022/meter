@@ -2,7 +2,14 @@ import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
 import { taskRateInput } from "../domain/tasks.js";
-import { taskState } from "../domain/taskState.js";
+import { TASK, taskState } from "../domain/taskState.js";
+
+/** What the second date is called, which is what actually happened to the
+ *  work. "Cancelled" is how the money is stored; the task was rejected. */
+const ANSWER_WORD = {
+  [TASK.ACCEPTED]: "Accepted",
+  [TASK.CANCELLED]: "Rejected",
+};
 
 const pad = (n) => String(n).padStart(2, "0");
 const toInput = (t) => {
@@ -32,6 +39,14 @@ export default function TaskEditor({
    */
   const handedIn = task.submittedAt ?? task.stateAt ?? null;
   const [went, setWent] = useState(handedIn === null ? "" : toInput(handedIn));
+  /**
+   * The day the answer came back, which is the date the money follows.
+   *
+   * Null while a task is only submitted: nothing has been decided, so there
+   * is no such day, and `stateAt` there is the submission over again.
+   */
+  const answered = taskState(task) === TASK.SUBMITTED ? null : task.stateAt ?? null;
+  const [back, setBack] = useState(answered === null ? "" : toInput(answered));
   const [confirming, setConfirming] = useState(false);
   const piece = projectPrice !== null;
 
@@ -40,8 +55,9 @@ export default function TaskEditor({
     rate: rate.trim() === "" ? null : rate,
     price: price.trim() === "" ? null : price,
     note,
-    // Midday, so a timezone cannot nudge the day across a pay cutoff.
+    // Midday, so a timezone cannot nudge either day across a pay cutoff.
     submittedAt: went ? new Date(went + "T12:00").getTime() : null,
+    answeredAt: back ? new Date(back + "T12:00").getTime() : null,
   });
 
   if (confirming) {
@@ -96,17 +112,43 @@ export default function TaskEditor({
                   onChange={(e) => setNote(e.target.value)} />
       </label>
       {taskState(task) && (
-        <label className="field">
-          <span className="eyebrow">Handed in on</span>
-          <input className="inp" type="date" value={went}
-                 onChange={(e) => setWent(e.target.value)} />
-          <span className="hint" style={{ marginTop: 8, display: "block" }}>
-            The day the work actually went in, which is not the day you ticked Submit.
-            The payday follows the day a task is ANSWERED rather than this one, so
-            correcting it here puts the record straight without moving any money or
-            any date.
-          </span>
-        </label>
+        <div className="pair">
+          <label className="field">
+            <span className="eyebrow">Handed in on</span>
+            <input className="inp" type="date" value={went}
+                   onChange={(e) => setWent(e.target.value)} />
+          </label>
+          {/* Only once there is an answer to date. A submitted task has not
+              been reviewed, so there is no such day to record and a box
+              offering one would invite a guess. */}
+          {answered !== null && (
+            <label className="field">
+              <span className="eyebrow">{ANSWER_WORD[taskState(task)]} on</span>
+              <input className="inp" type="date" value={back}
+                     onChange={(e) => setBack(e.target.value)} />
+            </label>
+          )}
+        </div>
+      )}
+      {taskState(task) && (
+        <div className="hint">
+          {answered !== null ? (
+            <>
+              The second date is the one that matters to your money: the pay run a task
+              lands in is the one for the period its answer fell in, so an acceptance
+              read on Friday and ticked off on Monday has crossed a cutoff. Correcting
+              it moves the forecast and never an amount. The first is the record of when
+              the work was delivered, which is what a bonus window turns on.
+            </>
+          ) : (
+            <>
+              The day the work actually went in, which is not the day you ticked Submit.
+              It is the record of when the work was delivered — what a bonus window or a
+              query about a slow review turns on. The payday follows the day a task is
+              answered, so this one moves no money and no date.
+            </>
+          )}
+        </div>
       )}
       <div className="hint" style={{ marginBottom: 0 }}>
         Setting a rate reprices every session filed under this task, including ones already

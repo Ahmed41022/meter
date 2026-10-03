@@ -79,13 +79,13 @@ export default function TaskBreakdown({
               {r.state && (
                 <span className={"tag state-" + r.state}>{STATE_WORD[r.state]}</span>
               )}
-              {/* The day it went in. It no longer decides a payday — the
-                  answer does — but it is the record of when the work was
-                  delivered, which is what a bonus window or a query about a
-                  slow review turns on. */}
-              {r.submittedAt && (
+              {/* The date that goes with the tag beside it: when the answer
+                  came back, or when the work went in while there is no answer
+                  yet. Printing the handed-in date next to "accepted" read as
+                  the day it was accepted, which is the one date it was not. */}
+              {(r.answeredAt ?? r.submittedAt) && (
                 <span className="trow-when">
-                  {new Date(r.submittedAt).toLocaleDateString(undefined,
+                  {new Date(r.answeredAt ?? r.submittedAt).toLocaleDateString(undefined,
                     { weekday: "short", day: "numeric", month: "short" })}
                 </span>
               )}

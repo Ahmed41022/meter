@@ -5,7 +5,7 @@ import {
 } from "../src/domain/payPeriod.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
-import { TASK, setSubmittedAt } from "../src/domain/taskState.js";
+import { TASK, setAnsweredAt, setSubmittedAt } from "../src/domain/taskState.js";
 import { PAY } from "../src/domain/earnings.js";
 import { KIND, startSession, stopSession } from "../src/domain/sessions.js";
 import { addTask } from "../src/domain/tasks.js";
@@ -459,6 +459,36 @@ describe("what is coming in", () => {
     let s = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
     s = setSubmittedAt(s, "p1", "t1", on(2026, 9, 26));
     expect(day(s.projects[0].tasks[0].submittedAt)).toBe(day(on(2026, 9, 26)));
+  });
+
+  it("lets the day the answer came back be put right afterwards", () => {
+    /*
+     * The date that decides the pay run, so the one worth being able to fix.
+     * An acceptance read on the Sunday but ticked off on the Monday has
+     * crossed Outlier's cutoff: recorded as Monday it pays the 14th, and put
+     * back to the Sunday it pays the 7th, which is where the money is.
+     */
+    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 5, 16));
+    expect(day(upcomingPay(s, T).due[0].at)).toBe(day(on(2026, 10, 14)));
+
+    s = setAnsweredAt(s, "p1", "t1", on(2026, 10, 4, 12));
+    expect(day(upcomingPay(s, T).due[0].at)).toBe(day(on(2026, 10, 7)));
+  });
+
+  it("moves the forecast with that date and never an amount", () => {
+    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 5, 16));
+    const before = upcomingPay(s, T).due[0].cents;
+    s = setAnsweredAt(s, "p1", "t1", on(2026, 10, 4, 12));
+    expect(upcomingPay(s, T).due[0].cents).toBe(before);
+  });
+
+  it("will not invent an answered date for a task still being worked", () => {
+    // No state, nothing decided, nothing to date. The same guard the
+    // handed-in date has, for the same reason.
+    const s = setAnsweredAt(seeded(), "p1", "t1", on(2026, 9, 26));
+    expect(s.projects[0].tasks[0].stateAt).toBeUndefined();
   });
 
   it("will not invent a handed-in date for a task still being worked", () => {

@@ -103,25 +103,42 @@ export const setTaskStateMany = (state, projectId, taskIds, next, now) => {
 export const setTaskState = (state, projectId, taskId, next, now) =>
   setTaskStateMany(state, projectId, [taskId], next, now);
 
-/**
- * Corrects the day the work went in, after the fact.
- *
- * Needed because the app used to stamp the moment you ticked the box, and a
- * task handed in on Saturday but ticked off on Monday was filed a whole pay
- * period late. The date decides which payday the money falls in and nothing
- * else, so moving it moves a forecast and never touches an amount.
- */
-export const setSubmittedAt = (state, projectId, taskId, at) => ({
+/** Edits one field of one task, and only where the task has a state at all —
+ *  neither of these dates means anything on work still being done. */
+const patchStated = (state, projectId, taskId, field, at) => (!Number.isFinite(at) ? state : {
   ...state,
   projects: state.projects.map((p) => {
     if (p.id !== projectId) return p;
     return {
       ...p,
-      tasks: (p.tasks ?? []).map((t) => {
-        if (t.id !== taskId || taskState(t) === null) return t;
-        if (!Number.isFinite(at)) return t;
-        return { ...t, submittedAt: at };
-      }),
+      tasks: (p.tasks ?? []).map((t) => (
+        t.id !== taskId || taskState(t) === null ? t : { ...t, [field]: at }
+      )),
     };
   }),
 });
+
+/**
+ * Corrects the day the work went in, after the fact.
+ *
+ * Needed because the app used to stamp the moment you ticked the box. It no
+ * longer decides a payday — the answer does — but it is the record of when
+ * the work was delivered, which is what a bonus window or a query about a
+ * slow review turns on, and a date taken from the clock was simply untrue.
+ */
+export const setSubmittedAt = (state, projectId, taskId, at) =>
+  patchStated(state, projectId, taskId, "submittedAt", at);
+
+/**
+ * Corrects the day the answer came back.
+ *
+ * This is the date that decides which pay run the money is in, so it is the
+ * one worth being able to put right. An acceptance read on Friday and ticked
+ * off on Monday has crossed a cutoff, and nothing but you knows when the
+ * review actually landed.
+ *
+ * It moves a forecast and never an amount: what the task earned was settled
+ * when it was answered, and saying so a day later does not re-earn it.
+ */
+export const setAnsweredAt = (state, projectId, taskId, at) =>
+  patchStated(state, projectId, taskId, "stateAt", at);

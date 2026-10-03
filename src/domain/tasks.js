@@ -2,7 +2,7 @@ import { elapsedMs } from "./time.js";
 import { earningsCents } from "./money.js";
 import { isBilled, isIdle } from "./sessions.js";
 import { isCancelled } from "./earnings.js";
-import { taskState } from "./taskState.js";
+import { TASK, taskState } from "./taskState.js";
 
 /**
  * A task is a record on the project, referenced by id — not a string stored on
@@ -241,6 +241,12 @@ export const taskTotals = (project, sessions, now) => {
         note: taskId ? findTask(project, taskId)?.note ?? null : null,
         state: taskId ? taskState(findTask(project, taskId)) : null,
         submittedAt: taskId ? findTask(project, taskId)?.submittedAt ?? null : null,
+        // The day the answer came back, where one has. Null while a task is
+        // only submitted: `stateAt` there is the submission over again, and
+        // printing it as an answer would date a decision nobody has made.
+        answeredAt: taskId && taskState(findTask(project, taskId)) === TASK.SUBMITTED
+          ? null
+          : (taskId ? findTask(project, taskId)?.stateAt ?? null : null),
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
       });
     }
