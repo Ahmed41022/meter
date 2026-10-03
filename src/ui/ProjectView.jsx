@@ -9,7 +9,7 @@ import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
 import {
   PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
-  perTask, priceFor, taskPay, tasksOf,
+  paysOnAcceptance, perTask, priceFor, taskPay, tasksOf,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
@@ -159,14 +159,32 @@ export default function ProjectView({
   const hasTasks = rawTaskRows.some((r) => r.taskId);
 
   /**
-   * Whether a task on this project is the kind of thing that gets accepted.
+   * Whether money here is CLAIMED per task, which decides whether a task with
+   * no money against it is owed something or simply worth nothing.
    *
    * The project's own per-item price says yes, and so does any single task
    * carrying one — some projects price nothing centrally and everything per
-   * task. Anywhere else, "not claimed" against a task would be a warning
-   * about money that was never owed, on every row, forever.
+   * task. So does being paid once accepted, where the hourly money itself is
+   * claimed a task at a time. Anywhere else, "not claimed" against a task
+   * would be a warning about money that was never owed, on every row, forever.
    */
-  const accepts = settles || hasReward(project) || rawTaskRows.some((r) => r.price != null);
+  const accepts = settles || hasReward(project) || paysOnAcceptance(project)
+    || rawTaskRows.some((r) => r.price != null);
+
+  /**
+   * Whether tasks here can be moved through their life, which is a different
+   * question and a much broader one.
+   *
+   * Any task can be handed in, turned down or reopened, whatever the project
+   * pays and however. Gating this on the money meant a project paid once
+   * accepted but with no extra reward — the ordinary shape, an hourly rate
+   * and a review — offered no way to submit or accept anything at all, and
+   * that work on a flat hourly project could never be marked rejected.
+   *
+   * Off the clock is the exception: there is no money to settle or cancel
+   * there, so the whole lifecycle would be ceremony.
+   */
+  const canSettle = !offClock && hasTasks;
 
   /**
    * What a task is worth, for ordering by it.
@@ -496,7 +514,7 @@ export default function ProjectView({
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">{w.byTask}</span>
-            {accepts && pickable.length > 1 ? (
+            {canSettle && pickable.length > 1 ? (
               <button className="linkbtn"
                       onClick={() => setPickedTasks(
                         pickedTasks.length === pickable.length ? [] : pickable
@@ -531,7 +549,7 @@ export default function ProjectView({
             </div>
           )}
 
-          {accepts && pickedTasks.length > 0 && (
+          {canSettle && pickedTasks.length > 0 && (
             <TaskSettle
               project={project} taskIds={pickedTasks} rows={taskRows}
               sharedOwedIds={sharedOwedIds} allIds={pickable}
@@ -565,8 +583,8 @@ export default function ProjectView({
           <TaskBreakdown offClock={offClock} piece={piece} rows={taskRows}
                          currency={project.currency} active={filterTask}
                          earnings={accepts ? earnings : null}
-                         selected={accepts ? pickedTasks : null}
-                         onToggleSelect={accepts ? toggleTask : undefined}
+                         selected={canSettle ? pickedTasks : null}
+                         onToggleSelect={canSettle ? toggleTask : undefined}
                          onEdit={(id) => setEditingTask(id)}
                          onPick={(key) => {
                            setFilterTask(key === filterTask ? null : key);
