@@ -365,92 +365,83 @@ describe("what is coming in", () => {
     expect(waiting[0].items).toBe(1);
   });
 
-  it("pays an accepted reward on the week the work went in, not the week it was read", () => {
+  it("pays an accepted task on the period its ANSWER fell in", () => {
     /*
-     * The platforms' own rule: a task straddling two pay periods counts
-     * toward the week you SUBMITTED it. So a Saturday submission answered on
-     * the Monday is still Saturday's week — and Saturday's week pays
-     * Wednesday 7 October, the same day as its own hours.
+     * The case Ahmed hit, and the one that settled this rule.
      *
-     * Dating it from the answer instead pushed it a week out, which is how a
-     * single task came to show two payments a week apart for work that went
-     * in on one afternoon.
+     * Outlier's week shuts Monday and pays Wednesday. Work handed in on
+     * Saturday 3 October belongs to the week shutting Monday the 5th, which
+     * pays Wednesday the 7th. But the answer came back on the 5th AFTER that
+     * week had shut, so the task missed that batch: it rides the next one and
+     * pays Wednesday the 14th.
+     *
+     * Dating it from submission instead put it on the 7th, and once the 7th
+     * had been and gone the money vanished off the panel as though it had
+     * arrived.
      */
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    const answered = on(2026, 10, 5); // the Monday after, well before the payday
+    const answered = on(2026, 10, 5, 16); // Monday afternoon, past the cutoff
     s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, answered);
     const { due, waiting } = upcomingPay(s, answered);
     expect(waiting).toHaveLength(0);
-    // One payday, both kinds of money on it: 3h at 80 plus 3h of the 10/hr
-    // uplift.
     expect(due).toHaveLength(1);
-    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(day(due[0].at)).toBe(day(on(2026, 10, 14)));
+    // Hours and uplift together: 3h at 80 plus 3h of the 10/hr.
     expect(due[0].cents).toBe(27_000);
   });
 
-  it("still catches the payday when the period has shut but not yet paid", () => {
-    /*
-     * The case that makes this a payday comparison and not a period one.
-     *
-     * Outlier's week shuts Monday and pays Wednesday. An answer arriving
-     * Monday afternoon is past the cutoff — its own period pays a week later
-     * — but Wednesday's money has not gone anywhere yet, so the reward is
-     * still on it. Comparing the two periods instead of the two paydays
-     * pushed this a week out.
-     */
+  it("pays it on the near payday when the answer beats the cutoff", () => {
+    // Answered on the Sunday, before the week shuts on Monday, so it makes
+    // that week's batch and pays the Wednesday after it.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 5, 16));
-    const { due } = upcomingPay(s, on(2026, 10, 5, 16));
-    expect(due).toHaveLength(1);
+    const answered = on(2026, 10, 4, 10);
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, answered);
+    const { due } = upcomingPay(s, answered);
     expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
   });
 
-  it("waits for the next run when the answer lands on the payday itself", () => {
-    // It might just make that day's processing. A forecast that promises
-    // money early is worse than one that is pessimistic by a week once.
-    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    const onPayday = on(2026, 10, 7, 10);
-    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, onPayday);
-    const reward = upcomingPay(s, onPayday).due.find((r) => r.cents === 3_000);
-    expect(day(reward.at)).toBe(day(on(2026, 10, 14)));
-  });
-
-  it("carries the reward forward when that payday has already gone", () => {
-    /*
-     * The one exception, and the reason this is not simply "use the
-     * submission date". The hours went in Saturday 3 Oct and were paid
-     * Wednesday 7 Oct. An answer arriving on the 20th cannot have been on
-     * that payment — it had already gone out — so the reward rides the next
-     * run that can still carry it: Wednesday 28 Oct.
-     */
+  it("carries the reward forward when the answer is weeks late", () => {
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     const answered = on(2026, 10, 20);
     s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, answered);
     const { due } = upcomingPay(s, answered);
     expect(due).toHaveLength(1);
     expect(day(due[0].at)).toBe(day(on(2026, 10, 28)));
-    expect(due[0].cents).toBe(3_000);
   });
 
-  it("files work by the day it went in, not the day the box was ticked", () => {
+  it("does not drop an accepted task whose submission payday has passed", () => {
     /*
-     * The bug this fixes, on Outlier's rule: in before Monday, paid the
-     * following Wednesday.
+     * The symptom Ahmed reported. Handed in on Sunday 27 September, accepted
+     * on Wednesday the 30th. Its submission week paid Wednesday the 30th; by
+     * the time you look, on 3 October, that day has gone. Dating from
+     * submission dropped the task as already paid. Dating from the answer
+     * puts it where the money actually is: the following Wednesday.
+     */
+    let s = submitTasks(seeded(), project, ["t1"], on(2026, 9, 27, 18),
+                        () => "e1", on(2026, 9, 27, 18));
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 9, 30, 12));
+    const { due } = upcomingPay(s, on(2026, 10, 3));
+    expect(due).toHaveLength(1);
+    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
+  });
+
+  it("records the day work went in, not the day the box was ticked", () => {
+    /*
+     * Submitting stamps the day chosen rather than the moment of the click.
      *
-     * Work handed in on Saturday 26 September is before the Monday cutoff, so
-     * it belongs to the period paying Wednesday 30 September. Ticking Submit
-     * on the Wednesday used to stamp THAT day, which is past the cutoff, and
-     * quietly pushed the money to the 7th of October — a whole payday late,
-     * for a reason nothing on screen explained.
+     * This no longer moves any payday — the money rides the day a task is
+     * ANSWERED — but it is still the record of when the work was delivered,
+     * which is the thing a bonus window or a query about a late review turns
+     * on. Getting it from `Date.now()` made it simply untrue.
      */
     const saturday = on(2026, 9, 26);
     const ticked = on(2026, 9, 30);
 
     const byTick = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
-    expect(day(upcomingPay(byTick, ticked).waiting[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(day(byTick.projects[0].tasks[0].submittedAt)).toBe(day(ticked));
 
     const byDay = submitTasks(seeded(), project, ["t1"], ticked, () => "e1", saturday);
-    expect(day(upcomingPay(byDay, ticked).waiting[0].at)).toBe(day(on(2026, 9, 30)));
+    expect(day(byDay.projects[0].tasks[0].submittedAt)).toBe(day(saturday));
   });
 
   it("still values the hours by the clock, not by the day chosen", () => {
@@ -466,9 +457,8 @@ describe("what is coming in", () => {
   it("lets a date recorded wrong be put right afterwards", () => {
     const ticked = on(2026, 9, 30);
     let s = submitTasks(seeded(), project, ["t1"], ticked, () => "e1");
-    expect(day(upcomingPay(s, ticked).waiting[0].at)).toBe(day(on(2026, 10, 7)));
     s = setSubmittedAt(s, "p1", "t1", on(2026, 9, 26));
-    expect(day(upcomingPay(s, ticked).waiting[0].at)).toBe(day(on(2026, 9, 30)));
+    expect(day(s.projects[0].tasks[0].submittedAt)).toBe(day(on(2026, 9, 26)));
   });
 
   it("will not invent a handed-in date for a task still being worked", () => {
@@ -476,14 +466,15 @@ describe("what is coming in", () => {
     expect(s.projects[0].tasks[0].submittedAt).toBeUndefined();
   });
 
-  it("does not let the answer re-date the hours behind you", () => {
-    // One stateAt for both would have moved three hours of settled work into
-    // a period it was never part of, silently, weeks after the fact.
+  it("dates the whole task from its answer, hours and reward alike", () => {
+    // One payment per accepted task, so there is nothing to split across two
+    // days. Whatever period the answer falls in carries all of it.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
-    const beforeAnswer = upcomingPay(s, T).waiting[0].at;
     s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 20));
-    const afterAnswer = upcomingPay(s, T).due.find((r) => r.cents === 24_000).at;
-    expect(afterAnswer).toBe(beforeAnswer);
+    const { due } = upcomingPay(s, on(2026, 10, 20));
+    expect(due).toHaveLength(1);
+    expect(due[0].cents).toBe(27_000);
+    expect(day(due[0].at)).toBe(day(on(2026, 10, 28)));
   });
 
   it("forecasts nothing at all for work that was rejected", () => {
@@ -496,7 +487,8 @@ describe("what is coming in", () => {
   });
 
   it("drops a payday that has already been and gone", () => {
-    const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 5));
     // Looking back from a month later: that money arrived.
     expect(upcomingPay(s, on(2026, 11, 20))).toEqual({ due: [], waiting: [] });
   });

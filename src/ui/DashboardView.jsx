@@ -153,6 +153,10 @@ export default function DashboardView({
   const payDay = (at) => new Date(at).toLocaleDateString(undefined, {
     weekday: "short", day: "numeric", month: "long",
   });
+  // Which payday is open, by its own key. One at a time: these are read one
+  // at a time, and all of them open at once is a wall of task names.
+  const [openPay, setOpenPay] = useState(null);
+  const togglePay = (key) => setOpenPay((cur) => (cur === key ? null : key));
   // Remembered, because reopening the app to a span you did not choose is a
   // small daily annoyance and the answer is one string. Validated on read: a
   // stored value from a future version, or a hand-edited one, must not leave
@@ -461,37 +465,55 @@ export default function DashboardView({
             </span>
           </div>
           <div className="panel">
-            {pay.due.map((row) => (
-              <div className="trow" key={row.company + row.at + row.currency}>
-                <div>
-                  <div className="trow-label">{payDay(row.at)}</div>
-                  <div className="trow-sub">
-                    {row.company || "No company"} · {row.items} task{row.items === 1 ? "" : "s"}
+            {/* Every row opens. A payday is a number you are about to plan
+                around, and "which tasks make that up, and which of them
+                somebody still has to approve" is the first thing you want to
+                know about one — especially when the two kinds of row carry
+                dates that look alike. */}
+            {[...pay.due.map((r) => [r, false]), ...pay.waiting.map((r) => [r, true])]
+              .map(([row, soft]) => (
+                <div className="payrow" key={row.key}>
+                  <div className={"trow clickable" + (openPay === row.key ? " on" : "")}
+                       role="button" tabIndex={0}
+                       aria-expanded={openPay === row.key}
+                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") togglePay(row.key); }}
+                       onClick={() => togglePay(row.key)}>
+                    <div>
+                      <div className="trow-label">
+                        {soft ? `Not before ${payDay(row.at)}` : payDay(row.at)}
+                      </div>
+                      <div className={"trow-sub" + (soft ? " owed" : "")}>
+                        {row.company || "No company"} · {row.items}{" "}
+                        {soft
+                          ? "waiting on a review"
+                          : `task${row.items === 1 ? "" : "s"}`}
+                      </div>
+                    </div>
+                    <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
                   </div>
+                  {openPay === row.key && (
+                    <div className="paylist">
+                      {row.tasks.map((t) => (
+                        <div className="payline" key={t.taskId}>
+                          <span>
+                            {t.label}
+                            <span className="payline-of"> · {t.project}</span>
+                          </span>
+                          <span className="payline-amt">
+                            {formatMoney(t.cents, row.currency)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
-              </div>
-            ))}
-            {pay.waiting.map((row) => (
-              <div className="trow" key={"w" + row.company + row.at + row.currency}>
-                <div>
-                  {/* The earliest it could come, never a date it is expected
-                      on. A review that lands after this day pushes the money
-                      to the next run, and nothing here knows when it will. */}
-                  <div className="trow-label owed">Not before {payDay(row.at)}</div>
-                  <div className="trow-sub owed">
-                    {row.company || "No company"} · {row.items} waiting on a review
-                  </div>
-                </div>
-                <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
-              </div>
-            ))}
+              ))}
             <div className="hint" style={{ marginBottom: 0 }}>
-              Dates come from each client&apos;s payday, set in a project&apos;s settings, and
-              run from the day a task was handed in rather than the day it was answered.
-              Work still under review has no date, only a floor: it makes its own period
-              if somebody gets to it in time, and the next one if they do not. Anything
-              whose payday has passed has dropped off.
+              Dates come from each client&apos;s payday, set in a project&apos;s settings,
+              and run from the period a task was ANSWERED in — a task accepted after its
+              own period shut rides the next run. Work nobody has reviewed yet has no
+              date, only the soonest it could arrive. Open a row to see which tasks make
+              it up. Anything whose payday has passed has dropped off.
             </div>
           </div>
         </div>

@@ -101,9 +101,10 @@ export default function TaskEditor({
           <input className="inp" type="date" value={went}
                  onChange={(e) => setWent(e.target.value)} />
           <span className="hint" style={{ marginTop: 8, display: "block" }}>
-            The day the work actually went in, which decides which payday its money
-            falls in. It is not the day you ticked Submit, and correcting it here moves
-            only the forecast — never an amount.
+            The day the work actually went in, which is not the day you ticked Submit.
+            The payday follows the day a task is ANSWERED rather than this one, so
+            correcting it here puts the record straight without moving any money or
+            any date.
           </span>
         </label>
       )}

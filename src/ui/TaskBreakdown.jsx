@@ -79,9 +79,10 @@ export default function TaskBreakdown({
               {r.state && (
                 <span className={"tag state-" + r.state}>{STATE_WORD[r.state]}</span>
               )}
-              {/* The day it went in, printed because it decides which payday
-                  the money falls in and is otherwise invisible until the
-                  Overview quotes a date you cannot account for. */}
+              {/* The day it went in. It no longer decides a payday — the
+                  answer does — but it is the record of when the work was
+                  delivered, which is what a bonus window or a query about a
+                  slow review turns on. */}
               {r.submittedAt && (
                 <span className="trow-when">
                   {new Date(r.submittedAt).toLocaleDateString(undefined,
