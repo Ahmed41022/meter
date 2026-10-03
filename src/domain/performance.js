@@ -139,6 +139,10 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
   const billedCents = {};
   const idleCents = {};
   const pendingCents = {};
+  // Money that was earned and then taken away. In no total, because it never
+  // arrived — but named, because a week whose hours are all there and whose
+  // earnings are zero reads as a broken figure until something says why.
+  const cancelledCents = {};
   // The settled money that DID come from hours. Kept apart from `billedCents`
   // so a rate can be quoted two ways without either one being a guess: money
   // per hour across everything, and money per hour across the work that was
@@ -149,16 +153,22 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
   let idleMs = 0;
 
   for (const session of sessions) {
-    // Cancelled work was done and then rejected. The hours happened, so they
-    // stay in the time figures; the money never arrived, so it is in none.
-    if (isCancelled(session)) continue;
     const ms = sessionMsInWindow(session, from, to, now);
     if (ms <= 0) continue;
     const idle = isIdle(session);
+    // Cancelled work was done and then rejected. The hours happened, so they
+    // stay in the time figures; the money never arrived, so it is in none.
+    //
+    // Skipping the session outright was the same mistake read from the other
+    // end: it threw away hours that were really spent, so a project whose
+    // work was all turned down vanished from every breakdown, and the heat
+    // map still shaded a day the headline above it called empty.
     if (idle) idleMs += ms; else billedMs += ms;
     const cents = earningsCents(rateOf(session), ms);
     if (idle) {
       idleCents[session.currency] = (idleCents[session.currency] || 0) + cents;
+    } else if (isCancelled(session)) {
+      cancelledCents[session.currency] = (cancelledCents[session.currency] || 0) + cents;
     } else if (isPending(session)) {
       pendingCents[session.currency] = (pendingCents[session.currency] || 0) + cents;
     } else {
@@ -170,12 +180,13 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
   // Money with no hours behind it: it reaches the totals and the rate, but it
   // can never move a duration.
   for (const earning of earningsIn(earnings, from, to)) {
-    if (isCancelled(earning)) continue;
-    const into = isPending(earning) ? pendingCents : billedCents;
+    const into = isCancelled(earning)
+      ? cancelledCents
+      : (isPending(earning) ? pendingCents : billedCents);
     into[earning.currency] = (into[earning.currency] || 0) + earning.cents;
   }
 
-  return { billedMs, idleMs, billedCents, idleCents, pendingCents, timedCents };
+  return { billedMs, idleMs, billedCents, idleCents, pendingCents, timedCents, cancelledCents };
 };
 
 /** The share of settled money that no clock ever measured. Null when there is
@@ -204,9 +215,13 @@ export const currenciesByValue = (cents) =>
 export const deltaRatio = (current, previous) =>
   previous > 0 ? (current - previous) / previous : null;
 
+/** Any money at all against a row, including money that was cancelled — work
+ *  that was rejected is a fact about how the week went, and a row dropped for
+ *  having earned nothing takes the explanation with it. */
 const hasMoney = (row) =>
   Object.values(row.billedCents).some((c) => c !== 0)
-  || Object.values(row.pendingCents).some((c) => c !== 0);
+  || Object.values(row.pendingCents).some((c) => c !== 0)
+  || Object.values(row.cancelledCents).some((c) => c !== 0);
 
 /** Per-project totals for a window, busiest first. Projects with no time in
  *  the window are dropped — a page of zeroes buries the rows that matter. */

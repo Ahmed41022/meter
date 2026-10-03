@@ -113,6 +113,18 @@ describe("the ledger as a spreadsheet", () => {
     expect(col(csv, "Amount")[0]).toBe("0.00");
   });
 
+  it("gives rejected work its hours but never any money", () => {
+    // The same rule as idle time, for the same reason: anyone opening this
+    // file sums the money column. Work that was turned down was still done,
+    // so the hours belong in the history and the amount belongs nowhere.
+    const s = { ...state, sessions: [session("s1", 10, 2, { status: "cancelled" })] };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Kind")[0]).toBe("Billed");
+    expect(col(csv, "Status")[0]).toBe("cancelled");
+    expect(col(csv, "Hours")[0]).toBe("2.000");
+    expect(col(csv, "Amount")[0]).toBe("0.00");
+  });
+
   it("orders by when it happened, so the file reads as a history", () => {
     const s = {
       ...state,
