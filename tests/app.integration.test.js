@@ -4878,3 +4878,129 @@ describe("paid more per hour once accepted", () => {
     expect(project.perTask).toBeNull();
   }, 30_000);
 });
+
+describe("fixes: data, export and layout", () => {
+  const stored = (dom) => dom.window.localStorage.getItem("meter:v1");
+  const keysOf = (dom) => Array.from(
+    { length: dom.window.localStorage.length }, (_, i) => dom.window.localStorage.key(i));
+  const bannerSaying = (d, re) => [...d.querySelectorAll(".banner")].find((b) => re.test(b.textContent));
+
+  /** jsdom makes no blob URLs and will not read a Blob back, so a download is
+   *  caught on its way in: the text handed to the Blob IS the file. */
+  const grab = async (dom, click) => {
+    const written = [];
+    const RealBlob = dom.window.Blob;
+    dom.window.Blob = function Caught(parts, opts) {
+      written.push(parts.map(String).join(""));
+      return new RealBlob(parts, opts);
+    };
+    dom.window.URL.createObjectURL = () => "blob:x";
+    dom.window.URL.revokeObjectURL = () => {};
+    click();
+    await wait(300);
+    dom.window.Blob = RealBlob;
+    return written[0];
+  };
+
+  const addProject = async (dom, name) => {
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    btn(d, /New project/i).click();
+    await wait(120);
+    const [nameBox, rateBox] = d.querySelectorAll(".panel input");
+    setValue(dom.window, nameBox, name);
+    setValue(dom.window, rateBox, "50");
+    btn(d, /Add project/i).click();
+    await wait(200);
+  };
+
+  describe("a saved ledger that cannot be read", () => {
+    // Most of a real ledger, cut off part-way through its sessions.
+    const CUT = JSON.stringify({
+      projects: [{ id: "a", name: "Orion", currentRate: 40, currency: "USD", createdAt: 1 }],
+      sessions: [{ id: "s1", projectId: "a", kind: "billed", rate: 40, currency: "USD",
+                   createdAt: 1, closedAt: 2, deletedAt: null,
+                   segments: [{ startedAt: 1, endedAt: 2 }] }],
+    }).slice(0, -30);
+    const aside = (dom) => keysOf(dom).find((k) => k.startsWith("meter:v1:unreadable:"));
+    const unreadableBanner = (d) => bannerSaying(d, /couldn.t be read/i);
+
+    /** Storage with no room for a second copy of the ledger. */
+    const bootFull = async (raw) => {
+      const full = `<script>
+        localStorage.setItem('meter:v1', ${JSON.stringify(raw)});
+        const real = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (k, v) {
+          if (String(k).startsWith('meter:v1:unreadable:')) throw new Error('QuotaExceededError');
+          return real.call(this, k, v);
+        };
+      </script>`;
+      const html = readFileSync(DIST, "utf8")
+        .replace('<div id="root"></div>', `<div id="root"></div>${full}`);
+      const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
+      await wait(700);
+      return dom;
+    };
+
+    it("is kept aside and said so, instead of opening empty in silence", async () => {
+      const dom = await boot(null, { "meter:v1": CUT });
+      const d = dom.window.document;
+      expect(unreadableBanner(d)).toBeTruthy();
+      expect(dom.window.localStorage.getItem(aside(dom))).toBe(CUT);
+      // The banner names where it went, so it can be found again.
+      expect(unreadableBanner(d).textContent).toContain(aside(dom));
+      expect(stored(dom)).toBe(CUT);
+    }, 25_000);
+
+    it("is still there after the first change, which used to replace it for good", async () => {
+      // The reported case: adding one project saved a 221-byte ledger over the
+      // whole of the original.
+      const dom = await boot(null, { "meter:v1": CUT });
+      const key = aside(dom);
+      await addProject(dom, "Fresh start");
+      expect(JSON.parse(stored(dom)).projects.map((p) => p.name)).toEqual(["Fresh start"]);
+      expect(dom.window.localStorage.getItem(key)).toBe(CUT);
+    }, 25_000);
+
+    it("can be downloaded exactly as it was stored", async () => {
+      const dom = await boot(null, { "meter:v1": CUT });
+      const d = dom.window.document;
+      const file = await grab(dom, () => btn(unreadableBanner(d), /^Download it$/).click());
+      expect(file).toBe(CUT);
+    }, 25_000);
+
+    it("points the way to a backup", async () => {
+      const dom = await boot(null, { "meter:v1": CUT });
+      const d = dom.window.document;
+      btn(unreadableBanner(d), /restore a backup/i).click();
+      await wait(200);
+      expect(btn(d, /^Restore$/)).toBeTruthy();
+    }, 25_000);
+
+    it("is not saved over at all while there is no room to keep a copy, until it is downloaded", async () => {
+      const dom = await bootFull(CUT);
+      const d = dom.window.document;
+      expect(aside(dom)).toBeUndefined();
+      expect(unreadableBanner(d).textContent).toMatch(/nothing will be saved over it/i);
+      // No way to put the warning away while it is the only thing standing
+      // between the original and the next save.
+      expect(btn(unreadableBanner(d), /Dismiss/)).toBeUndefined();
+
+      await addProject(dom, "Fresh start");
+      expect(stored(dom)).toBe(CUT);
+      expect(d.querySelector(".card-name").textContent).toContain("Fresh start");
+
+      expect(await grab(dom, () => btn(unreadableBanner(d), /^Download it$/).click())).toBe(CUT);
+      await wait(200);
+      // The user holds the original now, so what is on screen is saved.
+      expect(JSON.parse(stored(dom)).projects.map((p) => p.name)).toEqual(["Fresh start"]);
+      expect(unreadableBanner(d).textContent).toMatch(/saving has started again/i);
+    }, 30_000);
+
+    it("says nothing when the ledger reads fine", async () => {
+      const dom = await boot({ projects: [], sessions: [] });
+      expect(unreadableBanner(dom.window.document)).toBeUndefined();
+      expect(aside(dom)).toBeUndefined();
+    }, 25_000);
+  });
+});

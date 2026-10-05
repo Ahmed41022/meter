@@ -142,6 +142,9 @@ export default function App({ store: injectedStore }) {
   const [focusSession, setFocusSession] = useState(null);
   const [toast, setToast] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  /** What the store found and could not read, if anything — see
+   *  `store.unreadable`. Held here so the banner can be answered and put away. */
+  const [unreadable, setUnreadable] = useState(null);
 
   const stateRef = useRef(state);
   const toastTimer = useRef(null);
@@ -200,6 +203,9 @@ export default function App({ store: injectedStore }) {
       const data = loaded ?? EMPTY;
       stateRef.current = data;
       setState(data);
+      // Empty because what was stored could not be read, not because nothing
+      // was. The store has already made it safe; the banner says how.
+      setUnreadable(store.unreadable);
       setReady(true);
 
       const t = Date.now();
@@ -406,6 +412,24 @@ export default function App({ store: injectedStore }) {
     reader.readAsText(file);
   };
 
+  /** Hands over the ledger that could not be read, exactly as it was stored,
+   *  for repairing or keeping. Where no copy could be kept in the browser, the
+   *  store has been refusing to save over it; once the user holds this file
+   *  that refusal has done its job, so saving resumes with what is on screen. */
+  const downloadUnreadable = () => {
+    try {
+      download(`${stamp()}-unreadable.json`, unreadable.raw, "application/json");
+    } catch {
+      flash("The file couldn't be made, so nothing has changed.");
+      return;
+    }
+    if (store.held) {
+      store.release();
+      write(stateRef.current);
+    }
+    setUnreadable((u) => ({ ...u, downloaded: true }));
+  };
+
   if (!ready) {
     return <div className="mtr"><style>{CSS}</style><div className="wrap empty">Loading your ledger…</div></div>;
   }
@@ -463,6 +487,31 @@ export default function App({ store: injectedStore }) {
               </nav>}
         </div>
 
+        {/* First, because it is about the ledger itself. Opening empty without
+            a word is how the original used to get saved over: nothing looked
+            wrong until the first change had already replaced it. */}
+        {unreadable && (
+          <Notice title="Your saved ledger couldn't be read">
+            What was stored here is damaged or isn&apos;t a Meter ledger, so Meter has opened an
+            empty one instead of guessing.{" "}
+            {unreadable.keptAs
+              ? <>The original is untouched, kept aside in this browser as “{unreadable.keptAs}”.</>
+              : unreadable.downloaded
+                ? <>The original is in the file you downloaded, so saving has started again.</>
+                : <>There is no room to keep a copy of it here, so nothing will be saved over it
+                  until you download it.</>}
+            {" "}<button className="linkish" onClick={downloadUnreadable}>Download it</button>
+            {" "}to keep a copy you can repair, or{" "}
+            <button className="linkish"
+                    onClick={() => { setOpenProjectId(null); setFocusSession(null); setTab("work"); }}>
+              restore a backup
+            </button>.
+            {!store.held && (
+              <>{" "}<button className="linkish" onClick={() => setUnreadable(null)}>Dismiss</button></>
+            )}
+          </Notice>
+        )}
+
         {store.volatile && (
           <Notice title="Nothing is being saved">
             This browser is blocking storage, so your sessions disappear when you reload. Serve the
@@ -470,7 +519,9 @@ export default function App({ store: injectedStore }) {
           </Notice>
         )}
 
-        {saveFailed && (
+        {/* Not while the store is holding for an unreadable ledger: the banner
+            above already says nothing is saved, and why, and how to end it. */}
+        {saveFailed && !(unreadable && store.held) && (
           <Notice title="Not saving">
             Changes aren&apos;t reaching storage, so this session won&apos;t survive a reload. Export a backup
             before you close the tab.
