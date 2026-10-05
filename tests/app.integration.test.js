@@ -5188,3 +5188,97 @@ describe("fixes: data, export and layout", () => {
     });
   });
 });
+
+describe("fixes: clock, Today and Overview", () => {
+  /** A named wall-clock instant in the zone the suite runs in. Every test in
+   *  this block pins the page's clock to one of these, so none of them
+   *  depends on the day, the weekday or the hour it happens to run at. Early
+   *  October 2026: Sunday the 4th, Monday the 5th, Wednesday the 7th. */
+  const at = (m, d, h = 0, min = 0) => new Date(2026, m - 1, d, h, min).getTime();
+
+  /**
+   * Boots with the page's clock set to `instant` rather than the real one.
+   *
+   * `Date.now` in the page reads the real clock plus a shift, so time still
+   * passes while a test runs, and `window.__setNow` moves it on. `lapse` runs
+   * the page's long timers (ten seconds and over) every 200ms instead, so a
+   * thirty-second tick can be watched without waiting thirty seconds.
+   */
+  const bootAt = async (seed, instant, { settings = null, lapse = false } = {}) => {
+    let html = readFileSync(DIST, "utf8");
+    const clock = `<script>(() => {
+      const real = Date.now.bind(Date);
+      let shift = ${instant} - real();
+      Date.now = () => real() + shift;
+      window.__setNow = (t) => { shift = t - real(); };
+      ${lapse ? "const every = window.setInterval.bind(window);"
+        + " window.setInterval = (fn, ms, ...rest) => every(fn, ms >= 10000 ? 200 : ms, ...rest);" : ""}
+    })();</script>`;
+    const sets = [
+      seed && `localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});`,
+      ...Object.entries(settings ?? {}).map(
+        ([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`),
+    ].filter(Boolean);
+    html = html.replace('<div id="root"></div>',
+      `<div id="root"></div>${clock}<script>${sets.join("")}</script>`);
+    const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
+    await wait(700);
+    return dom;
+  };
+
+  const project = (id, name, extra = {}) => ({
+    id, name, currentRate: 60, currency: "USD", createdAt: at(8, 1),
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  const sitting = (id, projectId, from, to, extra = {}) => ({
+    id, projectId, kind: "billed", taskId: null, rate: 60, currency: "USD",
+    createdAt: from, closedAt: to, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: to }], ...extra,
+  });
+  /** What the Today section's heading says the day came to. */
+  const todayHead = (d) => [...d.querySelectorAll(".sec-head")]
+    .find((h) => /^Today/.test(h.textContent)).querySelectorAll(".eyebrow")[1].textContent;
+  const short = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+  describe("the clock moves with no meter running", () => {
+    const seed = () => ({
+      projects: [project("a", "Acme")],
+      sessions: [sitting("s1", "a", at(10, 4, 20), at(10, 4, 21))],
+    });
+
+    it("turns Today over to the new day on its own", async () => {
+      // Opened on Sunday night and still open on Monday morning. Nothing is
+      // running, so only the idle tick can carry the app across midnight.
+      const dom = await bootAt(seed(), at(10, 4, 23), { lapse: true });
+      const d = dom.window.document;
+      expect(todayHead(d)).toBe("$60.00 · 1h 00m");
+
+      dom.window.__setNow(at(10, 5, 10));
+      await wait(700);
+      expect(todayHead(d)).toBe("nothing yet");
+      expect(d.querySelector(".panel .empty").textContent).toMatch(/Nothing recorded today/);
+    }, 20_000);
+
+    it("catches up as soon as the app is looked at again", async () => {
+      // A tab in the background, or a laptop asleep overnight, has its timers
+      // held back: coming back to it must not show the week it was left on.
+      const dom = await bootAt(seed(), at(10, 4, 23));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      const span = () => d.querySelector(".dash-sub").textContent;
+      expect(span()).toContain(short(at(9, 28)));
+      expect(d.querySelector(".grand-amt").textContent).toBe("$60.00");
+
+      dom.window.__setNow(at(10, 5, 10));
+      d.dispatchEvent(new dom.window.Event("visibilitychange"));
+      await wait(250);
+      expect(span()).toContain(short(at(10, 5)));
+      expect(d.querySelector(".grand-amt").textContent).toBe("—");
+
+      dom.window.__setNow(at(10, 12, 10));
+      dom.window.dispatchEvent(new dom.window.Event("focus"));
+      await wait(250);
+      expect(span()).toContain(short(at(10, 12)));
+    }, 20_000);
+  });
+});

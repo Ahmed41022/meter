@@ -45,6 +45,15 @@ import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
 
 const TICK_MS = 1_000;
+/**
+ * How often the clock moves while no meter is running.
+ *
+ * Nothing on screen changes faster than the minute then, but the day and the
+ * week do turn over, and every "today" and "this week" in the app reads this
+ * clock. Twice a minute crosses midnight on time without re-rendering the
+ * whole app every second for a figure that has not moved.
+ */
+const IDLE_TICK_MS = 30_000;
 /** A burst of edits should be one upload, not one per keystroke. */
 const PUSH_DELAY_MS = 8_000;
 
@@ -311,13 +320,34 @@ export default function App({ store: injectedStore }) {
     return () => document.removeEventListener("visibilitychange", onShow);
   }, [ready, clientId, runSync]);
 
-  /** Drives rendering only. Stop this interval and the stored data is still
-   *  correct — elapsed time is derived, never accumulated here. */
+  /**
+   * Drives rendering only. Stop this interval and the stored data is still
+   * correct — elapsed time is derived, never accumulated here.
+   *
+   * It runs whether or not a meter does. Today's figures, the Overview's
+   * period and the day a goal is paced against all read `now`, and a clock
+   * that only moved with a meter left an app opened on Sunday night still
+   * showing Sunday on Monday morning, with Monday's week reported as last
+   * week's. A running meter needs the second; otherwise the idle tick will do.
+   */
   useEffect(() => {
-    if (!anyRunning) return;
-    const id = setInterval(() => setNow(Date.now()), TICK_MS);
+    const id = setInterval(() => setNow(Date.now()), anyRunning ? TICK_MS : IDLE_TICK_MS);
     return () => clearInterval(id);
   }, [anyRunning]);
+
+  /** Catches up the moment the app is looked at again. A tab in the
+   *  background, or a laptop asleep overnight, has its timers held back, so
+   *  without this the first thing on screen after waking would be yesterday
+   *  until the next tick came round. */
+  useEffect(() => {
+    const catchUp = () => { if (!document.hidden) setNow(Date.now()); };
+    document.addEventListener("visibilitychange", catchUp);
+    window.addEventListener("focus", catchUp);
+    return () => {
+      document.removeEventListener("visibilitychange", catchUp);
+      window.removeEventListener("focus", catchUp);
+    };
+  }, []);
 
   /**
    * Proof of life, so a crash can be closed at the right timestamp.
