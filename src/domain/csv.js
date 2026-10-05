@@ -18,7 +18,7 @@ import { rateFor, taskLabel } from "./tasks.js";
 import { earningsCents } from "./money.js";
 import { isBilled } from "./sessions.js";
 import { isCancelled, payStateOf, tasksOf } from "./earnings.js";
-import { companyOf } from "./projects.js";
+import { companyOf, isOffClock } from "./projects.js";
 
 const HOUR = 3_600_000;
 
@@ -85,6 +85,7 @@ export const toCsv = (state, now) => {
     const segments = s.segments ?? [];
     const startedAt = segments.length ? segments[0].startedAt : s.createdAt;
     const endedAt = s.closedAt ?? (segments.length ? segments[segments.length - 1].endedAt : null);
+    const off = isOffClock(project);
     rows.push({
       at: startedAt,
       values: [
@@ -92,19 +93,23 @@ export const toCsv = (state, now) => {
         project?.name ?? "",
         companyOf(project) ?? "",
         project ? taskLabel(project, s.taskId) : "",
-        isBilled(s) ? "Billed" : "Idle",
+        off ? "Off the clock" : isBilled(s) ? "Billed" : "Idle",
         payStateOf(s),
         isoTime(startedAt),
         endedAt === null ? "" : isoTime(endedAt),
         hours(ms),
         rate ?? "",
         s.currency ?? "",
-        // Idle time is not income, and neither is work that was rejected.
-        // Both carry their hours so the file still accounts for the day, and
-        // a zero in the money column so no total built from it can ever
-        // include money that was never billable or never arrived. The status
-        // column above says which of the two it was.
-        isBilled(s) && !isCancelled(s) ? amount(earningsCents(rate, ms)) : "0.00",
+        // Idle time is not income, nor is time off the clock, nor work that
+        // was rejected. All three carry their hours so the file still
+        // accounts for the day, and a zero in the money column so no total
+        // built from it can ever include money that was never billable or
+        // never arrived. Off the clock zeroes even when the sessions carry a
+        // rate, as they do on a project that was moved off the clock after
+        // it had one: no screen counts that money, so neither may this file.
+        // The Kind column says which of the first two a row is; the Status
+        // column marks the third.
+        !off && isBilled(s) && !isCancelled(s) ? amount(earningsCents(rate, ms)) : "0.00",
         s.manual ? "typed in" : "timed",
         "",
       ],
@@ -114,6 +119,10 @@ export const toCsv = (state, now) => {
   for (const e of state?.earnings ?? []) {
     if (e.deletedAt) continue;
     const project = byId[e.projectId];
+    // Money filed on a project that has since moved off the clock. Every
+    // screen leaves it out, because off the clock cannot earn, so here it
+    // keeps its row and loses its amount, exactly as that project's time does.
+    const off = isOffClock(project);
     rows.push({
       at: e.at,
       values: [
@@ -124,7 +133,8 @@ export const toCsv = (state, now) => {
         // spreadsheet cell helps nobody — the count is the fact a reader of
         // this file can act on.
         taskColumn(project, e),
-        e.kind === "bonus" ? "Bonus" : e.kind === "adjust" ? "Adjustment" : "Per item",
+        off ? "Off the clock"
+          : e.kind === "bonus" ? "Bonus" : e.kind === "adjust" ? "Adjustment" : "Per item",
         payStateOf(e),
         "", "",
         // No hours, and deliberately blank rather than 0.000: this money took
@@ -135,7 +145,7 @@ export const toCsv = (state, now) => {
         // "6 x $500" is the fact and "$3,000" only its consequence.
         e.units ? amount(Math.round(e.cents / e.units)) : "",
         e.currency ?? "",
-        amount(e.cents),
+        off ? "0.00" : amount(e.cents),
         "typed in",
         e.units ? `${e.units} items${e.note ? ` · ${e.note}` : ""}` : (e.note ?? ""),
       ],

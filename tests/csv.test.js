@@ -125,6 +125,33 @@ describe("the ledger as a spreadsheet", () => {
     expect(col(csv, "Amount")[0]).toBe("0.00");
   });
 
+  it("gives time off the clock its hours but never any money, whatever rate it carries", () => {
+    // A project moved off the clock after it had a rate keeps that rate on its
+    // sessions. No screen counts what it would come to, so the file must not:
+    // eight hours of sleep at $10 used to export as an $80 billed row.
+    const s = {
+      ...state,
+      projects: [project("p1", { name: "Sleep", offClock: true })],
+      sessions: [session("s1", 10, 8, { rate: 10 })],
+    };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Kind")[0]).toBe("Off the clock");
+    expect(col(csv, "Hours")[0]).toBe("8.000");
+    expect(col(csv, "Amount")[0]).toBe("0.00");
+  });
+
+  it("zeroes money filed on a project that has since gone off the clock", () => {
+    const s = {
+      ...state,
+      projects: [project("p1", { offClock: true })],
+      sessions: [],
+      earnings: [earning("e1", 12, 5_000, { kind: "bonus" })],
+    };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Kind")).toEqual(["Off the clock"]);
+    expect(col(csv, "Amount")).toEqual(["0.00"]);
+  });
+
   it("orders by when it happened, so the file reads as a history", () => {
     const s = {
       ...state,
