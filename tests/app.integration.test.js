@@ -4326,6 +4326,68 @@ describe("settling a batch of tasks", () => {
       .toEqual(["accepted", "accepted"]);
   }, 30_000);
 
+  const stamp = (epoch) => {
+    const p = (n) => String(n).padStart(2, "0");
+    const x = new Date(epoch);
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+  };
+  /** Yesterday at a wall-clock hour, built from calendar fields so a
+   *  daylight-saving night cannot move it. */
+  const yesterdayAt = (h, m) => {
+    const x = new Date(now);
+    x.setDate(x.getDate() - 1);
+    x.setHours(h, m, 0, 0);
+    return x.getTime();
+  };
+
+  it("records the minute an answer came back, not only its day", async () => {
+    // A cutoff shuts at an hour — Sunday 19:00 in New York is 02:00 Monday in
+    // Cairo — so an answer at 01:30 and one at noon the same day can fall in
+    // different pay periods. A day alone could never tell them apart.
+    const { dom, d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Submit 2$/).click();
+    await wait(300);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+
+    const when = d.querySelector(".selbar-when input");
+    expect(when.type).toBe("datetime-local");
+    const at = yesterdayAt(1, 30);
+    setValue(dom.window, when, stamp(at));
+    await wait(100);
+    btn(d, /^Accepted 2$/).click();
+    await wait(300);
+
+    expect(stored(dom).projects[0].tasks.map((t) => t.stateAt)).toEqual([at, at]);
+  }, 30_000);
+
+  it("lets the time of an answer be corrected afterwards, to the minute", async () => {
+    const { dom, d } = await open();
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Submit 2$/).click();
+    await wait(300);
+    btn(d, /^Select all 2$/).click();
+    await wait(200);
+    btn(d, /^Accepted 2$/).click();
+    await wait(300);
+
+    const row = taskRows(d).find((r) => r.textContent.includes("1234"));
+    [...row.querySelectorAll("button")].find((b) => b.textContent === "edit").click();
+    await wait(200);
+    const [, back] = d.querySelectorAll('.prompt input[type="datetime-local"]');
+    const late = yesterdayAt(23, 45);
+    setValue(dom.window, back, stamp(late));
+    btn(d, /^Save$/i).click();
+    await wait(300);
+
+    const [t1, t2] = stored(dom).projects[0].tasks;
+    expect(t1.stateAt).toBe(late);
+    expect(t2.stateAt).not.toBe(late); // only the task that was edited
+  }, 30_000);
+
   it("covers a batch with one reward, without splitting it between them", async () => {
     // Fifty tasks paid by one milestone are each paid for, and none of them is
     // worth a fiftieth of it — that price was never quoted.

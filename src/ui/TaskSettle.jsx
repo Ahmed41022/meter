@@ -34,14 +34,19 @@ import {
  * fifty ways would invent a price nobody quoted.
  */
 const pad = (n) => String(n).padStart(2, "0");
+/** datetime-local speaks local wall clock both ways; epoch integers stay the
+ *  storage format either side of this boundary.
+ *
+ *  To the minute, not the day. A pay period shuts at an hour — Sunday 19:00
+ *  in New York is 02:00 Monday here — so a day alone cannot say which side of
+ *  it an answer fell, and a cutoff hour that no recorded time can reach is a
+ *  setting that does nothing. */
 const toInput = (t) => {
   const d = new Date(t);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-/** Midday, so a timezone cannot nudge the chosen day across a boundary and
- *  land the money in the wrong pay period — the one thing this date decides. */
 const fromInput = (text, fallback) => {
-  const at = new Date(`${text}T12:00`).getTime();
+  const at = new Date(text).getTime();
   return Number.isFinite(at) ? at : fallback;
 };
 
@@ -123,8 +128,8 @@ export default function TaskSettle({
         {(open.length > 0 || stated.length > 0) && (
           <label className="selbar-when">
             <span className="eyebrow">On</span>
-            <input className="inp" type="date" value={when}
-                   aria-label="The day this happened"
+            <input className="inp" type="datetime-local" value={when}
+                   aria-label="When this happened"
                    onChange={(e) => setWhen(e.target.value)} />
           </label>
         )}
@@ -160,9 +165,10 @@ export default function TaskSettle({
               + " rather than in your earnings until you hear back."
             : " It also settles the hourly money, which is what handing the work"
               + " in earns here."}
-          {" "}The date beside the buttons is the day this happened, not the day
-          you tick the box. On an answer it decides which pay period the money
-          falls in, so an acceptance recorded late slips a whole payday.
+          {" "}The time beside the buttons is when this happened, not when you
+          tick the box. On an answer it decides which pay period the money
+          falls in, to the minute of the cutoff, so an acceptance recorded late
+          slips a whole payday.
           {model === REWARD.PER_HOUR ? (
             <>
               {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr

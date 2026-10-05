@@ -12,9 +12,16 @@ const ANSWER_WORD = {
 };
 
 const pad = (n) => String(n).padStart(2, "0");
+/** datetime-local speaks local wall clock both ways; epoch integers stay the
+ *  storage format either side of this boundary. To the minute, because a pay
+ *  period shuts at an hour and a day cannot say which side of it a time fell. */
 const toInput = (t) => {
   const d = new Date(t);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const fromInput = (value) => {
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? t : null;
 };
 
 /**
@@ -55,9 +62,8 @@ export default function TaskEditor({
     rate: rate.trim() === "" ? null : rate,
     price: price.trim() === "" ? null : price,
     note,
-    // Midday, so a timezone cannot nudge either day across a pay cutoff.
-    submittedAt: went ? new Date(went + "T12:00").getTime() : null,
-    answeredAt: back ? new Date(back + "T12:00").getTime() : null,
+    submittedAt: went ? fromInput(went) : null,
+    answeredAt: back ? fromInput(back) : null,
   });
 
   if (confirming) {
@@ -115,7 +121,7 @@ export default function TaskEditor({
         <div className="pair">
           <label className="field">
             <span className="eyebrow">Handed in on</span>
-            <input className="inp" type="date" value={went}
+            <input className="inp" type="datetime-local" value={went}
                    onChange={(e) => setWent(e.target.value)} />
           </label>
           {/* Only once there is an answer to date. A submitted task has not
@@ -124,7 +130,7 @@ export default function TaskEditor({
           {answered !== null && (
             <label className="field">
               <span className="eyebrow">{ANSWER_WORD[taskState(task)]} on</span>
-              <input className="inp" type="date" value={back}
+              <input className="inp" type="datetime-local" value={back}
                      onChange={(e) => setBack(e.target.value)} />
             </label>
           )}
@@ -134,11 +140,12 @@ export default function TaskEditor({
         <div className="hint">
           {answered !== null ? (
             <>
-              The second date is the one that matters to your money: the pay run a task
-              lands in is the one for the period its answer fell in, so an acceptance
-              read on Friday and ticked off on Monday has crossed a cutoff. Correcting
-              it moves the forecast and never an amount. The first is the record of when
-              the work was delivered, which is what a bonus window turns on.
+              The second time is the one that matters to your money: the pay run a task
+              lands in is the one for the period its answer fell in, to the minute of the
+              cutoff, so an acceptance that came in at 1am and was ticked off at noon may
+              have crossed one. Correcting it moves the forecast and never an amount. The
+              first is the record of when the work was delivered, which is what a bonus
+              window turns on. Times recorded before this could hold one read 12:00.
             </>
           ) : (
             <>
