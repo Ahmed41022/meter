@@ -18,16 +18,18 @@ import {
  * Which buttons appear is decided by what is selected, not by a mode:
  *
  *  - SUBMIT is offered for tasks still open. It freezes their hours forever,
- *    settles the hourly money where the project is paid as worked, and
- *    writes the acceptance reward as pending.
+ *    counts them as earned where the project is paid as worked (until a
+ *    rejection takes them back), and files the acceptance reward as pending —
+ *    the one the task already has, re-priced, if it was handed in before.
  *  - ACCEPTED and REJECTED are offered for every task already handed in,
  *    answered or not. They are the only two answers that can come back, and
  *    an answer can be changed its mind about: rejecting is what cancels a
  *    task's pay, so the opposite button has to stay within reach afterwards
  *    or one wrong click costs a week's money with no way back to it.
  *  - REOPEN undoes a state on tasks that have one, for the ordinary case of
- *    having ticked the wrong row. It gives back hours a rejection cancelled
- *    and leaves settled money alone.
+ *    having ticked the wrong row. On an answered task it takes back what the
+ *    answer did, leaving the hours and the reward pending until the task is
+ *    accepted again; on one only handed in it leaves the money alone.
  *
  * ONE REWARD sits apart from all of that. It is "finish fifty and we pay you
  * X" — a single payment naming every task in the selection, where splitting it
@@ -155,36 +157,56 @@ export default function TaskSettle({
         <button className="btn ghost" onClick={onClear}>Clear</button>
       </div>
 
-      {open.length > 0 && (
+      {(open.length > 0 || stated.length > 0) && (
         <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
-          Submitting stops the clock on {these} for good — no more hours can be
-          recorded against {them}.
-          {paysOnAcceptance(project)
-            ? " The money stays pending: on this project nothing is earned until"
-              + " somebody accepts the work, so it is reported on its own line"
-              + " rather than in your earnings until you hear back."
-            : " It also settles the hourly money, which is what handing the work"
-              + " in earns here."}
-          {" "}The time beside the buttons is when this happened, not when you
+          {open.length > 0 && (
+            <>
+              Submitting stops the clock on {these} for good — no more hours can be
+              recorded against {them}.
+              {/* Neither branch calls the hours settled. On a project paid as
+                  worked they count from here, but a rejection still cancels
+                  them, so "settled" would promise something the next answer
+                  can take back. */}
+              {paysOnAcceptance(project)
+                ? " The money stays pending: on this project nothing is earned until"
+                  + " somebody accepts the work, so it is reported on its own line"
+                  + " rather than in your earnings until you hear back."
+                : " On this project the hours count as earned once they are handed in,"
+                  + " unless the answer is a rejection, which cancels them."}
+              {model === REWARD.PER_HOUR ? (
+                <>
+                  {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr
+                  on {formatShortDuration(openMs)} is filed as pending until you hear back.
+                </>
+              ) : model === REWARD.PER_TASK ? (
+                <>
+                  {" "}The per-item price is filed as pending until you hear back.
+                  {owed === 0 && " Nothing is priced here yet, so no reward will be recorded."}
+                </>
+              ) : (
+                <>
+                  {" "}This project pays nothing extra on acceptance, so no reward line is
+                  written — set one in Settings if it should.
+                </>
+              )}
+              {model !== null
+                && " A task handed in before keeps the one reward it has, re-priced from its"
+                  + " hours, rather than gaining a second."}
+              {" "}
+            </>
+          )}
+          {stated.length > 0 && (
+            <>
+              Accepted pays the hours and each task&apos;s own reward; Rejected cancels that
+              money and keeps the hours on the record. Reopening a task that has had an answer
+              takes back what the answer did — its money is pending until it is accepted
+              again — while reopening one only handed in leaves its money alone.{" "}
+            </>
+          )}
+          The time beside the buttons is when this happened, not when you
           tick the box. On an answer it decides which pay period the money
           falls in, to the minute of the cutoff, so an acceptance recorded late
           slips a whole payday.
-          {model === REWARD.PER_HOUR ? (
-            <>
-              {" "}The bonus of {formatMoney(Math.round(bonusPerHour(project) * 100), currency)}/hr
-              on {formatShortDuration(openMs)} is filed as pending until you hear back.
-            </>
-          ) : model === REWARD.PER_TASK ? (
-            <>
-              {" "}The per-item price is filed as pending until you hear back.
-              {owed === 0 && " Nothing is priced here yet, so no reward will be recorded."}
-            </>
-          ) : (
-            <>
-              {" "}This project pays nothing extra on acceptance, so no reward line is
-              written — set one in Settings if it should.
-            </>
-          )}
         </p>
       )}
 

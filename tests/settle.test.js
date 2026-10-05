@@ -11,6 +11,8 @@ import {
 } from "../src/domain/earnings.js";
 import { KIND, addManualSession, startSession, stopSession } from "../src/domain/sessions.js";
 import { addTask, findTask } from "../src/domain/tasks.js";
+import { earningsCents } from "../src/domain/money.js";
+import { elapsedMs } from "../src/domain/time.js";
 
 const T = 1_700_000_000_000;
 const HOUR = 3_600_000;
@@ -316,20 +318,21 @@ describe("hearing back", () => {
     expect(twice.earnings).toEqual(once.earnings);
   });
 
-  it("brings cancelled hours back when the task is reopened", () => {
+  it("puts a rejected task's money back to pending when it is reopened", () => {
     /*
-     * An open task is one being worked on. Leaving its sessions cancelled
-     * would show live work as worth nothing, and the rejection that zeroed
-     * them is exactly what reopening undoes. This project is paid on
-     * acceptance, so they return to pending rather than straight to paid.
+     * An open task is one being worked on, and it has no answer: the
+     * rejection that zeroed its money is exactly what reopening undoes. The
+     * money is owed again, not earned — pending, hours and reward alike, until
+     * the task is accepted.
      */
     let s = answerTasks(submitted(), hourly, ["t1"], TASK.CANCELLED, T + 5 * HOUR);
     s = reopenTasks(s, hourly, ["t1"], T + 6 * HOUR);
     expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
     expect(taskState(findTask(proj(s), "t1"))).toBeNull();
-    // The reward stays dead: submitting again writes a fresh one, and
-    // restoring this one too would leave the task owed twice.
-    expect(isCancelled(rewards(s)[0])).toBe(true);
+    // Kept rather than left cancelled: handing the task in again re-uses this
+    // line instead of writing a second, so the task is never owed twice.
+    expect(rewards(s)).toHaveLength(1);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PENDING);
   });
 
   it("leaves a reward shared across many tasks alone", () => {
@@ -350,6 +353,171 @@ describe("hearing back", () => {
     s = submitTasks(s, proj(s), ["t1"], T + 3 * HOUR, counter());
     s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 4 * HOUR);
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.ACCEPTED);
+  });
+});
+
+describe("a task handed in more than once", () => {
+  /** $40 an hour, and $50 more for each accepted item: the ledger in which a
+   *  rejected, reopened and resubmitted task read $140 earned instead of $90. */
+  const priced = { ...hourly, currentRate: 40, bonusPerHour: undefined, perTask: 50 };
+
+  /** Every cent counted as paid: settled hours plus settled lines. */
+  const paidCents = (s, at) =>
+    s.sessions.filter((x) => !x.deletedAt && payStateOf(x) === PAY.PAID)
+      .reduce((n, x) => n + earningsCents(x.rate, elapsedMs(x, at)), 0)
+    + rewards(s).filter((e) => payStateOf(e) === PAY.PAID).reduce((n, e) => n + e.cents, 0);
+
+  /** Live lines naming t1 and nothing else. */
+  const ownLines = (s) => rewards(s).filter((e) => e.taskIds?.length === 1 && e.taskIds[0] === "t1");
+
+  it("pays the reward once after a rejection is reopened and handed in again", () => {
+    let s = worked(seed(priced), 1);
+    const next = counter();
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.CANCELLED, T + 3 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 4 * HOUR);
+    s = submitTasks(s, proj(s), ["t1"], T + 5 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 6 * HOUR);
+
+    expect(ownLines(s)).toHaveLength(1);
+    expect(paidCents(s, T + 6 * HOUR)).toBe(4_000 + 5_000);
+  });
+
+  it("pays it once after an acceptance is reopened and handed in again", () => {
+    let s = worked(seed(priced), 1);
+    const next = counter();
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 3 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 4 * HOUR);
+    s = submitTasks(s, proj(s), ["t1"], T + 5 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 6 * HOUR);
+
+    expect(ownLines(s)).toHaveLength(1);
+    expect(paidCents(s, T + 6 * HOUR)).toBe(4_000 + 5_000);
+  });
+
+  it("re-prices the reward from the hours the task has now", () => {
+    // Usually the reason it was reopened: more work went into it.
+    let s = worked(seed(hourly), 3);
+    const next = counter();
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 6 * HOUR);
+    s = worked(s, 1, { id: "s2", at: T + 7 * HOUR });
+    s = submitTasks(s, proj(s), ["t1"], T + 9 * HOUR, next);
+
+    expect(ownLines(s)).toHaveLength(1);
+    expect(ownLines(s)[0]).toMatchObject({
+      cents: 4_000, note: "Accepted · t1 · 4h 00m at 10/hr", at: T + 9 * HOUR,
+    });
+    expect(isPending(ownLines(s)[0])).toBe(true);
+  });
+
+  it("keeps an amount recorded by hand, and writes no second line beside it", () => {
+    let s = worked(seed(flat), 1);
+    s = addEarning(s, proj(s), {
+      cents: 2_500, kind: EARNING.PIECE, units: 1, taskIds: ["t1"], note: "what it earned",
+    }, T + HOUR, "mine");
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, counter());
+
+    expect(ownLines(s)).toHaveLength(1);
+    expect(ownLines(s)[0]).toMatchObject({ id: "mine", cents: 2_500, note: "what it earned" });
+    // The task's state decides what its money is worth, and it is under review.
+    expect(isPending(ownLines(s)[0])).toBe(true);
+  });
+
+  it("does not let an adjustment stand in for the reward", () => {
+    // A clawback filed against the task is a correction, not what acceptance
+    // pays, so the reward is still written and the clawback is left alone.
+    let s = worked(seed(flat), 1);
+    s = addEarning(s, proj(s), {
+      cents: -500, kind: EARNING.ADJUSTMENT, taskIds: ["t1"],
+    }, T + HOUR, "fix");
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, counter());
+
+    const fix = ownLines(s).find((e) => e.id === "fix");
+    expect(ownLines(s)).toHaveLength(2);
+    expect(payStateOf(fix)).toBe(PAY.PAID);
+    expect(ownLines(s).find((e) => e.id !== "fix")).toMatchObject({ cents: 1_000, status: PAY.PENDING });
+  });
+
+  it("keeps one written reward where an earlier build left two", () => {
+    // Builds before this wrote a fresh line on every hand-in, so a task that
+    // went round twice can already carry two. One is all it is owed.
+    let s = worked(seed(flat), 1);
+    const line = { cents: 1_000, kind: EARNING.PIECE, units: 1, taskIds: ["t1"], note: "Accepted · t1" };
+    s = addEarning(s, proj(s), { ...line, status: PAY.CANCELLED }, T + HOUR, "first");
+    s = addEarning(s, proj(s), { ...line, status: PAY.PENDING }, T + 2 * HOUR, "second");
+    s = setTaskState(s, "p1", "t1", TASK.SUBMITTED, T + 2 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 3 * HOUR);
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+
+    expect(ownLines(s)).toHaveLength(1);
+    expect(paidCents(s, T + 5 * HOUR)).toBe(8_000 + 1_000);
+    // Deleted the ordinary way, so an Undo or a merge can still see it.
+    expect(s.earnings.find((e) => e.id === "second").deletedAt).toBe(T + 4 * HOUR);
+  });
+
+  it("drops the written reward when a fresh hand-in would no longer write one", () => {
+    let s = worked(seed(flat), 1);
+    const next = counter();
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, next);
+    s = reopenTasks(s, proj(s), ["t1"], T + 3 * HOUR);
+    s = { ...s, projects: [{ ...proj(s), perTask: undefined }] };
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, next);
+    expect(ownLines(s)).toHaveLength(0);
+  });
+});
+
+describe("reopening an answered task", () => {
+  it("withdraws an accepted task's money until it is accepted again", () => {
+    // "If I did it by mistake it should subtract all money added because of
+    // it until I mark it accepted and paid again."
+    let s = worked(seed(hourly), 3);
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 6 * HOUR);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PENDING);
+  });
+
+  it("does the same on a project paid as worked, and handing it in again counts the hours", () => {
+    let s = worked(seed({ ...asWorked, perTask: 10 }), 3);
+    const next = counter();
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, next);
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 6 * HOUR);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PENDING);
+
+    s = submitTasks(s, proj(s), ["t1"], T + 7 * HOUR, next);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PAID);
+    expect(rewards(s)).toHaveLength(1);
+    expect(payStateOf(rewards(s)[0])).toBe(PAY.PENDING);
+  });
+
+  it("leaves a reward shared across many tasks alone", () => {
+    let s = seed(hourly);
+    s = addTask(s, "p1", { id: "t2", label: "t2" }, T);
+    s = worked(s, 3);
+    s = addEarning(s, proj(s), {
+      cents: 50_000, kind: EARNING.BONUS, taskIds: ["t1", "t2"],
+    }, T, "shared");
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    s = reopenTasks(s, proj(s), ["t1"], T + 6 * HOUR);
+    expect(payStateOf(rewards(s).find((e) => e.id === "shared"))).toBe(PAY.PAID);
+  });
+
+  it("reads where the task stands from the ledger, not from a stale project", () => {
+    // The caller's copy of the project can be a click behind. This one has no
+    // tasks at all, and the reopen must still see that t1 was accepted.
+    let s = worked(seed(hourly), 3);
+    s = submitTasks(s, proj(s), ["t1"], T + 4 * HOUR, counter());
+    s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 5 * HOUR);
+    s = reopenTasks(s, hourly, ["t1"], T + 6 * HOUR);
+    expect(payStateOf(s.sessions[0])).toBe(PAY.PENDING);
   });
 });
 

@@ -6250,3 +6250,79 @@ describe("fixes: found in review", () => {
     expect(stored(dom).projects[0].tasks.find((t) => t.label === "T-9").price).toBe(12.5);
   }, 30_000);
 });
+
+describe("fixes: paydays and settling", () => {
+  const HOUR = 3_600_000;
+  const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+
+  /** Boots a ledger and opens its first project. */
+  const openFirst = async (seed, settings = null) => {
+    const dom = await boot(seed, settings);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(200);
+    return { dom, d };
+  };
+
+  /** Ticks one task's row in By task. */
+  const tick = async (d, label) => {
+    const row = [...d.querySelectorAll(".trow")]
+      .find((r) => r.querySelector(".trow-label")?.textContent.startsWith(label));
+    row.querySelector("input.row-check").click();
+    await wait(150);
+  };
+
+  const press = async (d, re) => {
+    btn(d, re).click();
+    await wait(300);
+  };
+
+  /** A project paying $40 an hour plus $50 per accepted item, with one
+   *  finished hour on task 1234 that ended `endedAgo` ms ago. */
+  const priced = (endedAgo = 2 * HOUR) => {
+    const now = Date.now();
+    return {
+      projects: [{
+        id: "a", name: "Gateway", company: "Northwind", currentRate: 40, perTask: 50,
+        currency: "USD", paysOnAcceptance: true, createdAt: now - 30 * HOUR,
+        sessionGoal: null, overallGoal: null,
+        tasks: [{ id: "t1", label: "1234", createdAt: now - 30 * HOUR }],
+      }],
+      sessions: [{
+        id: "s1", projectId: "a", kind: "billed", taskId: "t1", rate: 40, currency: "USD",
+        status: "pending", createdAt: now - endedAgo - HOUR, closedAt: now - endedAgo,
+        deletedAt: null, segments: [{ startedAt: now - endedAgo - HOUR, endedAt: now - endedAgo }],
+      }],
+      earnings: [],
+    };
+  };
+
+  it("pays a task's reward once when it is rejected, reopened, handed in again and accepted", async () => {
+    // It used to write a second reward beside the one the rejection had
+    // cancelled, and accepting paid both: $140 for $40 of hours and a $50 item.
+    const { dom, d } = await openFirst(priced(), ALL_TIME);
+    await tick(d, "1234");
+    await press(d, /^Submit 1$/);
+    await tick(d, "1234");
+    await press(d, /^Rejected 1$/);
+    await tick(d, "1234");
+    await press(d, /^Reopen 1$/);
+    expect(d.querySelector(".toast").textContent).toMatch(/money is pending until it is accepted again/);
+    await tick(d, "1234");
+    await press(d, /^Submit 1$/);
+    await tick(d, "1234");
+    await press(d, /^Accepted 1$/);
+
+    const live = stored(dom).earnings.filter((e) => !e.deletedAt);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ cents: 5_000, taskIds: ["t1"] });
+    expect(live[0].status).toBeUndefined();
+
+    btn(d, /All projects/).click();
+    await wait(200);
+    await toProjects(d, "Overview");
+    expect(d.querySelector(".grand-amt").textContent).toBe("$90.00");
+  }, 30_000);
+});

@@ -16,10 +16,12 @@ import {
   removeEarning, restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
-  addTask, parseTaskRate, readPrice, removeTask, renameTask, resolveTaskId, setTaskNote,
-  setTaskPrice, setTaskRate, taskLabel,
+  addTask, findTask, parseTaskRate, readPrice, removeTask, renameTask, resolveTaskId,
+  setTaskNote, setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
-import { TASK, setAnsweredAt, setSubmittedAt } from "../domain/taskState.js";
+import {
+  TASK, isAccepted, isRejected, setAnsweredAt, setSubmittedAt,
+} from "../domain/taskState.js";
 import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
 import { payPeriodFor, setPayPeriod } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
@@ -771,11 +773,13 @@ export default function App({ store: injectedStore }) {
               flash(`${ids.length} marked ${status === PAY.PAID ? "paid" : status}.`, "Undo",
                     () => commit(() => snapshot));
             }}
-            /* Handing work in. The hours stop forever, the hourly money
-               settles — delivering is what earns it — and the acceptance
-               reward is filed pending. All three move inside `submitTasks`,
-               so no route can leave a task marked submitted whose sessions
-               were never settled.
+            /* Handing work in. The hours stop forever and move by the
+               project's own rule — counted as earned where it pays as worked,
+               pending where it pays once accepted — and the acceptance reward
+               is filed pending: a fresh one, or the one the task already had,
+               re-priced, so a task handed in twice is never paid twice. All of
+               it moves inside `submitTasks`, so no route can leave a task
+               marked submitted whose sessions never moved with it.
 
                The project is re-read from the state being committed rather
                than taken from this render: two clicks in quick succession
@@ -786,12 +790,15 @@ export default function App({ store: injectedStore }) {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? submitTasks(s, live, taskIds, Date.now(), uid, at) : s;
               });
+              const one = taskIds.length === 1;
               // What submitting did depends on how the project pays, and the
-              // two outcomes are not close enough to share a sentence.
-              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} submitted. `
+              // two outcomes are not close enough to share a sentence. Neither
+              // calls the hours settled: a rejection can still take them back.
+              flash(`${taskIds.length} task${one ? "" : "s"} submitted. `
                     + (paysOnAcceptance(project)
-                      ? "The clock is closed; nothing is earned until they are accepted."
-                      : "The clock is closed and the hours are settled."),
+                      ? `The clock is closed; nothing is earned until ${one ? "it is" : "they are"} accepted.`
+                      : "The clock is closed and the hours count as earned, unless "
+                        + `${one ? "it is" : "they are"} rejected.`),
                     "Undo", () => commit(() => snapshot));
             }}
             onAnswerTasks={(taskIds, answer, at) => {
@@ -800,27 +807,44 @@ export default function App({ store: injectedStore }) {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? answerTasks(s, live, taskIds, answer, at ?? Date.now()) : s;
               });
-              const count = `${taskIds.length} task${taskIds.length === 1 ? "" : "s"}`;
+              const one = taskIds.length === 1;
+              const count = `${taskIds.length} task${one ? "" : "s"}`;
+              // "Own" because a reward shared across a batch is not paid or
+              // cancelled by answering one task in it.
               flash(
                 answer === TASK.ACCEPTED
-                  ? `${count} accepted. The hours and the reward are paid.`
-                  : `${count} rejected. The money is cancelled; the hours stay on the record.`,
+                  ? `${count} accepted. ${one ? "Its hours and its own reward are" : "Their hours and their own rewards are"} paid.`
+                  : `${count} rejected. ${one ? "Its" : "Their"} money is cancelled and the hours `
+                    + "stay on the record; answering Accepted puts the money back.",
                 "Undo", () => commit(() => snapshot),
               );
             }}
-            /* Settled money stays where it is: reversing it quietly would be
-               the ledger changing behind you. Hours a rejection cancelled do
-               come back, because an open task is one being worked on and
-               reopening is exactly what undoes that rejection. */
+            /* Reopening an answered task takes back what the answer did: its
+               hours and its own reward are pending until it is accepted again,
+               so an acceptance reopened by mistake stops counting at once.
+               A task that was only handed in had no answer to take back, and
+               its money stays where it is. The toast says which happened,
+               because the two look the same on the button. */
             onReopenTasks={(taskIds) => {
               const snapshot = stateRef.current;
+              const before = snapshot.projects.find((p) => p.id === project.id) ?? project;
+              const answered = taskIds.filter((id) => {
+                const task = findTask(before, id);
+                return isAccepted(task) || isRejected(task);
+              }).length;
               commit((s) => {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? reopenTasks(s, live, taskIds, Date.now()) : s;
               });
-              flash(`${taskIds.length} task${taskIds.length === 1 ? "" : "s"} reopened. `
-                    + "They take time again; settled money is untouched and hours a "
-                    + "rejection cancelled are back.",
+              const one = taskIds.length === 1;
+              flash(`${taskIds.length} task${one ? "" : "s"} reopened. ${one ? "It takes" : "They take"} time again`
+                    + (answered === 0
+                      ? "; the money is as it was."
+                      : answered === taskIds.length
+                        ? `, and ${one ? "its" : "their"} money is pending until `
+                          + `${one ? "it is" : "they are"} accepted again.`
+                        : `. The ${answered} that had an answer ${answered === 1 ? "has its" : "have their"}`
+                          + " money pending until accepted again."),
                     "Undo", () => commit(() => snapshot));
             }}
             /* One payment for the whole batch — "finish fifty and we pay you
