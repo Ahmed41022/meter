@@ -70,6 +70,17 @@ const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test(b.t
  * Overview. It opens on Today now — what you are doing, not how the month
  * went — so a test about the dashboard has to say which screen it means.
  */
+/**
+ * The Overview opened on all time rather than the week it defaults to.
+ *
+ * For tests that seed work a day or two back to say "not today" and then ask
+ * whether it shows up at all. The week starts on Monday, so on a Monday
+ * yesterday is last week and those tests failed one day in seven — on the
+ * real clock, wherever they happened to run. Nothing they assert is about
+ * where a week begins; the tests that are say so with their own period.
+ */
+const ALL_TIME = { "meter:period": "all" };
+
 const bootDash = async (seed, settings = null) => {
   const dom = await boot(seed, settings);
   await wait(150);
@@ -2587,7 +2598,7 @@ describe("companies, and projects that have stopped", () => {
     segments: [{ startedAt: dayStart(back) + 9 * HOUR, endedAt: dayStart(back) + (9 + hours) * HOUR }],
   });
   const open = async (seed) => {
-    const dom = await bootDash(seed);
+    const dom = await bootDash(seed, ALL_TIME);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -2791,7 +2802,7 @@ describe("money the clock never measured", () => {
     at: dayStart(back) + 12 * HOUR, note: "", createdAt: dayStart(back), deletedAt: null, ...extra,
   });
   const open = async (seed) => {
-    const dom = await bootDash(seed);
+    const dom = await bootDash(seed, ALL_TIME);
     await wait(150);
     return { dom, d: dom.window.document };
   };
@@ -3097,7 +3108,7 @@ describe("the company panel showing up at all", () => {
     segments: [{ startedAt: dayStart(1) + 9 * HOUR, endedAt: dayStart(1) + (9 + hours) * HOUR }],
   });
   const open = async (seed) => {
-    const dom = await bootDash(seed);
+    const dom = await bootDash(seed, ALL_TIME);
     await wait(150);
     return dom.window.document;
   };
