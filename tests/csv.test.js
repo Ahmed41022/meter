@@ -152,6 +152,47 @@ describe("the ledger as a spreadsheet", () => {
     expect(col(csv, "Amount")).toEqual(["0.00"]);
   });
 
+  it("makes text that a spreadsheet would run as a formula inert", () => {
+    // Quoting is not enough: Excel ran a task named =HYPERLINK(...) as a live
+    // link, and showed #NAME? for one called -pair-review.
+    const s = {
+      projects: [project("p1", {
+        name: "-pair-review", company: "@Northwind",
+        tasks: [{ id: "t1", label: '=HYPERLINK("http://example.com","click")' }],
+      })],
+      sessions: [session("s1", 10, 2, { taskId: "t1" })],
+      earnings: [earning("e1", 12, 1_000, { note: "+44 call" })],
+    };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Project")).toEqual(["'-pair-review", "'-pair-review"]);
+    expect(col(csv, "Company")).toEqual(["'@Northwind", "'@Northwind"]);
+    expect(lines(csv)[1]).toContain('"\'=HYPERLINK(""http://example.com"",""click"")"');
+    expect(col(csv, "Note")[1]).toBe("'+44 call");
+  });
+
+  it("catches a leading tab or carriage return too", () => {
+    const s = {
+      ...state,
+      projects: [project("p1", { name: "\tTabbed" })],
+      sessions: [],
+      earnings: [earning("e1", 12, 1_000, { note: "\rReturned" })],
+    };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Project")).toEqual(["'\tTabbed"]);
+    expect(col(csv, "Note")).toEqual(["'\rReturned"]);
+  });
+
+  it("leaves numbers alone, minus sign and all", () => {
+    // A clawback is a negative amount, and it has to stay a number the Amount
+    // column can still add up.
+    const s = { ...state, sessions: [], earnings: [earning("e1", 12, -2_500, { kind: "adjust", units: 1 })] };
+    const csv = toCsv(s, NOW);
+    expect(col(csv, "Amount")).toEqual(["-25.00"]);
+    expect(col(csv, "Rate")).toEqual(["-25.00"]);
+    // and ordinary text is untouched
+    expect(col(csv, "Project")).toEqual(["orion"]);
+  });
+
   it("orders by when it happened, so the file reads as a history", () => {
     const s = {
       ...state,

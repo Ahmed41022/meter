@@ -50,7 +50,28 @@ const isoTime = (t) => {
  * expects.
  */
 const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-const row = (values) => values.map(cell).join(",");
+
+/**
+ * Text a spreadsheet would run as a formula, made inert.
+ *
+ * Quoting does not stop it. Excel, Sheets and LibreOffice read a cell that
+ * starts with =, +, - or @ as a formula, and a leading tab or carriage return
+ * is a known way to slip one past a check: a task named
+ * =HYPERLINK("http://example.com","click") became a live link, and one named
+ * "-pair-review" showed #NAME?. A leading apostrophe is what all of them read
+ * as "this is text".
+ *
+ * Never in Hours, Rate or Amount. Those hold numbers, and a number can rightly
+ * start with a minus — a clawback is "-25.00" — which an apostrophe would turn
+ * into text in the one column everybody sums.
+ */
+const FORMULA = /^[=+\-@\t\r]/;
+const NUMERIC = new Set(["Hours", "Rate", "Amount"].map((name) => CSV_COLUMNS.indexOf(name)));
+const inert = (v) => {
+  const text = String(v ?? "");
+  return FORMULA.test(text) ? `'${text}` : text;
+};
+const row = (values) => values.map((v, i) => cell(NUMERIC.has(i) ? v : inert(v))).join(",");
 
 /** Hours to three places: a six-minute task is 0.100, and rounding it to two
  *  would make a column of short tasks add up visibly wrong. */
