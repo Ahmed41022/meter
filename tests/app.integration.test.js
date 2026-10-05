@@ -3496,7 +3496,8 @@ describe("handing the numbers to a spreadsheet", () => {
     await toProjects(d, "Work");
     const csv = await grab(dom, d, /Export CSV/i);
 
-    const rows = csv.trim().split("\n");
+    // After the byte-order mark that tells Excel the file is UTF-8.
+    const rows = csv.replace(/^\uFEFF/, "").trim().split("\n");
     expect(rows[0]).toMatch(/^"Date","Project","Company"/);
     expect(rows).toHaveLength(3); // header, the session, the piece-rate money
     expect(csv).toContain('"orion"');
@@ -5026,6 +5027,33 @@ describe("fixes: data, export and layout", () => {
     it("still says records exist when there are more", async () => {
       const dom = await boot(ledger(2));
       expect(nudge(dom.window.document)).toMatch(/2 records exist only in this browser/);
+    }, 25_000);
+  });
+
+  describe("the CSV export", () => {
+    const HOUR = 3_600_000;
+    const back = (days) => Date.now() - days * 86_400_000;
+    const exportCsv = async (seed) => {
+      const dom = await boot(seed);
+      const d = dom.window.document;
+      await toProjects(d, "Work");
+      return grab(dom, () => btn(d, /Export CSV/i).click());
+    };
+
+    it("opens with a byte-order mark, so Excel reads names as UTF-8", async () => {
+      // Without it Excel on Windows used the ANSI code page, and Arabic names,
+      // emoji and the "·" in notes came out as mojibake.
+      const csv = await exportCsv({
+        projects: [{ id: "a", name: "مشروع 🚀", currentRate: 20, currency: "USD", createdAt: back(40),
+                     sessionGoal: null, overallGoal: null, tasks: [] }],
+        sessions: [{ id: "s1", projectId: "a", kind: "billed", taskId: null, rate: 20, currency: "USD",
+                     createdAt: back(2), closedAt: back(2) + HOUR, deletedAt: null,
+                     segments: [{ startedAt: back(2), endedAt: back(2) + HOUR }] }],
+        lastBackupAt: back(1),
+      });
+      expect(csv.charCodeAt(0)).toBe(0xFEFF);
+      expect(csv.slice(1).startsWith('"Date"')).toBe(true);
+      expect(csv).toContain('"مشروع 🚀"');
     }, 25_000);
   });
 });

@@ -374,9 +374,14 @@ export default function App({ store: injectedStore }) {
    * Letting it clear the backup nudge would leave someone believing they had a
    * copy they could restore from, which is the one mistake this whole feature
    * exists to prevent.
+   *
+   * The file starts with a byte-order mark. Without one, Excel on Windows reads
+   * a CSV in the machine's ANSI code page instead of UTF-8, and every Arabic
+   * name, emoji and "·" in it comes out as mojibake.
    */
   const exportCsv = () => {
-    download(`${stamp()}.csv`, toCsv(stateRef.current, Date.now()), "text/csv;charset=utf-8");
+    download(`${stamp()}.csv`, `\uFEFF${toCsv(stateRef.current, Date.now())}`,
+      "text/csv;charset=utf-8");
   };
 
   /** Opening a project lands on the tab it belongs to, so the back link
