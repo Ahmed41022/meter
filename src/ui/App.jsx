@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
-import { isRunning, isStale, startedAt } from "../domain/time.js";
+import { isOpen, isRunning, isStale, startedAt } from "../domain/time.js";
 import { formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
@@ -773,7 +773,8 @@ export default function App({ store: injectedStore }) {
               flash(`${ids.length} marked ${status === PAY.PAID ? "paid" : status}.`, "Undo",
                     () => commit(() => snapshot));
             }}
-            /* Handing work in. The hours stop forever and move by the
+            /* Handing work in. A meter still running on the work stops at the
+               click, the hours stop forever, and they move by the
                project's own rule — counted as earned where it pays as worked,
                pending where it pays once accepted — and the acceptance reward
                is filed pending: a fresh one, or the one the task already had,
@@ -786,15 +787,20 @@ export default function App({ store: injectedStore }) {
                would otherwise price the second against a stale task list. */
             onSubmitTasks={(taskIds, at) => {
               const snapshot = stateRef.current;
+              const wasOpen = new Set(liveSessions(snapshot.sessions).filter(isOpen).map((s) => s.id));
               commit((s) => {
                 const live = s.projects.find((p) => p.id === project.id);
                 return live ? submitTasks(s, live, taskIds, Date.now(), uid, at) : s;
               });
+              // Submitting stops a meter left going on the work, and the
+              // running bar vanishing without a word would look like a fault.
+              const stopped = stateRef.current.sessions.some((s) => wasOpen.has(s.id) && !isOpen(s));
               const one = taskIds.length === 1;
               // What submitting did depends on how the project pays, and the
               // two outcomes are not close enough to share a sentence. Neither
               // calls the hours settled: a rejection can still take them back.
               flash(`${taskIds.length} task${one ? "" : "s"} submitted. `
+                    + (stopped ? `The meter on ${one ? "it" : "them"} is stopped. ` : "")
                     + (paysOnAcceptance(project)
                       ? `The clock is closed; nothing is earned until ${one ? "it is" : "they are"} accepted.`
                       : "The clock is closed and the hours count as earned, unless "

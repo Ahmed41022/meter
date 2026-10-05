@@ -9,7 +9,8 @@
  * The lifecycle it implements is the one the platforms actually use:
  *
  *   SUBMIT   the hours stop forever, because the work was done and
- *            delivered. Where the project pays as worked they count as earned
+ *            delivered; a meter still running on the task is stopped at that
+ *            moment. Where the project pays as worked they count as earned
  *            from here; where it pays once accepted they stay pending. The
  *            acceptance reward is written PENDING, because whether it lands is
  *            somebody else's decision and days away.
@@ -40,9 +41,9 @@
  * the wrong row. Reopening an ANSWERED task takes back what the answer did:
  * its hours and its reward are pending until it is accepted again.
  */
-import { elapsedMs } from "./time.js";
+import { elapsedMs, isOpen } from "./time.js";
 import { formatShortDuration } from "./money.js";
-import { isBilled } from "./sessions.js";
+import { isBilled, stopSession } from "./sessions.js";
 import { findTask, taskLabel } from "./tasks.js";
 import {
   TASK, isAccepted, isOpenTask, isRejected, setTaskStateMany,
@@ -186,10 +187,11 @@ const repriceReward = (state, project, taskId, billedMs, own, now, at) => {
  * does not count, and is left where it is.
  *
  * `at` is the day the work actually went in; `now` is the clock. They are
- * separate because they answer different questions — `now` values the hours,
- * `at` dates the hand-in. Stamping the moment the box was ticked put work
- * delivered on a Saturday into the following week whenever the box was ticked
- * after the Monday cutoff, for a reason nothing on screen explained.
+ * separate because they answer different questions — `now` is when a running
+ * meter stops and so values the hours, `at` dates the hand-in. Stamping the
+ * moment the box was ticked put work delivered on a Saturday into the
+ * following week whenever the box was ticked after the Monday cutoff, for a
+ * reason nothing on screen explained.
  */
 export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
   const owner = liveProject(state, project);
@@ -201,6 +203,15 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
   const rewards = [];
 
   for (const taskId of open) {
+    // A meter still going on the task stops here, at the click, exactly as
+    // Stop would stop it — and before the hours are valued, so the reward is
+    // priced on what was handed in. Left running, it went on counting on work
+    // that could take no more time: an hour later the task read an hour
+    // longer, and the money for that hour was counted as the task's pay.
+    // A paused sitting is closed the same way, which adds no time to it.
+    for (const s of sessionsUnder(next, owner.id, taskId)) {
+      if (isOpen(s)) next = stopSession(next, s.id, now);
+    }
     const billedMs = billedMsForTask(next, owner.id, taskId, now);
     // Every session under the task, whatever state it is in. The task's state
     // decides what its money is worth, so moving them all leaves no row behind

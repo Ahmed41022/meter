@@ -9,7 +9,9 @@ import {
   EARNING, PAY, REWARD, acceptanceCents, addEarning, bonusPerHour, hasReward,
   isCancelled, isPending, payStateOf, rewardModel,
 } from "../src/domain/earnings.js";
-import { KIND, addManualSession, startSession, stopSession } from "../src/domain/sessions.js";
+import {
+  KIND, addManualSession, pauseSession, startSession, stopSession,
+} from "../src/domain/sessions.js";
 import { addTask, findTask } from "../src/domain/tasks.js";
 import { earningsCents } from "../src/domain/money.js";
 import { elapsedMs } from "../src/domain/time.js";
@@ -353,6 +355,44 @@ describe("hearing back", () => {
     s = submitTasks(s, proj(s), ["t1"], T + 3 * HOUR, counter());
     s = answerTasks(s, proj(s), ["t1"], TASK.ACCEPTED, T + 4 * HOUR);
     expect(taskState(findTask(proj(s), "t1"))).toBe(TASK.ACCEPTED);
+  });
+});
+
+describe("handing in a task whose meter is still going", () => {
+  it("stops the meter at the click, the way Stop does", () => {
+    // Left running, the task read 1h 10m an hour after it was handed in, and
+    // the extra hour's money was counted as its pay.
+    let s = seed(hourly);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = submitTasks(s, proj(s), ["t1"], T + HOUR, counter(), T + HOUR);
+    expect(s.sessions[0].closedAt).toBe(T + HOUR);
+    expect(s.sessions[0].segments[0].endedAt).toBe(T + HOUR);
+    expect(elapsedMs(s.sessions[0], T + 5 * HOUR)).toBe(HOUR);
+  });
+
+  it("prices the reward on the hours up to the click", () => {
+    let s = seed(hourly);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = submitTasks(s, proj(s), ["t1"], T + 2 * HOUR, counter());
+    expect(rewards(s)[0].cents).toBe(2_000);
+  });
+
+  it("closes a paused sitting without adding the pause to it", () => {
+    let s = seed(hourly);
+    s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+    s = pauseSession(s, "s1", T + HOUR);
+    s = submitTasks(s, proj(s), ["t1"], T + 3 * HOUR, counter());
+    expect(s.sessions[0].closedAt).toBe(T + 3 * HOUR);
+    expect(elapsedMs(s.sessions[0], T + 9 * HOUR)).toBe(HOUR);
+  });
+
+  it("leaves a meter on another task running", () => {
+    let s = seed(hourly);
+    s = addTask(s, "p1", { id: "t2", label: "t2" }, T);
+    s = worked(s, 1);
+    s = startSession(s, proj(s), { now: T + 2 * HOUR, id: "s2", taskId: "t2" });
+    s = submitTasks(s, proj(s), ["t1"], T + 3 * HOUR, counter());
+    expect(s.sessions.find((x) => x.id === "s2").closedAt).toBeNull();
   });
 });
 

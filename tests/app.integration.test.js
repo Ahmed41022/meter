@@ -6325,4 +6325,22 @@ describe("fixes: paydays and settling", () => {
     await toProjects(d, "Overview");
     expect(d.querySelector(".grand-amt").textContent).toBe("$90.00");
   }, 30_000);
+
+  it("stops a meter still running on a task when the task is handed in", async () => {
+    // It used to keep running on the submitted task, adding time and money to
+    // work that could take no more of either.
+    const { dom, d } = await openFirst(priced());
+    await startMeter(dom, { existing: "1234" });
+    expect(d.querySelector(".runbar")).not.toBeNull();
+    await tick(d, "1234");
+    await press(d, /^Submit 1$/);
+
+    const { sessions, projects } = stored(dom);
+    expect(projects[0].tasks[0].state).toBe("submitted");
+    expect(sessions).toHaveLength(2);
+    expect(sessions.every((s) => s.closedAt != null
+      && s.segments.every((g) => g.endedAt != null))).toBe(true);
+    expect(d.querySelector(".runbar")).toBeNull();
+    expect(d.querySelector(".toast").textContent).toMatch(/The meter on it is stopped/);
+  }, 30_000);
 });
