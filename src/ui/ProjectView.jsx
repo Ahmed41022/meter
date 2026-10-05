@@ -86,6 +86,15 @@ export default function ProjectView({
     // page down for. The highlight alone still finds it.
     if (focusSession) focusRow.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [focusSession]);
+
+  /**
+   * Re-filing the running session is a question about THAT session. Once it
+   * has stopped there is nothing left to re-file, and a prompt left open would
+   * keep the Start buttons hidden behind a Save with no session to save to.
+   */
+  useEffect(() => {
+    if (prompt?.reassign && !current) setPrompt(null);
+  }, [prompt, current]);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
 
@@ -153,6 +162,12 @@ export default function ProjectView({
         filterTask === UNASSIGNED ? !s.taskId : s.taskId === filterTask)
     : ordered;
   const showLedger = ledgerOpen ?? (visible.length <= LEDGER_AUTO_COLLAPSE && !filterTask);
+  // The session the editor is open on, for as long as it exists. Deleted from
+  // its own row while the form is open, it has no times left to read, and a
+  // form reading them anyway would take the whole page down with it.
+  const editedSession = editingSession
+    ? ordered.find((x) => x.id === editingSession) ?? null
+    : null;
   const selecting = selected.length > 0;
   const toggleSelect = (id) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -338,8 +353,14 @@ export default function ProjectView({
         </div>
         </>}
 
+        {/* Every editor on this page is keyed by the thing it edits. A form
+            seeds its boxes once, when it first appears, so the same instance
+            handed a different session or task would go on showing the first
+            one's values, and Save would write them onto the second. A new key
+            is a new form, seeded from what it now edits. */}
         {settling && (
           <SettlePrompt
+            key={settling}
             project={project}
             session={[...sessions, ...idleSessions].find((x) => x.id === settling) ?? null}
             onCancel={() => setSettling(null)}
@@ -349,6 +370,7 @@ export default function ProjectView({
 
         {prompt && !settling && (
           <TaskPrompt
+            key={prompt.reassign ? `move:${current?.id}` : `start:${prompt.kind}`}
             project={project} words={w}
             initialTaskId={prompt.reassign ? current?.taskId : null}
             confirmLabel={
@@ -564,9 +586,12 @@ export default function ProjectView({
               onSelectAll={() => setPickedTasks(pickable)}
               onClear={() => setPickedTasks([])} />
           )}
-          {editingTask && (
+          {/* Only while the task is still there to edit: one removed under
+              the open form, by an undo or by the other device, would leave
+              it reading the fields of nothing. */}
+          {editingTask && findTask(project, editingTask) && (
             <div style={{ marginBottom: 12 }}>
-              <TaskEditor words={w}
+              <TaskEditor words={w} key={editingTask}
                 task={findTask(project, editingTask)}
                 currency={project.currency}
                 projectRate={project.currentRate}
@@ -718,10 +743,11 @@ export default function ProjectView({
           </div>
         )}
 
-        {editingSession && (
+        {editedSession && (
           <div style={{ marginBottom: 12 }}>
             <SessionEditor
-              session={[...sessions, ...idleSessions].find((x) => x.id === editingSession)}
+              key={editedSession.id}
+              session={editedSession}
               project={project}
               onCancel={() => setEditingSession(null)}
               onSave={(window_) => { onCorrect(editingSession, window_); setEditingSession(null); }}

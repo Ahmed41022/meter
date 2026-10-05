@@ -23,13 +23,26 @@ const verdict = (ratio) => {
   return { tone: "on", text: "on estimate" };
 };
 
+/** An objective in the shape its edit boxes want. */
+const draftOf = (objective) => ({
+  text: objective.text,
+  hours: objective.estimateMs ? String(objective.estimateMs / 3_600_000) : "",
+  taskId: objective.taskId ?? "",
+});
+
 function Row({ objective, tasks, sessions, now, today, onToggle, onFocus, onRemove, onEdit }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({
-    text: objective.text,
-    hours: objective.estimateMs ? String(objective.estimateMs / 3_600_000) : "",
-    taskId: objective.taskId ?? "",
-  });
+  const [draft, setDraft] = useState(() => draftOf(objective));
+  /**
+   * Every edit starts from the objective as it is NOW. The row outlives its
+   * form, so boxes seeded once would come back holding whatever a cancelled
+   * edit left in them, or a task link that deleting the task has since
+   * cleared — and Save would write that back over the real thing.
+   */
+  const edit = () => {
+    setDraft(draftOf(objective));
+    setEditing(true);
+  };
   const spent = actualMs(objective, sessions, now);
   const v = verdict(estimateRatio(objective.estimateMs, spent));
   const picked = isToday(objective, today);
@@ -104,7 +117,7 @@ function Row({ objective, tasks, sessions, now, today, onToggle, onFocus, onRemo
       </div>
 
       <div className="obj-actions">
-        <button className="linkish" onClick={() => setEditing(true)}>edit</button>
+        <button className="linkish" onClick={edit}>edit</button>
         {!isDone(objective) && (
           <button className="linkish" aria-pressed={picked}
                   onClick={() => onFocus(objective.id, picked ? null : today)}>

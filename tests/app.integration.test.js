@@ -5611,3 +5611,188 @@ describe("fixes: clock, Today and Overview", () => {
     }, 20_000);
   });
 });
+
+describe("fixes: editors and entry forms", () => {
+  const HOUR = 3_600_000;
+  /** Whole minutes, because every time box here is to the minute: a seed
+   *  carrying seconds would come back from an untouched box slightly moved. */
+  const minute = (t) => Math.floor(t / 60_000) * 60_000;
+  const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+  const stamp = (epoch) => {
+    const p = (n) => String(n).padStart(2, "0");
+    const x = new Date(epoch);
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+  };
+  const sitting = (id, projectId, taskId, from, to, extra = {}) => ({
+    id, projectId, kind: "billed", taskId, rate: 20, currency: "USD",
+    createdAt: from, closedAt: to, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: to }], ...extra,
+  });
+  const project = (id, name, extra = {}) => ({
+    id, name, currentRate: 20, currency: "USD", createdAt: minute(Date.now()) - 40 * HOUR,
+    sessionGoal: null, overallGoal: null, tasks: [], ...extra,
+  });
+  /** Opens one project, by name, from the Work tab. */
+  const openProject = async (seed, name) => {
+    const dom = await boot(seed);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    [...d.querySelectorAll(".card")].find((c) => c.textContent.includes(name)).click();
+    await wait(250);
+    return { dom, d };
+  };
+  /** The input under a labelled field, looked for inside `root`. */
+  const field = (root, label) => [...root.querySelectorAll(".field")]
+    .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input, textarea, select");
+  const taskRow = (d, label) => [...d.querySelectorAll(".trow")]
+    .find((r) => r.querySelector(".trow-label").textContent.startsWith(label));
+  const ledgerRow = (d, label) => [...d.querySelectorAll(".row")]
+    .find((r) => r.querySelector(".row-meta")?.textContent.startsWith(label));
+  const press = async (root, text) => {
+    [...root.querySelectorAll("button")].find((b) => b.textContent === text).click();
+    await wait(200);
+  };
+
+  /** Two tasks that differ in everything a form holds, so a value carried
+   *  over from one cannot pass for the other's own. */
+  const twoTasks = () => {
+    const at = minute(Date.now()) - 8 * HOUR;
+    return {
+      projects: [project("p1", "Acme", {
+        tasks: [
+          { id: "t1", label: "T-1", note: "the first one's note", createdAt: at },
+          { id: "t2", label: "T-2", note: "the second one's note", rate: 35, createdAt: at },
+        ],
+      })],
+      sessions: [
+        sitting("s1", "p1", "t1", at, at + 2 * HOUR),
+        sitting("s2", "p1", "t2", at + 3 * HOUR, at + 4 * HOUR),
+      ],
+    };
+  };
+
+  it("edits the task it was last opened on, not the one before", async () => {
+    // Reported: the editor opened on T-1 and then on T-2 still held T-1's
+    // name, note and rate, and Save wrote all three onto T-2.
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    await press(taskRow(d, "T-1"), "edit");
+    expect(field(d.querySelector(".prompt"), "^Name$").value).toBe("T-1");
+
+    await press(taskRow(d, "T-2"), "edit");
+    const form = d.querySelector(".prompt");
+    expect(field(form, "^Name$").value).toBe("T-2");
+    expect(field(form, "Rate for this task").value).toBe("35");
+    expect(field(form, "^Note$").value).toBe("the second one's note");
+
+    btn(d, /^Save$/).click();
+    await wait(300);
+    const [t1, t2] = stored(dom).projects[0].tasks;
+    expect(t2).toMatchObject({ label: "T-2", rate: 35, note: "the second one's note" });
+    expect(t1).toMatchObject({ label: "T-1", note: "the first one's note" });
+    expect(t1.rate ?? null).toBeNull();
+  }, 30_000);
+
+  it("corrects the session it was last opened on, not the one before", async () => {
+    const seed = twoTasks();
+    const [a, b] = seed.sessions;
+    const { dom, d } = await openProject(seed, "Acme");
+    const boxes = () => [...d.querySelectorAll('.prompt input[type="datetime-local"]')]
+      .map((x) => x.value);
+
+    await press(ledgerRow(d, "T-1"), "edit");
+    expect(boxes()).toEqual([stamp(a.segments[0].startedAt), stamp(a.segments[0].endedAt)]);
+    await press(ledgerRow(d, "T-2"), "edit");
+    expect(boxes()).toEqual([stamp(b.segments[0].startedAt), stamp(b.segments[0].endedAt)]);
+
+    btn(d, /Save correction/).click();
+    await wait(300);
+    const saved = stored(dom).sessions;
+    expect(saved.find((x) => x.id === "s2").segments).toEqual(b.segments);
+    expect(saved.find((x) => x.id === "s1")).toEqual(a);
+  }, 30_000);
+
+  it("shows the project it is on in Settings after the running bar switches projects", async () => {
+    // Opened on Alpha, then Beta reached through the running bar: the panel
+    // still held Alpha, so Save renamed Beta "Alpha" and copied its rate.
+    const now = minute(Date.now());
+    const seed = {
+      projects: [project("a", "Alpha", { currentRate: 50 }), project("b", "Beta", { currentRate: 70 })],
+      // Running on the other machine, so it is in the running bar without
+      // raising the two-tabs notice.
+      sessions: [{
+        id: "live", projectId: "b", kind: "billed", taskId: null, rate: 70, currency: "USD",
+        createdAt: now - HOUR, closedAt: null, deletedAt: null, device: "some-other-machine",
+        segments: [{ startedAt: now - HOUR, endedAt: null, lastTick: now }],
+      }],
+    };
+    const { dom, d } = await openProject(seed, "Alpha");
+    btn(d, /^Open$/).click();
+    await wait(200);
+    expect(field(d, "Project name").value).toBe("Alpha");
+
+    d.querySelector(".runbar-what").click();
+    await wait(300);
+    expect(d.querySelector(".plate-name").textContent).toContain("Beta");
+    if (btn(d, /^Open$/)) {
+      btn(d, /^Open$/).click();
+      await wait(200);
+    }
+    expect(field(d, "Project name").value).toBe("Beta");
+    expect(field(d, "Hourly rate").value).toBe("70");
+
+    setValue(dom.window, field(d, "Hourly rate"), "75");
+    await wait(150);
+    btn(d, /Save changes/).click();
+    await wait(300);
+    const [alpha, beta] = stored(dom).projects;
+    expect(beta).toMatchObject({ name: "Beta", currentRate: 75 });
+    expect(alpha).toMatchObject({ name: "Alpha", currentRate: 50 });
+  }, 30_000);
+
+  it("asks what the session it was last opened on earned, not the one before", async () => {
+    const seed = twoTasks();
+    seed.projects[0].perTask = 10;
+    const { d } = await openProject(seed, "Acme");
+    const forBox = () => field(d.querySelector(".prompt"), "^For$");
+
+    await press(ledgerRow(d, "T-1"), "what it earned");
+    expect(forBox().value).toBe("t1");
+    await press(ledgerRow(d, "T-2"), "what it earned");
+    expect(forBox().value).toBe("t2");
+  }, 30_000);
+
+  it("starts every objective edit from the objective as it is", async () => {
+    // A cancelled edit used to linger in the row's boxes, ready to be saved
+    // over the real text the next time the row was opened.
+    const seed = {
+      projects: [project("p1", "Acme")],
+      sessions: [],
+      objectives: [{
+        id: "o1", projectId: "p1", text: "Write the report", done: false, doneAt: null,
+        createdAt: minute(Date.now()) - HOUR, focusedOn: null, estimateMs: null, taskId: null,
+        deletedAt: null,
+      }],
+    };
+    const { dom, d } = await openProject(seed, "Acme");
+    await press(d.querySelector(".obj-actions"), "edit");
+    setValue(dom.window, field(d, "What needs doing"), "Something else entirely");
+    await press(d.querySelector(".obj-form"), "Cancel");
+
+    await press(d.querySelector(".obj-actions"), "edit");
+    expect(field(d, "What needs doing").value).toBe("Write the report");
+  }, 30_000);
+
+  it("closes the session editor when its session is removed, rather than the page", async () => {
+    const { d } = await openProject(twoTasks(), "Acme");
+    await press(ledgerRow(d, "T-1"), "edit");
+    expect(d.querySelector(".prompt")).not.toBeNull();
+
+    ledgerRow(d, "T-1").querySelector(".x").click();
+    await wait(300);
+    expect(d.querySelector(".face")).not.toBeNull();
+    expect(d.querySelector(".prompt")).toBeNull();
+    expect(d.querySelectorAll(".row")).toHaveLength(1);
+  }, 30_000);
+});

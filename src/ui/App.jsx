@@ -644,6 +644,12 @@ export default function App({ store: injectedStore }) {
 
         {project ? (
           <ProjectView
+            /* Keyed by the project, so opening another one starts a fresh
+               page rather than reusing this one. Every form inside it is
+               seeded once, from the project it opened on; reused for the
+               next project, Settings would show the first project's name and
+               rate, and Save would write them onto the second. */
+            key={project.id}
             project={project} current={current} now={now}
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
