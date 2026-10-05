@@ -5235,9 +5235,11 @@ describe("fixes: clock, Today and Overview", () => {
     createdAt: from, closedAt: to, deletedAt: null,
     segments: [{ startedAt: from, endedAt: to }], ...extra,
   });
-  /** What the Today section's heading says the day came to. */
-  const todayHead = (d) => [...d.querySelectorAll(".sec-head")]
-    .find((h) => /^Today/.test(h.textContent)).querySelectorAll(".eyebrow")[1].textContent;
+  /** The Today tab's section for the day, found by its heading. */
+  const todaySec = (d) => [...d.querySelectorAll(".sec")]
+    .find((s) => /^Today/.test(s.querySelector(".sec-head")?.textContent ?? ""));
+  /** What that section's heading says the day came to. */
+  const todayHead = (d) => todaySec(d).querySelectorAll(".sec-head .eyebrow")[1].textContent;
   const short = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
   describe("the clock moves with no meter running", () => {
@@ -5279,6 +5281,39 @@ describe("fixes: clock, Today and Overview", () => {
       dom.window.dispatchEvent(new dom.window.Event("focus"));
       await wait(250);
       expect(span()).toContain(short(at(10, 12)));
+    }, 20_000);
+  });
+
+  describe("Today counts work, not sleep", () => {
+    // An hour and a half of paid work, and a night's sleep tracked at a rate
+    // that ran from 23:00 into this morning: seven of its hours are today's.
+    const seed = () => ({
+      projects: [
+        project("a", "Acme", { currentRate: 40 }),
+        project("z", "Sleep", { currentRate: 10, offClock: true }),
+      ],
+      sessions: [
+        sitting("s1", "a", at(10, 5, 9), at(10, 5, 10, 30), { rate: 40 }),
+        sitting("s2", "z", at(10, 4, 23), at(10, 5, 7), { rate: 10 }),
+      ],
+    });
+
+    it("keeps off-the-clock time out of the day's heading", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 12));
+      const d = dom.window.document;
+      expect(todayHead(d)).toBe("$60.00 · 1h 30m");
+      // and out of the same day's heading under Recent
+      expect(d.querySelector(".day .day-sum").textContent).toBe("$60.00 · 1h 30m");
+    }, 20_000);
+
+    it("still lists the sleep with its hours, below the work and marked", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 12));
+      const d = dom.window.document;
+      const rows = [...todaySec(d).querySelectorAll(".trow")];
+      expect(rows.map((r) => r.querySelector(".trow-label").textContent)).toEqual(["Acme", "Sleep"]);
+      expect(rows[1].querySelector(".trow-sub").textContent).toMatch(/off the clock/);
+      expect(rows[1].querySelector(".trow-time").textContent).toBe("7h 00m");
+      expect(rows[1].querySelector(".trow-amt")).toBeNull();
     }, 20_000);
   });
 });

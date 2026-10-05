@@ -2,11 +2,11 @@ import { useState } from "react";
 import { elapsedMs, isRunning, startedAt } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import {
-  byProject, currenciesByValue, performanceIn, periodRange, sessionMsInWindow,
+  byProject, currenciesByValue, performanceIn, periodRange, sessionMsInWindow, splitByClock,
 } from "../domain/performance.js";
 import { daysOfWork, recentPicks, spillsPast } from "../domain/recent.js";
 import { isIdle } from "../domain/sessions.js";
-import { isOffClock } from "../domain/projects.js";
+import { isOffClock, offClockProjects, workProjects } from "../domain/projects.js";
 import { rateFor, taskLabel } from "../domain/tasks.js";
 
 /** One more week each time. Seven is the span you actually think in, and the
@@ -36,6 +36,11 @@ const money = (cents) =>
  * STARTED in. A sitting that ran past midnight belongs to one list and two
  * totals, and reading the totals off the list would make this screen disagree
  * with every other one. See the note atop `domain/recent.js`.
+ *
+ * Those figures are work, drawn from on-the-clock projects only, exactly as
+ * the Overview draws them. Sleep tracked at a rate is still time you
+ * recorded, so its rows stay listed with their hours, but it is neither work
+ * nor money and must not reach a heading that says what a day came to.
  */
 export default function TodayView({
   projects, sessions, earnings, now, running, onStart, onOpen, onShowSession,
@@ -51,9 +56,20 @@ export default function TodayView({
   const picks = recentPicks(sessions, projects);
   const days = daysOfWork(sessions);
 
+  const { work, offClock } = splitByClock(projects, sessions);
+  // Off the clock cannot earn, so money filed against it is left out with its
+  // hours, the way the Overview leaves it out.
+  const offIds = new Set(offClockProjects(projects).map((p) => p.id));
+  const workEarnings = earnings.filter((e) => !offIds.has(e.projectId));
+
   const { from: dayFrom, to: dayTo } = periodRange("day", now, 0);
-  const todayRows = byProject(projects, sessions, dayFrom, dayTo, now, rateOf, earnings);
-  const today = performanceIn(sessions, dayFrom, dayTo, now, rateOf, earnings);
+  // Work first and off the clock after it, as the Overview orders them, so a
+  // night's sleep does not head a list of what the day earned.
+  const todayRows = [
+    ...byProject(workProjects(projects), work, dayFrom, dayTo, now, rateOf, workEarnings),
+    ...byProject(offClockProjects(projects), offClock, dayFrom, dayTo, now, rateOf),
+  ];
+  const today = performanceIn(work, dayFrom, dayTo, now, rateOf, workEarnings);
 
   return (
     <>
@@ -98,6 +114,9 @@ export default function TodayView({
               <div>
                 <div className="trow-label">{project.name}</div>
                 <div className="trow-sub">
+                  {/* Said, because its hours sit in this list and not in the
+                      heading above it. */}
+                  {isOffClock(project) && "off the clock · "}
                   {/* Which tasks the day touched, not how long each took —
                       that is the project's own page, one click away. */}
                   {tasksToday(project, sessions, dayFrom, dayTo, now) || "no task"}
@@ -138,7 +157,7 @@ export default function TodayView({
         {days.slice(0, shown).map((day) => {
           // Over the day's window, not over the rows below: a sitting that
           // crossed midnight is listed once and counted in two days.
-          const totals = performanceIn(sessions, day.dayStart, day.dayEnd, now, rateOf, earnings);
+          const totals = performanceIn(work, day.dayStart, day.dayEnd, now, rateOf, workEarnings);
           return (
             <div key={day.dayStart} className="day">
               <div className="day-head">
@@ -167,6 +186,7 @@ export default function TodayView({
                           {isIdle(s) && <span className="tag">idle</span>}
                         </div>
                         <div className="row-meta">
+                          {owner && isOffClock(owner) ? "off the clock · " : ""}
                           {s.taskId && owner ? `${taskLabel(owner, s.taskId)} · ` : ""}
                           {formatShortDuration(ms)}
                           {over && ` · ran past midnight · ${formatShortDuration(here)} of it here`}
