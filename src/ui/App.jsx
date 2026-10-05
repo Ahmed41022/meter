@@ -581,7 +581,8 @@ export default function App({ store: injectedStore }) {
             the thing the user has to act on. */}
         {ready && backup.stale && (
           <Notice title={backup.never ? "Never backed up" : `Last backed up ${daysWord(backup.days)}`}>
-            {countWord(backup.unsaved)} exist only in this browser. Clearing site data, or
+            {countWord(backup.unsaved)} {backup.unsaved === 1 ? "exists" : "exist"} only in this
+            browser. Clearing site data, or
             reinstalling, takes {backup.unsaved === 1 ? "it" : "them"} with it —
             {" "}<button className="linkish" onClick={exportBackup}>export a backup</button> to keep a copy
             you hold.

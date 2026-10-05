@@ -5003,4 +5003,29 @@ describe("fixes: data, export and layout", () => {
       expect(aside(dom)).toBeUndefined();
     }, 25_000);
   });
+
+  describe("the backup nudge", () => {
+    const HOUR = 3_600_000;
+    const ago = (days) => Date.now() - days * 86_400_000;
+    const ledger = (count) => ({
+      projects: [{ id: "a", name: "Orion", currentRate: 40, currency: "USD", createdAt: ago(30),
+                   sessionGoal: null, overallGoal: null, tasks: [] }],
+      sessions: Array.from({ length: count }, (_, i) => ({
+        id: `s${i}`, projectId: "a", kind: "billed", taskId: null, rate: 40, currency: "USD",
+        createdAt: ago(3 + i), closedAt: ago(3 + i) + HOUR, deletedAt: null,
+        segments: [{ startedAt: ago(3 + i), endedAt: ago(3 + i) + HOUR }],
+      })),
+    });
+    const nudge = (d) => bannerSaying(d, /backed up/i).textContent;
+
+    it("says one record exists, not exist", async () => {
+      const dom = await boot(ledger(1));
+      expect(nudge(dom.window.document)).toMatch(/1 record exists only in this browser/);
+    }, 25_000);
+
+    it("still says records exist when there are more", async () => {
+      const dom = await boot(ledger(2));
+      expect(nudge(dom.window.document)).toMatch(/2 records exist only in this browser/);
+    }, 25_000);
+  });
 });
