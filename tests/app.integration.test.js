@@ -5873,4 +5873,57 @@ describe("fixes: editors and entry forms", () => {
     expect(btn(d, /^Move 1 session$/).disabled).toBe(true);
     expect(stored(dom).sessions.find((x) => x.id === "s3").taskId).toBeNull();
   }, 30_000);
+
+  it("offers only tasks that still take time when adding time", async () => {
+    // A submitted task was on the list, and choosing it said "Time added."
+    // while recording nothing: the hour typed in was simply gone.
+    const seed = twoTasks();
+    const t1 = seed.projects[0].tasks[0];
+    Object.assign(t1, { state: "submitted", stateAt: t1.createdAt + 3 * HOUR,
+                        submittedAt: t1.createdAt + 3 * HOUR });
+    const { d } = await openProject(seed, "Acme");
+    btn(d, /add time/i).click();
+    await wait(200);
+    expect([...field(d.querySelector(".prompt"), "^Task$").options].map((o) => o.textContent))
+      .toEqual(["No task", "T-2"]);
+  }, 30_000);
+
+  it("says why typed-in time was refused, and keeps what was typed", async () => {
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    btn(d, /add time/i).click();
+    await wait(200);
+    const [from, to] = d.querySelectorAll('.prompt input[type="datetime-local"]');
+    const at = minute(Date.now()) - 30 * HOUR;
+    setValue(dom.window, from, stamp(at));
+    setValue(dom.window, to, stamp(at + HOUR));
+    await wait(150);
+    // The project stops taking time while the form is still open.
+    btn(d, /^Open$/).click();
+    await wait(200);
+    btn(d, /^Paused$/).click();
+    await wait(250);
+
+    btn(d, /^Add time$/).click();
+    await wait(250);
+    expect(d.querySelector(".toast").textContent)
+      .toMatch(/Nothing was added\. This project is on hold, so it won't take new time\./);
+    expect(d.querySelector(".prompt input[type=\"datetime-local\"]").value).toBe(stamp(at));
+    expect(stored(dom).sessions).toHaveLength(2);
+  }, 30_000);
+
+  it("says so in the form when the task picked there is handed in meanwhile", async () => {
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    btn(d, /add time/i).click();
+    await wait(200);
+    setValue(dom.window, field(d.querySelector(".prompt"), "^Task$"), "t2");
+    await wait(150);
+    taskRow(d, "T-2").querySelector(".row-check").click();
+    await wait(200);
+    btn(d, /^Submit 1$/).click();
+    await wait(300);
+
+    expect(d.querySelector(".prompt .hint.warn").textContent)
+      .toMatch(/“T-2” was submitted, so it takes no more time/);
+    expect(btn(d, /^Add time$/).disabled).toBe(true);
+  }, 30_000);
 });

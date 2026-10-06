@@ -31,7 +31,7 @@ import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/s
 import Sync, { SyncPip } from "./Sync.jsx";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
-import { offClockProjects, workProjects } from "../domain/projects.js";
+import { acceptsTime, isDone, offClockProjects, workProjects } from "../domain/projects.js";
 import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
   removeObjective, restoreObjective, toggleObjective, unlinkTask,
@@ -41,6 +41,7 @@ import { countWord, daysWord, ledgerWords } from "./words.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
+import { closedTaskNote } from "./TaskPrompt.jsx";
 import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
 
@@ -720,9 +721,24 @@ export default function App({ store: injectedStore }) {
                 taskName: s.taskId ? taskLabel(owner, s.taskId) : null,
               };
             })}
+            /* The domain turns typed-in time away from a project that has
+               stopped and from a task already handed in, quietly, by handing
+               the ledger back untouched. "Time added." over that would lose
+               the hour without a word, so the toast says what really
+               happened, and the answer tells the form whether to close. */
             onAddManual={(entry) => {
-              commit((s) => addManualSession(s, project, entry, Date.now(), uid()));
+              const before = stateRef.current;
+              const next = addManualSession(before, project, entry, Date.now(), uid());
+              if (next === before) {
+                const why = !acceptsTime(project)
+                  ? `This project is ${isDone(project) ? "done" : "on hold"}, so it won't take new time.`
+                  : closedTaskNote(project, entry.taskId) ?? "A block needs an end after its start.";
+                flash(`Nothing was added. ${why}`);
+                return false;
+              }
+              commit(() => next);
               flash("Time added.");
+              return true;
             }}
             objectives={objectivesFor(state, project.id)}
             today={dayKey(now)}

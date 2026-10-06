@@ -676,7 +676,9 @@ export default function ProjectView({
             <ManualSession
               project={project} offClock={offClock} now={now} findOverlaps={findOverlaps}
               onCancel={() => setAddingTime(false)}
-              onSave={(entry) => { onAddManual(entry); setAddingTime(false); }} />
+              // Closed only once the time is in. A refused block keeps what
+              // was typed, so the reason can be read and the entry fixed.
+              onSave={(entry) => { if (onAddManual(entry)) setAddingTime(false); }} />
           </div>
         )}
 

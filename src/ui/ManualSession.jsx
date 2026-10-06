@@ -2,6 +2,8 @@ import { useState } from "react";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import { KIND } from "../domain/sessions.js";
 import { tasksFor } from "../domain/tasks.js";
+import { takesTime } from "../domain/taskState.js";
+import { closedTaskNote } from "./TaskPrompt.jsx";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -38,7 +40,12 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
   const [taskId, setTaskId] = useState("");
   const [confirmed, setConfirmed] = useState(false);
 
-  const tasks = tasksFor(project);
+  // Only work still being done. A task handed in takes no more hours, so
+  // offering one here would record nothing while the form said it had.
+  const tasks = tasksFor(project).filter(takesTime);
+  // A task picked here and then handed in from the task list while this form
+  // was still open. The form says so, rather than letting Add time go nowhere.
+  const closed = taskId ? closedTaskNote(project, taskId) : null;
   const start = fromInput(from);
   const end = fromInput(to);
   const lo = start !== null && end !== null ? Math.min(start, end) : null;
@@ -69,9 +76,9 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
         </label>
       </div>
 
-      {(tasks.length > 0 || !offClock) && (
+      {(tasks.length > 0 || closed || !offClock) && (
         <div className="pair">
-          {tasks.length > 0 && (
+          {(tasks.length > 0 || closed) && (
             <label className="field">
               <span className="eyebrow">{offClock ? "Activity" : "Task"}</span>
               <select className="inp" value={taskId} onChange={(e) => setTaskId(e.target.value)}>
@@ -121,6 +128,12 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
         </div>
       )}
 
+      {closed && (
+        <div className="hint warn" role="alert" style={{ marginTop: 12 }}>
+          {closed} Choose another, or none.
+        </div>
+      )}
+
       {clashes.length > 0 && (
         <div className="clash">
           <span className="eyebrow">Already accounted for</span>
@@ -148,7 +161,7 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
       )}
 
       <div className="controls">
-        <button className="btn primary" disabled={!valid || blocked}
+        <button className="btn primary" disabled={!valid || blocked || !!closed}
                 onClick={() => onSave({ startedAt: lo, endedAt: hi, kind, taskId: taskId || null })}>
           Add time
         </button>
