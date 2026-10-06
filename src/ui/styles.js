@@ -332,6 +332,13 @@ export const CSS = `
   user-select:all;word-break:break-all;}
 
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
+/* Restoring a backup: the ledger here set beside the one in the file, so what
+   "replace" will cost is in front of the reader before they agree to it. */
+.restore p{margin:10px 0 0;font-size:13.5px;line-height:1.6;color:var(--ink-2);}
+.restore-sides{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;
+  font-size:13px;line-height:1.5;}
+.restore-sides dt{font-weight:600;color:var(--muted);}
+.restore-sides dd{margin:0;color:var(--ink);}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--jade);
   cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 .linkish:hover{color:var(--jade-hi);}

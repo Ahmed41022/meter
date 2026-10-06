@@ -24,6 +24,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
   onOpen, onAdd, onExport, onImport, onExportCsv, backup,
+  restore = null, onConfirmRestore, onCancelRestore,
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
@@ -238,7 +239,30 @@ export default function ProjectsView({
 
 
       <div className="sec">
-        {adding ? (
+        {/* Where the Restore button was, because that is where the reader is
+            looking once the file is picked. Restoring replaces; it does not
+            merge. So the two ledgers are set side by side, in terms a person
+            can recognise them by, before either is touched. */}
+        {restore ? (
+          <div className="panel restore" role="alertdialog" aria-labelledby="restore-title">
+            <span className="eyebrow" id="restore-title">Replace your ledger?</span>
+            <p>
+              Restoring “{restore.name}” replaces everything here with what the file holds.
+              Nothing is merged: anything here that the file doesn&apos;t have is gone, unless you
+              press Undo straight after.
+            </p>
+            <dl className="restore-sides">
+              <dt>Here now</dt>
+              <dd>{restore.current}</dd>
+              <dt>In the file</dt>
+              <dd>{restore.incoming}</dd>
+            </dl>
+            <div className="controls">
+              <button className="btn danger" onClick={onConfirmRestore}>Replace my ledger</button>
+              <button className="btn ghost" onClick={onCancelRestore}>Cancel</button>
+            </div>
+          </div>
+        ) : adding ? (
           <div className="panel">
             <span className="eyebrow">New {w.projectNoun}</span>
             <div style={{ height: 14 }} />

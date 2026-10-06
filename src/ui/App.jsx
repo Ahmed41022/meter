@@ -37,7 +37,7 @@ import {
   removeObjective, restoreObjective, toggleObjective, unlinkTask,
 } from "../domain/objectives.js";
 import { CSS } from "./styles.js";
-import { countWord, daysWord } from "./words.js";
+import { countWord, daysWord, ledgerWords } from "./words.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
@@ -145,6 +145,9 @@ export default function App({ store: injectedStore }) {
   /** What the store found and could not read, if anything — see
    *  `store.unreadable`. Held here so the banner can be answered and put away. */
   const [unreadable, setUnreadable] = useState(null);
+  /** A backup file that has been read and checked but not yet let in:
+   *  `{ name, state }`, waiting on "Replace my ledger". */
+  const [restoring, setRestoring] = useState(null);
 
   const stateRef = useRef(state);
   const toastTimer = useRef(null);
@@ -400,21 +403,35 @@ export default function App({ store: injectedStore }) {
     if (found) openProject(found.projectId, id);
   };
 
+  /**
+   * Picking a file changes nothing yet. Restoring REPLACES the ledger rather
+   * than merging into it, so the file is read, checked and then held until the
+   * user has seen what it holds beside what it would replace. Replacing on the
+   * pick itself, with a seven-second Undo the only word of what had happened,
+   * was how a whole ledger could be swapped for an old file by mistake.
+   */
   const importBackup = (file) => {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result));
         if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.sessions)) throw new Error();
-        const snapshot = stateRef.current;
-        commit(() => parsed);
-        setOpenProjectId(null);
-        flash("Backup restored.", "Undo", () => commit(() => snapshot));
+        setRestoring({ name: file.name, state: parsed });
       } catch {
         flash("That file isn't a Meter backup.");
       }
     };
     reader.readAsText(file);
+  };
+
+  /** The replacement itself, once agreed to. The Undo stays, for the second
+   *  thoughts that only come once it has happened. */
+  const confirmRestore = () => {
+    const snapshot = stateRef.current;
+    commit(() => restoring.state);
+    setRestoring(null);
+    setOpenProjectId(null);
+    flash("Backup restored.", "Undo", () => commit(() => snapshot));
   };
 
   /** Hands over the ledger that could not be read, exactly as it was stored,
@@ -828,6 +845,12 @@ export default function App({ store: injectedStore }) {
             onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
             onExport={exportBackup} onImport={importBackup} backup={backup}
             onExportCsv={exportCsv}
+            restore={restoring && {
+              name: restoring.name,
+              current: ledgerWords(state),
+              incoming: ledgerWords(restoring.state),
+            }}
+            onConfirmRestore={confirmRestore} onCancelRestore={() => setRestoring(null)}
           />
         )}
 

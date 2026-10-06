@@ -10,6 +10,7 @@
  * figure underneath are identical, which is why this is a lookup in the UI
  * layer and not a second code path through the domain.
  */
+import { startedAt } from "../domain/time.js";
 
 const WORK = {
   task: "task",
@@ -64,3 +65,33 @@ export const daysWord = (days) =>
 /** How much work is at stake, as a thing rather than a number: "41 records",
  *  and "1 record" rather than "1 records". */
 export const countWord = (n) => `${n} record${n === 1 ? "" : "s"}`;
+
+const many = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+const dayOf = (t) =>
+  new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * A whole ledger in one line — what it holds and the span it covers — so two
+ * can be told apart before one replaces the other: "2 projects, 41 sessions
+ * and 3 payments, from 4 Jan 2025 to 5 Oct 2026".
+ *
+ * Only live records count. A backup carries what was deleted as tombstones,
+ * and counting those would describe a ledger nobody has ever seen.
+ */
+export const ledgerWords = (state) => {
+  const live = (rows) => (Array.isArray(rows) ? rows : []).filter((r) => r && !r.deletedAt);
+  const projects = live(state?.projects).length;
+  const sessions = live(state?.sessions);
+  const earnings = live(state?.earnings);
+  if (!projects && !sessions.length && !earnings.length) return "nothing at all";
+  const parts = [many(projects, "project"), many(sessions.length, "session")];
+  if (earnings.length) parts.push(many(earnings.length, "payment"));
+  const held = `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  // Reduced rather than spread into Math.min, which would pass every record
+  // as an argument and fail on a long enough ledger.
+  const times = [...sessions.map(startedAt), ...earnings.map((e) => e.at)].filter(Number.isFinite);
+  if (!times.length) return held;
+  const first = dayOf(times.reduce((a, b) => Math.min(a, b)));
+  const last = dayOf(times.reduce((a, b) => Math.max(a, b)));
+  return `${held}, ${first === last ? `on ${first}` : `from ${first} to ${last}`}`;
+};

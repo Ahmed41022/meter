@@ -5056,4 +5056,114 @@ describe("fixes: data, export and layout", () => {
       expect(csv).toContain('"مشروع 🚀"');
     }, 25_000);
   });
+
+  describe("restoring a backup", () => {
+    const HOUR = 3_600_000;
+    const at = (y, m, d, h = 9) => new Date(y, m, d, h).getTime();
+    const project = (id, name) => ({
+      id, name, currentRate: 40, currency: "USD", createdAt: at(2024, 0, 1),
+      sessionGoal: null, overallGoal: null, tasks: [],
+    });
+    const session = (id, projectId, start) => ({
+      id, projectId, kind: "billed", taskId: null, rate: 40, currency: "USD",
+      createdAt: start, closedAt: start + HOUR, deletedAt: null,
+      segments: [{ startedAt: start, endedAt: start + HOUR }],
+    });
+    const mine = {
+      projects: [project("a", "Orion"), project("b", "Lumen")],
+      sessions: [
+        session("s1", "a", at(2025, 2, 4)), session("s2", "b", at(2025, 5, 9)),
+        session("s3", "a", at(2025, 8, 1)),
+        // Deleted: it is in storage, and in no count a person would recognise.
+        { ...session("s4", "a", at(2025, 8, 2)), deletedAt: at(2025, 8, 3) },
+      ],
+      lastBackupAt: at(2025, 8, 2),
+    };
+    const file = {
+      projects: [project("x", "Gateway")],
+      sessions: [session("f1", "x", at(2024, 0, 15))],
+      earnings: [{
+        id: "e1", projectId: "x", kind: "piece", cents: 5_000, currency: "USD",
+        at: at(2024, 1, 2, 12), createdAt: at(2024, 1, 2), deletedAt: null,
+      }],
+    };
+    const names = (dom) => JSON.parse(stored(dom)).projects.map((p) => p.name);
+    const panel = (d) => d.querySelector(".restore");
+
+    /** What the file picker hands over when a file is chosen. Polled rather
+     *  than slept on: the file is read asynchronously, and the first read in
+     *  a cold run can take longer than any fixed wait worth writing down. */
+    const pick = async (dom, content, name = "meter-2024-02-03.json") => {
+      const d = dom.window.document;
+      await toProjects(d, "Work");
+      const input = d.querySelector("input[type=file]");
+      const chosen = new dom.window.File([content], name, { type: "application/json" });
+      Object.defineProperty(input, "files", { value: [chosen], configurable: true });
+      input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      for (let waited = 0; waited < 5000 && !d.querySelector(".restore, .toast"); waited += 50) {
+        await wait(50);
+      }
+      await wait(100);
+    };
+
+    it("asks first, setting what would be replaced beside what the file holds", async () => {
+      const dom = await boot(mine);
+      await pick(dom, JSON.stringify(file));
+      const d = dom.window.document;
+      expect(panel(d).textContent).toMatch(/replaces everything here/i);
+      expect(panel(d).textContent).toContain("meter-2024-02-03.json");
+      const [here, there] = [...panel(d).querySelectorAll("dd")].map((x) => x.textContent);
+      expect(here).toMatch(/^2 projects and 3 sessions, from .*2025.* to .*2025/);
+      expect(there).toMatch(/^1 project, 1 session and 1 payment, from .*2024.* to .*2024/);
+      // Picking the file changed nothing.
+      expect(names(dom)).toEqual(["Orion", "Lumen"]);
+    }, 25_000);
+
+    it("replaces the ledger only on Replace my ledger, and can still be undone", async () => {
+      const dom = await boot(mine);
+      await pick(dom, JSON.stringify(file));
+      const d = dom.window.document;
+      btn(d, /^Replace my ledger$/).click();
+      await wait(250);
+      expect(names(dom)).toEqual(["Gateway"]);
+      expect(panel(d)).toBeNull();
+      expect(d.querySelector(".toast").textContent).toMatch(/Backup restored/);
+      btn(d.querySelector(".toast"), /^Undo$/).click();
+      await wait(250);
+      expect(names(dom)).toEqual(["Orion", "Lumen"]);
+    }, 25_000);
+
+    it("leaves everything as it was on Cancel", async () => {
+      const dom = await boot(mine);
+      const before = stored(dom);
+      await pick(dom, JSON.stringify(file));
+      const d = dom.window.document;
+      btn(panel(d), /^Cancel$/).click();
+      await wait(200);
+      expect(panel(d)).toBeNull();
+      expect(stored(dom)).toBe(before);
+      expect(btn(d, /^Restore$/)).toBeTruthy();
+    }, 25_000);
+
+    it("is the way back from a ledger that could not be read", async () => {
+      const dom = await boot(null, { "meter:v1": "{not json" });
+      const d = dom.window.document;
+      btn(bannerSaying(d, /couldn.t be read/i), /restore a backup/i).click();
+      await wait(200);
+      await pick(dom, JSON.stringify(file));
+      expect(panel(d).querySelector("dd").textContent).toBe("nothing at all");
+      btn(panel(d), /^Replace my ledger$/).click();
+      await wait(250);
+      expect(names(dom)).toEqual(["Gateway"]);
+    }, 25_000);
+
+    it("turns away a file that is not a backup without asking anything", async () => {
+      const dom = await boot(mine);
+      await pick(dom, '{"nope":1}', "notes.json");
+      const d = dom.window.document;
+      expect(panel(d)).toBeNull();
+      expect(d.querySelector(".toast").textContent).toMatch(/isn.t a Meter backup/);
+      expect(names(dom)).toEqual(["Orion", "Lumen"]);
+    }, 25_000);
+  });
 });
