@@ -258,6 +258,12 @@ export const earningsIn = (earnings, from, to) =>
 export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null }, now, id) => {
   const amount = Math.round(cents);
   if (!Number.isFinite(amount) || amount === 0) return state;
+  // An earning has no span, only this instant, so without one it belongs to
+  // no period: every total that should include it reads short, and a
+  // spreadsheet dates it 1970. Absent still means now; anything that is not
+  // a time is refused rather than stored.
+  const when = at ?? now;
+  if (!Number.isFinite(when)) return state;
   const tasks = (taskIds ?? []).filter(Boolean);
   return {
     ...state,
@@ -273,7 +279,7 @@ export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, no
         kind,
         cents: amount,
         currency: project.currency,
-        at: at ?? now,
+        at: when,
         note: note.trim(),
         // How many accepted items this covers, when that is what it is. Kept
         // because "6 tasks at $500" is the fact; "$3,000" is the consequence.

@@ -6015,4 +6015,22 @@ describe("fixes: editors and entry forms", () => {
     await wait(300);
     expect(stored(dom).sessions.find((x) => x.id === "s1").closedAt).toBe(stretched);
   }, 30_000);
+
+  it("will not add earnings without a day to put them on", async () => {
+    // Added with the date box cleared, $40 was stored with no date: the week
+    // it was earned in read $40 short, and the CSV would have dated it 1970.
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    btn(d, /Add earnings/).click();
+    await wait(200);
+    const form = d.querySelector(".ern-form");
+    setValue(dom.window, field(form, "^Amount"), "40");
+    setValue(dom.window, field(form, "^Date$"), "");
+    await wait(150);
+
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/Pick the day it was earned/);
+    expect(btn(d, /^Add$/).disabled).toBe(true);
+    btn(d, /^Add$/).click();
+    await wait(200);
+    expect(stored(dom).earnings ?? []).toHaveLength(0);
+  }, 30_000);
 });

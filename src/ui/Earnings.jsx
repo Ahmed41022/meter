@@ -57,7 +57,16 @@ export default function Earnings({
   const pending = rows.filter(isPending).reduce((a, e) => a + e.cents, 0);
 
   const amount = Math.round(Number(form.amount) * 100);
-  const valid = Number.isFinite(amount) && amount !== 0;
+  // Midday, so a date typed in cannot land on the wrong side of a day
+  // boundary in a zone where local midnight does not exist.
+  const at = new Date(`${form.at}T12:00`).getTime();
+  /**
+   * Money with no day counts in no period at all: the week reads short by
+   * exactly that amount, and a spreadsheet dates it 1970. A date box cleared
+   * by accident is the usual way there, so Add waits for a day.
+   */
+  const dated = Number.isFinite(at);
+  const valid = Number.isFinite(amount) && amount !== 0 && dated;
 
   const submit = () => {
     if (!valid) return;
@@ -65,9 +74,7 @@ export default function Earnings({
     onAdd({
       cents: amount,
       kind: form.kind,
-      // Midday, so a date typed in cannot land on the wrong side of a day
-      // boundary in a zone where local midnight does not exist.
-      at: new Date(`${form.at}T12:00`).getTime(),
+      at,
       units: Number.isFinite(units) && units > 0 ? units : null,
       taskIds: form.taskId === NONE ? [] : [form.taskId],
       note: form.note,
@@ -171,6 +178,11 @@ export default function Earnings({
                 <span className="eyebrow">Date</span>
                 <input className="inp" type="date" value={form.at}
                        onChange={(e) => setForm({ ...form, at: e.target.value })} />
+                {!dated && (
+                  <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+                    Pick the day it was earned. Without one it counts in no week or month.
+                  </span>
+                )}
               </label>
               <label className="field">
                 <span className="eyebrow">How many items</span>

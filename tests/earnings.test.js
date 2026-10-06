@@ -37,6 +37,15 @@ describe("money that is not an hour of work", () => {
     expect(addEarning(empty, project, { cents: NaN, at: T }, T, "e1").earnings).toHaveLength(0);
   });
 
+  it("refuses a day that is not one, rather than storing money no period holds", () => {
+    // A form whose date box was cleared hands over NaN. Stored, it counted in
+    // no week at all, and the CSV would have dated it 1970.
+    expect(addEarning(empty, project, { cents: 4_000, at: NaN }, T, "e1")).toBe(empty);
+    expect(addEarning(empty, project, { cents: 4_000, at: Infinity }, T, "e1")).toBe(empty);
+    // Absent still means the moment it was recorded.
+    expect(addEarning(empty, project, { cents: 4_000 }, T, "e1").earnings[0].at).toBe(T);
+  });
+
   it("takes a negative amount, because a clawback is a real thing", () => {
     const s = addEarning(empty, project,
       { cents: -5_000, kind: EARNING.ADJUSTMENT, at: T }, T, "e1");
