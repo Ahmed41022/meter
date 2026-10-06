@@ -5926,4 +5926,31 @@ describe("fixes: editors and entry forms", () => {
       .toMatch(/“T-2” was submitted, so it takes no more time/);
     expect(btn(d, /^Add time$/).disabled).toBe(true);
   }, 30_000);
+
+  it("reads a decimal comma in a task's rate, and refuses what it cannot read", async () => {
+    // "12,5" and "-5" both saved as "no rate", without a word, and took the
+    // task's own $35 with them.
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    await press(taskRow(d, "T-2"), "edit");
+    const form = d.querySelector(".prompt");
+    const rate = field(form, "Rate for this task");
+
+    setValue(dom.window, rate, "-5");
+    await wait(150);
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/can't be below zero/);
+    expect(btn(d, /^Save$/).disabled).toBe(true);
+    setValue(dom.window, rate, "abc");
+    await wait(150);
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/“abc” isn't a rate/);
+    rate.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await wait(200);
+    expect(stored(dom).projects[0].tasks[1].rate).toBe(35);
+
+    setValue(dom.window, rate, "12,5");
+    await wait(150);
+    expect(form.querySelector(".hint.warn")).toBeNull();
+    btn(d, /^Save$/).click();
+    await wait(300);
+    expect(stored(dom).projects[0].tasks[1].rate).toBe(12.5);
+  }, 30_000);
 });

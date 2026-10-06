@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
   resolveTaskId, sessionsUnderTask, setTaskNote, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
-  parseTaskRate, taskRateInput, ORDER, sortTaskRows, UNASSIGNED,
+  parseTaskRate, taskRateInput, ORDER, sortTaskRows, UNASSIGNED, RATE_PROBLEM, taskRateProblem,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -498,6 +498,43 @@ describe("a task that pays nothing", () => {
   it("refuses a negative one, which is not a thing", () => {
     const s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "-5");
     expect(rateFor(proj(s), session(450))).toBe(450);
+  });
+});
+
+describe("a rate written with a comma, or not a rate at all", () => {
+  it("reads a decimal comma the way it was meant", () => {
+    expect(parseTaskRate("12,5")).toEqual({ rate: 12.5, factor: null });
+    expect(parseTaskRate(" 12,5 % ")).toEqual({ rate: null, factor: 0.125 });
+    expect(parseTaskRate("0,125")).toEqual({ rate: 0.125, factor: null });
+  });
+
+  it("will not guess at a comma that could be thousands", () => {
+    // "1,250" is 1250 to one reader and 1.25 to another, and a guess is a rate
+    // a thousand times wrong, so it is named rather than read either way.
+    expect(taskRateProblem("1,250")).toBe(RATE_PROBLEM.AMBIGUOUS);
+    expect(taskRateProblem("12,500%")).toBe(RATE_PROBLEM.AMBIGUOUS);
+    expect(parseTaskRate("1,250")).toEqual({ rate: null, factor: null });
+  });
+
+  it("names what is wrong with a box that cannot be saved", () => {
+    expect(taskRateProblem("-5")).toBe(RATE_PROBLEM.NEGATIVE);
+    expect(taskRateProblem("-5%")).toBe(RATE_PROBLEM.NEGATIVE);
+    expect(taskRateProblem("abc")).toBe(RATE_PROBLEM.UNREADABLE);
+    expect(taskRateProblem("%")).toBe(RATE_PROBLEM.UNREADABLE);
+    expect(taskRateProblem("12.5.1")).toBe(RATE_PROBLEM.UNREADABLE);
+    for (const fine of ["", "  ", "0", "12.5", "12,5", "30%", " 12,5 % ", null, undefined]) {
+      expect(taskRateProblem(fine)).toBeNull();
+    }
+  });
+
+  it("keeps the rate a task has when handed something that is not one", () => {
+    // Read as "no rate", a slip of the finger cleared the rate the task had.
+    let s = setTaskRate(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "35");
+    for (const bad of ["-5", "abc", "1,250", "-5%"]) {
+      s = setTaskRate(s, "p1", "t1", bad);
+      expect(findTask(proj(s), "t1").rate).toBe(35);
+    }
+    expect(findTask(proj(setTaskRate(s, "p1", "t1", "12,5")), "t1").rate).toBe(12.5);
   });
 });
 

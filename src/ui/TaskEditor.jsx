@@ -1,7 +1,7 @@
 import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
-import { taskRateInput } from "../domain/tasks.js";
+import { RATE_PROBLEM, taskRateInput, taskRateProblem } from "../domain/tasks.js";
 import { TASK, taskState } from "../domain/taskState.js";
 
 /** What the second date is called, which is what actually happened to the
@@ -9,6 +9,17 @@ import { TASK, taskState } from "../domain/taskState.js";
 const ANSWER_WORD = {
   [TASK.ACCEPTED]: "Accepted",
   [TASK.CANCELLED]: "Rejected",
+};
+
+/** What a rate box that cannot be saved says, given what was typed in it
+ *  without any percent sign. */
+const RATE_WORDS = {
+  [RATE_PROBLEM.UNREADABLE]: (typed) =>
+    `“${typed}” isn't a rate. Type an amount such as 12.5, or a share of the base such as 30%.`,
+  [RATE_PROBLEM.NEGATIVE]: () => "A rate can't be below zero. Type 0 if this task pays nothing.",
+  [RATE_PROBLEM.AMBIGUOUS]: (typed) =>
+    `“${typed}” could be ${typed.replace(",", "")} or ${typed.replace(",", ".")}. Type it without `
+    + "the comma, or with a point before the decimals.",
 };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -56,8 +67,18 @@ export default function TaskEditor({
   const [back, setBack] = useState(answered === null ? "" : toInput(answered));
   const [confirming, setConfirming] = useState(false);
   const piece = projectPrice !== null;
+  /**
+   * Boxes that cannot be saved as they stand. Read as "nothing", a "-5" or a
+   * stray letter would quietly clear the rate or price the task already
+   * holds, so each box says what is wrong and Save waits until it is right.
+   */
+  const rateIssue = taskRateProblem(rate);
+  // A number box hands back "" for anything it cannot read, so all that is
+  // left to refuse in a price is a figure below zero.
+  const priceIssue = piece && price.trim() !== "" && Number(price) < 0;
+  const blocked = Boolean(rateIssue || priceIssue);
 
-  const save = () => onSave({
+  const save = () => !blocked && onSave({
     label: label.trim() || task.label,
     rate: rate.trim() === "" ? null : rate,
     price: price.trim() === "" ? null : price,
@@ -100,6 +121,11 @@ export default function TaskEditor({
                  placeholder={`empty = ${formatMoney(Math.round(projectPrice * 100), currency)}, the project&apos;s price`}
                  onChange={(e) => setPrice(e.target.value)}
                  onKeyDown={(e) => e.key === "Enter" && save()} />
+          {priceIssue && (
+            <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+              A price can&apos;t be below zero. Type 0 if an accepted item pays nothing here.
+            </span>
+          )}
         </label>
       )}
       <label className="field">
@@ -108,6 +134,11 @@ export default function TaskEditor({
                placeholder={`empty = as recorded (${formatMoney(Math.round(projectRate * 100), currency)}/hr now) · or 30%`}
                onChange={(e) => setRate(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && save()} />
+        {rateIssue && (
+          <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+            {RATE_WORDS[rateIssue](rate.trim().replace(/%$/, "").trim())}
+          </span>
+        )}
       </label>
       <label className="field">
         <span className="eyebrow">Note</span>
@@ -166,7 +197,7 @@ export default function TaskEditor({
         task pays nothing, which is a different answer.
       </div>
       <div className="controls">
-        <button className="btn primary" onClick={save}>Save</button>
+        <button className="btn primary" disabled={blocked} onClick={save}>Save</button>
         <button className="btn ghost" onClick={onCancel}>Cancel</button>
         <button className="btn danger" onClick={() => setConfirming(true)}>Delete</button>
       </div>

@@ -68,9 +68,24 @@ export const addTask = (state, projectId, { id, label, rate, factor, price, note
  */
 const amount = (value) => {
   if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
+  const n = Number(typeof value === "string" ? decimal(value.trim()) : value);
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
+
+/**
+ * A comma read as the decimal point it is in half the world: "12,5" is twelve
+ * and a half, and read any other way it is no number at all, so the task
+ * would be saved as having no rate.
+ *
+ * Only where that is the one reading. Three digits after a comma is how the
+ * other half writes thousands, so "1,250" could be either and is left unread
+ * rather than guessed at — a guess there is a rate a thousand times wrong.
+ */
+const DECIMAL_COMMA = /^-?\d+,\d+$/;
+const THOUSANDS = /^-?[1-9]\d{0,2},\d{3}$/;
+function decimal(text) {
+  return DECIMAL_COMMA.test(text) && !THOUSANDS.test(text) ? text.replace(",", ".") : text;
+}
 
 /**
  * What the user typed into a rate box, as either an absolute rate or a
@@ -90,6 +105,31 @@ export const parseTaskRate = (input) => {
     return { rate: null, factor: pct === null ? null : pct / 100 };
   }
   return { rate: amount(text), factor: null };
+};
+
+/** Why a rate box cannot be saved as it stands. */
+export const RATE_PROBLEM = {
+  UNREADABLE: "unreadable",
+  NEGATIVE: "negative",
+  AMBIGUOUS: "ambiguous",
+};
+
+/**
+ * What is wrong with a rate box, or null when it can be saved.
+ *
+ * Empty is fine — it means inherit — and so is any amount or share from zero
+ * up. Anything else would read as "no rate" and be saved as one, clearing
+ * whatever rate the task had without a word, so a rate box asks this first
+ * and says what is wrong instead of saving.
+ */
+export const taskRateProblem = (input) => {
+  const text = String(input ?? "").trim();
+  if (!text) return null;
+  const figure = (text.endsWith("%") ? text.slice(0, -1) : text).trim();
+  if (THOUSANDS.test(figure)) return RATE_PROBLEM.AMBIGUOUS;
+  const n = Number(decimal(figure));
+  if (!figure || !Number.isFinite(n)) return RATE_PROBLEM.UNREADABLE;
+  return n < 0 ? RATE_PROBLEM.NEGATIVE : null;
 };
 
 /** How a task's rate should be shown in a box the user can edit again. */
@@ -126,8 +166,13 @@ export const rateFor = (project, session) => {
  * Setting one clears the other, always. A task holding both an absolute rate
  * and a proportion would have two answers to one question, and whichever the
  * resolver picked would surprise somebody.
+ *
+ * Anything that is not a rate leaves the task exactly as it was. Read as "no
+ * rate" it would clear the one already there, and "-5" is a slip of the
+ * finger, not an instruction to forget what the task pays.
  */
 export const setTaskRate = (state, projectId, taskId, rate) => {
+  if (taskRateProblem(rate)) return state;
   const { rate: value, factor } = parseTaskRate(rate);
   return {
     ...state,
