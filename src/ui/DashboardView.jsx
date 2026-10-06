@@ -146,15 +146,20 @@ export default function DashboardView({
   /**
    * What is coming in, and when.
    *
-   * Recomputed once a day rather than on every tick of `now`: the forecast
-   * turns on which calendar day it is, and every session it reads is one
-   * filed under a task already submitted, which by definition is closed and
-   * no longer accruing.
+   * Recomputed once a minute rather than on every tick of `now`. Once a day
+   * was too seldom: the "not before" date on work under review is the payday
+   * of the period the clock is in now, and a period shuts at a minute, not at
+   * midnight — with the week closing at 02:00 on Monday, opening the Overview
+   * at 00:30 fixed "not before Wednesday the 7th" for the whole of Monday,
+   * though anything answered after 02:00 is paid on the 14th. A cutoff is set
+   * to the minute, so no finer key is needed; and every session read here is
+   * filed under a task already handed in, so nothing in it accrues between.
    */
+  const minute = Math.floor(now / 60_000);
   const pay = useMemo(
     () => upcomingPay({ projects, sessions, earnings, companies: companyRules }, now),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the day, not the second
-    [projects, sessions, earnings, companyRules, today],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the minute, not the second
+    [projects, sessions, earnings, companyRules, minute],
   );
   /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
   const payTotal = currenciesByValue(

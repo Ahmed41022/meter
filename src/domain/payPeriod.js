@@ -70,13 +70,30 @@ const whole = (value, low, high, fallback = null) => {
 
 /* ── calendar arithmetic, on this device's clock or on somebody else's ────── */
 
+/**
+ * One formatter per clock, made once and kept.
+ *
+ * Making an Intl.DateTimeFormat costs far more than using one, and a forecast
+ * asks the same few clocks the same questions for every task, every minute:
+ * made fresh each time, one pass over six hundred tasks took a seventh of a
+ * second. A formatter holds no time of its own, so a kept one answers exactly
+ * as a new one would.
+ */
+const walls = new Map();
+const wallFormat = (zone) => {
+  if (!walls.has(zone)) {
+    walls.set(zone, new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }));
+  }
+  return walls.get(zone);
+};
+
 /** The parts of an instant as a named zone's own clock reads them. */
 const zoneWall = (t, zone) => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone, hourCycle: "h23",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  }).formatToParts(t);
+  const parts = wallFormat(zone).formatToParts(t);
   const got = {};
   for (const p of parts) if (p.type !== "literal") got[p.type] = Number(p.value);
   return got;
@@ -147,16 +164,22 @@ const nextMonth = ({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }
 
 /** A zone only where this device knows the name. An unknown one throws inside
  *  `Intl` on every render, so it is dropped here and the rule falls back to
- *  the local clock — hours out at worst, rather than a blank screen. */
+ *  the local clock — hours out at worst, rather than a blank screen. Asked
+ *  once per name: the answer cannot change while the page is open, and every
+ *  read of a rule asks it. */
+const known = new Map();
 const knownZone = (value) => {
   const name = String(value ?? "").trim();
   if (!name) return null;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: name });
-    return name;
-  } catch {
-    return null;
+  if (!known.has(name)) {
+    try {
+      wallFormat(name);
+      known.set(name, true);
+    } catch {
+      known.set(name, false);
+    }
   }
+  return known.get(name) ? name : null;
 };
 
 /**

@@ -6459,4 +6459,67 @@ describe("fixes: paydays and settling", () => {
     expect(payLabels(d)).toHaveLength(1);
     expect(payLabels(d)[0]).toMatch(/^Wed/);
   }, 30_000);
+
+  /**
+   * Boots with the page's clock `skew` ms off the real one, and
+   * `window.__skew` there to move it, so a test can stand just before a
+   * cutoff and then step over it. Timers still run on real time.
+   */
+  const bootSkewed = async (seed, skew) => {
+    const clock = `window.__skew = ${skew};`
+      + "(() => { const real = Date.now.bind(Date); Date.now = () => real() + window.__skew; })();";
+    const store = `localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});`;
+    const html = readFileSync(DIST, "utf8").replace('<div id="root"></div>',
+      `<div id="root"></div><script>${clock}${store}</script>${COUNTER}`);
+    const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
+    await wait(700);
+    return dom;
+  };
+
+  it("moves the soonest date for work under review the minute a cutoff passes", async () => {
+    // The forecast was worked out once a day, so a week shutting at 02:00
+    // kept promising that week's payday all day long after it had shut.
+    const rule = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 120, zone: "UTC" };
+    // The next Monday on the UTC calendar, from calendar fields.
+    const today = new Date();
+    const [y, m] = [today.getUTCFullYear(), today.getUTCMonth()];
+    const monday = today.getUTCDate() + ((1 - today.getUTCDay() + 7) % 7 || 7);
+    const cutoff = Date.UTC(y, m, monday, 2, 0);
+    const skew = cutoff - 30_000 - Date.now();
+    const at = Date.now() + skew; // the page's now: half a minute before it shuts
+    const payday = (days) => new Date(Date.UTC(y, m, monday + days)).toLocaleDateString(undefined, {
+      timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
+    });
+    const seed = {
+      projects: [
+        { id: "a", name: "Gateway", company: "Clockwork", currentRate: 40, currency: "USD",
+          createdAt: at - 80 * HOUR, sessionGoal: null, overallGoal: null,
+          tasks: [{ id: "t1", label: "1234", createdAt: at - 80 * HOUR,
+                    state: "submitted", stateAt: at - HOUR, submittedAt: at - HOUR }] },
+        // A meter going elsewhere, so the page's clock ticks every second.
+        { id: "b", name: "Ticker", currentRate: 10, currency: "USD", createdAt: at - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [] },
+      ],
+      sessions: [
+        { id: "s1", projectId: "a", kind: "billed", taskId: "t1", rate: 40, currency: "USD",
+          createdAt: at - 3 * HOUR, closedAt: at - 2 * HOUR, deletedAt: null,
+          segments: [{ startedAt: at - 3 * HOUR, endedAt: at - 2 * HOUR }] },
+        { id: "s2", projectId: "b", kind: "billed", taskId: null, rate: 10, currency: "USD",
+          createdAt: at - HOUR, closedAt: null, deletedAt: null, device: "elsewhere",
+          segments: [{ startedAt: at - HOUR, endedAt: null, lastTick: at }] },
+      ],
+      earnings: [],
+      companies: [{ id: "co:clockwork", name: "Clockwork", payPeriod: rule,
+                    createdAt: at - 80 * HOUR, deletedAt: null }],
+    };
+    const dom = await bootSkewed(seed, skew);
+    const d = dom.window.document;
+    await wait(150);
+    await toProjects(d, "Overview");
+    expect(payLabels(d)).toEqual([`Not before ${payday(2)}`]);
+
+    dom.window.__skew += 60_000;
+    await wait(1_500);
+    expect(payLabels(d)).toEqual([`Not before ${payday(9)}`]);
+  }, 30_000);
 });
