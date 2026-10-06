@@ -3,6 +3,7 @@ import { elapsedMs, startedAt } from "../domain/time.js";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import { wasCorrected } from "../domain/sessions.js";
 import { rateFor } from "../domain/tasks.js";
+import { Clashes } from "./ManualSession.jsx";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -22,10 +23,13 @@ const fromInput = (value) => {
  * so the resulting duration is rarely just end minus start, and you should be
  * able to see the number you're about to commit before you commit it.
  */
-export default function SessionEditor({ session, project, onSave, onRevert, onCancel }) {
+export default function SessionEditor({
+  session, project, findOverlaps = () => [], onSave, onRevert, onCancel,
+}) {
   const recordedEnd = session.closedAt ?? startedAt(session);
   const [from, setFrom] = useState(toInput(startedAt(session)));
   const [to, setTo] = useState(toInput(recordedEnd));
+  const [confirmed, setConfirmed] = useState(false);
 
   const start = fromInput(from);
   const end = fromInput(to);
@@ -54,6 +58,21 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
       })()
     : null;
 
+  /**
+   * Other records the corrected time would lie across, asked of the blocks
+   * it would actually record rather than of start to end, since a break kept
+   * between them double-counts nothing. The session itself is left out: it
+   * is the thing being moved. Anything else under it would be counted twice,
+   * so it is named, and Save waits for the same "anyway" Add time asks for.
+   */
+  const clashes = [];
+  for (const block of preview?.segments ?? []) {
+    for (const other of findOverlaps(block)) {
+      if (other.id !== session.id && !clashes.some((c) => c.id === other.id)) clashes.push(other);
+    }
+  }
+  const blocked = clashes.length > 0 && !confirmed;
+
   const rate = rateFor(project, session);
   const nowMs = preview ? elapsedMs(preview, 0) : 0;
   const wasMs = elapsedMs(session, recordedEnd);
@@ -66,12 +85,12 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
         <label className="field">
           <span className="eyebrow">Started</span>
           <input className="inp" type="datetime-local" value={from}
-                 onChange={(e) => setFrom(e.target.value)} />
+                 onChange={(e) => { setFrom(e.target.value); setConfirmed(false); }} />
         </label>
         <label className="field">
           <span className="eyebrow">Ended</span>
           <input className="inp" type="datetime-local" value={to}
-                 onChange={(e) => setTo(e.target.value)} />
+                 onChange={(e) => { setTo(e.target.value); setConfirmed(false); }} />
         </label>
       </div>
 
@@ -104,6 +123,11 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
         </div>
       )}
 
+      {clashes.length > 0 && (
+        <Clashes clashes={clashes} confirmed={confirmed} onConfirm={setConfirmed}
+                 anyway="Save it anyway" />
+      )}
+
       <div className="hint" style={{ marginTop: 14 }}>
         {wasCorrected(session)
           ? "This was corrected before. What the meter originally recorded is still kept."
@@ -111,7 +135,7 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
       </div>
 
       <div className="controls">
-        <button className="btn primary" disabled={!valid}
+        <button className="btn primary" disabled={!valid || blocked}
                 onClick={() => onSave({ startedAt: start, endedAt: end })}>
           Save correction
         </button>

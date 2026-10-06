@@ -23,14 +23,51 @@ const when = (t) => new Date(t).toLocaleString(undefined, {
 });
 
 /**
+ * The records a typed-in window would count a second time, named so they can
+ * be found, with the one box that says the overlap is meant.
+ *
+ * Shared by the two forms that write a window by hand — adding time and
+ * correcting a session — because those are the only ways the same wall-clock
+ * hour can come to be counted twice, and they should say so in the same words.
+ */
+export function Clashes({ clashes, confirmed, onConfirm, anyway }) {
+  return (
+    <div className="clash">
+      <span className="eyebrow">Already accounted for</span>
+      <p>
+        This overlaps {clashes.length} record{clashes.length === 1 ? "" : "s"} you have
+        already got. Two records over the same hour count it twice and inflate both the
+        hours and the money.
+      </p>
+      <ul>
+        {clashes.slice(0, 4).map((s) => (
+          <li key={s.id}>
+            {s.projectName ? `${s.projectName} · ` : ""}
+            {s.taskName ? `${s.taskName} · ` : ""}
+            {when(s.segments[0].startedAt)}
+            {s.closedAt ? ` → ${when(s.closedAt)}` : " · still running"}
+          </li>
+        ))}
+      </ul>
+      <label className="clash-ok">
+        <input type="checkbox" checked={confirmed}
+               onChange={(e) => onConfirm(e.target.checked)} />
+        {anyway}
+      </label>
+    </div>
+  );
+}
+
+/**
  * Time you worked but didn't time.
  *
  * Two things make this more than a form. The preview shows the figure before
  * it is committed, because a block you type in goes straight into the money
  * with nothing having watched it. And it checks the window against every other
- * record: the meter physically cannot produce two overlapping sessions, so
- * this is the only route by which the same wall-clock hour could be counted
- * twice, and it is worth saying out loud rather than silently accepting.
+ * record: the meter physically cannot produce two overlapping sessions, so a
+ * window typed in by hand — here, or in a correction — is the only way the
+ * same wall-clock hour could be counted twice, and it is worth saying out loud
+ * rather than silently accepting.
  */
 export default function ManualSession({ project, offClock, now, findOverlaps, onSave, onCancel }) {
   const hourAgo = now - 3_600_000;
@@ -135,29 +172,8 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
       )}
 
       {clashes.length > 0 && (
-        <div className="clash">
-          <span className="eyebrow">Already accounted for</span>
-          <p>
-            This overlaps {clashes.length} record{clashes.length === 1 ? "" : "s"} you have
-            already got. Two records over the same hour count it twice and inflate both the
-            hours and the money.
-          </p>
-          <ul>
-            {clashes.slice(0, 4).map((s) => (
-              <li key={s.id}>
-                {s.projectName ? `${s.projectName} · ` : ""}
-                {s.taskName ? `${s.taskName} · ` : ""}
-                {when(s.segments[0].startedAt)}
-                {s.closedAt ? ` → ${when(s.closedAt)}` : " · still running"}
-              </li>
-            ))}
-          </ul>
-          <label className="clash-ok">
-            <input type="checkbox" checked={confirmed}
-                   onChange={(e) => setConfirmed(e.target.checked)} />
-            Add it anyway
-          </label>
-        </div>
+        <Clashes clashes={clashes} confirmed={confirmed} onConfirm={setConfirmed}
+                 anyway="Add it anyway" />
       )}
 
       <div className="controls">

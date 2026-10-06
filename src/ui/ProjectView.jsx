@@ -751,7 +751,7 @@ export default function ProjectView({
             <SessionEditor
               key={editedSession.id}
               session={editedSession}
-              project={project}
+              project={project} findOverlaps={findOverlaps}
               onCancel={() => setEditingSession(null)}
               onSave={(window_) => { onCorrect(editingSession, window_); setEditingSession(null); }}
               onRevert={() => { onRevertCorrection(editingSession); setEditingSession(null); }}

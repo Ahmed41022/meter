@@ -5990,4 +5990,29 @@ describe("fixes: editors and entry forms", () => {
     expect(btn(d, /Save correction/).disabled).toBe(true);
     expect(stored(dom).sessions.find((x) => x.id === "s1")).toEqual(a);
   }, 30_000);
+
+  it("names a session a correction would run into, and saves only when told to", async () => {
+    // A session stretched across the next one saved without a word, and the
+    // half hour the two then shared was counted twice.
+    const seed = twoTasks();
+    const [, b] = seed.sessions;
+    const { dom, d } = await openProject(seed, "Acme");
+    await press(ledgerRow(d, "T-1"), "edit");
+    expect(d.querySelector(".clash")).toBeNull(); // its own time is no clash
+
+    const [, end] = d.querySelectorAll('.prompt input[type="datetime-local"]');
+    const stretched = b.segments[0].startedAt + 30 * 60_000;
+    setValue(dom.window, end, stamp(stretched));
+    await wait(150);
+    expect(d.querySelector(".clash").textContent).toMatch(/overlaps 1 record/);
+    expect(d.querySelector(".clash li").textContent).toMatch(/T-2/);
+    expect(d.querySelector(".clash-ok").textContent).toMatch(/Save it anyway/);
+    expect(btn(d, /Save correction/).disabled).toBe(true);
+
+    d.querySelector(".clash-ok input").click();
+    await wait(150);
+    btn(d, /Save correction/).click();
+    await wait(300);
+    expect(stored(dom).sessions.find((x) => x.id === "s1").closedAt).toBe(stretched);
+  }, 30_000);
 });
