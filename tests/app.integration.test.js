@@ -6560,4 +6560,87 @@ describe("fixes: paydays and settling", () => {
     }))).window.document;
     expect(payRows(d)).toEqual(["Northwind · 2 tasks"]);
   }, 30_000);
+
+  /** The project's Settings, opened. */
+  const openSettings = async (seed) => {
+    const { dom, d } = await openFirst(seed);
+    btn(d, /^Open$/).click();
+    await wait(200);
+    return { dom, d };
+  };
+  /** The box or select under a field's label. */
+  const control = (d, label) => [...d.querySelectorAll(".field")]
+    .find((f) => new RegExp(`^${label}$`, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input, select");
+  const ruleOf = (dom, name) => (stored(dom).companies ?? [])
+    .find((c) => c.name.toLowerCase() === name.toLowerCase())?.payPeriod;
+  const save = async (d) => {
+    btn(d, /Save changes/).click();
+    await wait(300);
+  };
+  const MONDAY_WEDNESDAY = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: null };
+  const MONDAY_FRIDAY = { ...MONDAY_WEDNESDAY, payday: 5 };
+  const acceptedTask = () => {
+    const now = Date.now();
+    return { id: "t1", label: "1234", createdAt: now - 80 * HOUR,
+             state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR };
+  };
+
+  it("files the schedule under the new company when the company is renamed in the same Save", async () => {
+    // Renaming Northwind to Outlier and moving the cutoff wrote the cutoff to
+    // Northwind; Outlier had no schedule and the project's paydays vanished.
+    const { dom, d } = await openSettings(scheduled({
+      company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY }, tasks: [acceptedTask()],
+    }));
+    setValue(dom.window, control(d, "Company"), "Outlier");
+    setValue(dom.window, control(d, "Closing at"), "19:00");
+    await wait(150);
+    await save(d);
+
+    expect(stored(dom).projects[0].company).toBe("Outlier");
+    expect(ruleOf(dom, "Outlier")).toMatchObject({ kind: "weekly", payday: 3, closesAt: 19 * 60 });
+    // Northwind keeps its own, for whatever other projects it has.
+    expect(ruleOf(dom, "Northwind")).toEqual(MONDAY_WEDNESDAY);
+    btn(d, /All projects/).click();
+    await wait(200);
+    await toProjects(d, "Overview");
+    expect(payRows(d)).toEqual(["Outlier · 1 task"]);
+  }, 30_000);
+
+  it("says so before replacing another company's schedule, and can take that one instead", async () => {
+    const { dom, d } = await openSettings(scheduled({
+      company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY, Outlier: MONDAY_FRIDAY },
+      tasks: [acceptedTask()],
+    }));
+    const warned = () => /Outlier already has a payday of its own/.test(d.querySelector(".wrap").textContent);
+    setValue(dom.window, control(d, "Company"), "Outlier");
+    await wait(150);
+    // Untouched, the payday follows the company named: joining Outlier means
+    // Outlier's Friday, and there is nothing to warn about.
+    expect(control(d, "Is paid on").value).toBe("5");
+    expect(warned()).toBe(false);
+
+    setValue(dom.window, control(d, "Is paid on"), "4");
+    await wait(150);
+    expect(warned()).toBe(true);
+    btn(d, /Use Outlier's instead/).click();
+    await wait(150);
+    expect(control(d, "Is paid on").value).toBe("5");
+    expect(warned()).toBe(false);
+
+    await save(d);
+    expect(ruleOf(dom, "Outlier")).toEqual(MONDAY_FRIDAY);
+    expect(ruleOf(dom, "Northwind")).toEqual(MONDAY_WEDNESDAY);
+  }, 30_000);
+
+  it("lets a project join a company without clearing the company's schedule", async () => {
+    const { dom, d } = await openSettings(scheduled({
+      company: "", rules: { Outlier: MONDAY_FRIDAY }, tasks: [acceptedTask()],
+    }));
+    setValue(dom.window, control(d, "Company"), "outlier");
+    await wait(150);
+    await save(d);
+    expect(stored(dom).projects[0].company).toBe("outlier");
+    expect(ruleOf(dom, "Outlier").payday).toBe(5);
+  }, 30_000);
 });

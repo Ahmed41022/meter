@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
-import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
+import { companiesIn, companyOf, fold, isOffClock, statusOf } from "../domain/projects.js";
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 import {
-  PERIOD, WEEKDAYS, describePeriod, nextClose, paydayFor,
+  PERIOD, WEEKDAYS, describePeriod, findCompany, nextClose, normalisePeriod, paydayFor,
+  samePeriod,
 } from "../domain/payPeriod.js";
 
 /**
@@ -165,7 +166,7 @@ const restored = (project, payPeriod) => {
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
-  payPeriod = null, onSetPayPeriod, now = Date.now(),
+  payPeriod = null, companies = [], onSetPayPeriod, now = Date.now(),
 }) {
   const [form, setForm] = useState(() => restored(project, payPeriod));
   /**
@@ -177,9 +178,21 @@ export default function Settings({
    */
   const [saved, setSaved] = useState(() => formOf(project, payPeriod));
   const [confirming, setConfirming] = useState(false);
+  /**
+   * Whether the payday boxes have been changed since the last save. Until
+   * they have, they follow the company named above; once they have, what was
+   * set in them stands. Saving or discarding puts them back to following.
+   */
+  const [periodTouched, setPeriodTouched] = useState(false);
+  useEffect(() => {
+    if (form === saved) setPeriodTouched(false);
+  }, [form, saved]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const setPeriod = (patch) => setForm((f) => ({ ...f, period: { ...f.period, ...patch } }));
+  const setPeriod = (patch) => {
+    setPeriodTouched(true);
+    setForm((f) => ({ ...f, period: { ...f.period, ...patch } }));
+  };
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   // Kept outside the panel for as long as anything is unsaved, and let go the
   // moment nothing is: saved, discarded, or typed back to what it was.
@@ -190,13 +203,48 @@ export default function Settings({
   const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
 
   /**
-   * The schedule belongs to the company, not to this project, so it is keyed
-   * to the company already SAVED rather than to whatever is in the box. A rule
-   * filed under a half-typed name would be a rule for a client that does not
-   * exist, and the moment the name was finished it would vanish.
+   * The schedule belongs to the company, not to this project, so Save files
+   * it under the company in the box: the one this project will belong to
+   * once saved. Filing it under the company already saved lost it whenever
+   * both changed in one Save — renaming Northwind to Outlier and moving the
+   * cutoff wrote the cutoff to Northwind, and Outlier, with no schedule at
+   * all, dropped every one of this project's paydays without a word. Nothing
+   * is written until Save, so a half-typed name never reaches the ledger.
+   *
+   * The company saved before keeps its own schedule, for whatever other
+   * projects it has.
    */
   const payee = companyOf(project);
+  const target = company.trim();
+  /** The schedule a company already has, or null: none, or no such company. */
+  const scheduleOf = (name) =>
+    normalisePeriod(findCompany({ companies }, name)?.payPeriod) ?? null;
+  /**
+   * The company box, and the payday that goes with it. While the payday boxes
+   * are untouched they follow the company named: one that already has a
+   * schedule brings it, since joining a client means joining its paydays;
+   * any other keeps the schedule shown, which Save then gives it — renaming
+   * a company should not cost it its payday.
+   */
+  const setCompany = (next) => setForm((f) => {
+    if (periodTouched) return { ...f, company: next };
+    const theirs = fold(next) === fold(payee ?? "") ? null : scheduleOf(next);
+    return { ...f, company: next, period: theirs ? periodForm(theirs) : saved.period };
+  });
   const rule = periodOf(period);
+  /**
+   * Another company's schedule that Save would replace. It is shared by
+   * every project under that company, so it is said here, before saving,
+   * rather than overwritten silently.
+   */
+  const moving = target !== "" && fold(target) !== fold(payee ?? "");
+  const theirs = moving ? scheduleOf(target) : null;
+  const theirName = findCompany({ companies }, target)?.name ?? target;
+  const clash = theirs !== null && !samePeriod(rule, theirs);
+  const useTheirs = () => {
+    setForm((f) => ({ ...f, period: periodForm(theirs) }));
+    setPeriodTouched(false);
+  };
   const example = describePeriod(rule);
   // A date on the rule's own clock, printed as that date. Converted through
   // this device's clock, a payday in a zone east of here read a day early.
@@ -250,8 +298,10 @@ export default function Settings({
     });
     // One Save for the panel, two writes underneath: the schedule is the
     // company's and outlives any one project, so it cannot ride along in the
-    // project patch.
-    if (payee) onSetPayPeriod?.(payee, rule);
+    // project patch. It goes to the company in the box, created there if it
+    // is new. "No schedule" for a company that has none has nothing to say,
+    // and writes nothing rather than an empty record.
+    if (target && (rule !== null || scheduleOf(target) !== null)) onSetPayPeriod?.(target, rule);
     setSaved(form);
   };
 
@@ -402,7 +452,7 @@ export default function Settings({
             <span className="eyebrow">Company</span>
             <input className="inp" value={company} list="meter-companies"
                    placeholder="who it's for — optional" onKeyDown={onKey}
-                   onChange={(e) => set({ company: e.target.value })} />
+                   onChange={(e) => setCompany(e.target.value)} />
           </label>
           {/* Suggestions from what you have already typed: the list is what
               stops "Northwind" and "northwind" becoming two clients. */}
@@ -416,16 +466,29 @@ export default function Settings({
 
           <div className="sec-head" style={{ marginTop: 22 }}>
             <span className="eyebrow">Payday</span>
-            {payee && <span className="eyebrow">{payee}</span>}
+            {target && <span className="eyebrow">{target}</span>}
           </div>
-          {!payee ? (
+          {!target ? (
             <div className="hint" style={{ marginTop: 0 }}>
               A payday belongs to the client, not to one project, so name the company above
-              and save — then its schedule can be set here and every project under it will
-              use the same one.
+              — then its schedule can be set here and every project under it will use the
+              same one.
             </div>
           ) : (
             <>
+              {/* Said before Save, because the schedule is shared: saving
+                  would change the paydays of every project under that
+                  company, not only this one. */}
+              {clash && (
+                <div className="hint warn" style={{ marginTop: 0 }}>
+                  {theirName} already has a payday of its own:{" "}
+                  <strong>{describePeriod(theirs)}</strong> It is shared by every {theirName}{" "}
+                  project, so saving puts the schedule below in its place for all of them.{" "}
+                  <button className="linkish" onClick={useTheirs}>
+                    Use {theirName}&apos;s instead
+                  </button>
+                </div>
+              )}
               <div className="modes" role="tablist" aria-label="How this client pays">
                 {[["none", "No schedule"], [PERIOD.WEEKLY, "Weekly"], [PERIOD.MONTHLY, "Monthly"]]
                   .map(([key, label]) => (
@@ -550,7 +613,7 @@ export default function Settings({
                   </>
                 ) : (
                   <>
-                    No schedule, so nothing is forecast for {payee}. Set one and the Overview
+                    No schedule, so nothing is forecast for {target}. Set one and the Overview
                     will say what lands and when.
                   </>
                 )}

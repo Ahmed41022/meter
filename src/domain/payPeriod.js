@@ -372,6 +372,14 @@ export const describePeriod = (rule) => {
     + ` is paid on the ${ordinal(r.payday)}${later}.`;
 };
 
+/**
+ * Whether two rules say the same thing, however each was written down — a
+ * stored rule and the same rule read back out of the editor's boxes must not
+ * count as two different schedules.
+ */
+export const samePeriod = (a, b) =>
+  JSON.stringify(normalisePeriod(a)) === JSON.stringify(normalisePeriod(b));
+
 /* ── the company record the rule lives on ─────────────────────────────────── */
 
 /** Named companies fold to one key, so "Northwind" and "northwind " are one

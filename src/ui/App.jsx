@@ -866,6 +866,9 @@ export default function App({ store: injectedStore }) {
                     () => commit(() => snapshot));
             }}
             payPeriod={payPeriodFor(state, project)}
+            /* Every client's schedule, so Settings can say when a company
+               typed into it already has one that saving would replace. */
+            companies={state.companies ?? []}
             /* Keyed by company name rather than by project: every project
                under one client shares the schedule, which is the point. */
             onSetPayPeriod={(company, rule) =>
