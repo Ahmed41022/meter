@@ -6092,3 +6092,88 @@ describe("fixes: editors and entry forms", () => {
     expect(closing()).toBe(false);
   }, 30_000);
 });
+
+describe("fixes: found in review", () => {
+  const HOUR = 3_600_000;
+  const at = Math.floor(Date.now() / 60_000) * 60_000 - 8 * HOUR;
+  const sitting = (id, taskId, from) => ({
+    id, projectId: "p1", kind: "billed", taskId, rate: 20, currency: "USD",
+    createdAt: from, closedAt: from + HOUR, deletedAt: null,
+    segments: [{ startedAt: from, endedAt: from + HOUR }],
+  });
+  /** One project with two open tasks and a sitting filed under nothing. */
+  const seed = (extra = {}) => ({
+    projects: [{
+      id: "p1", name: "Acme", currentRate: 20, currency: "USD", createdAt: at - 40 * HOUR,
+      sessionGoal: null, overallGoal: null,
+      tasks: [
+        { id: "t1", label: "T-1", createdAt: at },
+        { id: "t2", label: "T-2", createdAt: at },
+      ],
+      ...extra,
+    }],
+    sessions: [sitting("s1", "t1", at), sitting("s2", "t2", at + 2 * HOUR), sitting("s3", null, at + 4 * HOUR)],
+  });
+  const open = async (ledger) => {
+    const dom = await boot(ledger);
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    return { dom, d };
+  };
+  const field = (root, label) => [...root.querySelectorAll(".field")]
+    .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
+    ?.querySelector("input, textarea, select");
+  const taskRow = (d, label) => [...d.querySelectorAll(".trow")]
+    .find((r) => r.querySelector(".trow-label").textContent.startsWith(label));
+  const inPrompt = (d, text) => [...d.querySelectorAll(".prompt button")]
+    .find((b) => text.test(b.textContent));
+  /** Hands T-2 in from the task list, under whatever form is open. */
+  const submitT2 = async (d) => {
+    taskRow(d, "T-2").querySelector(".row-check").click();
+    await wait(200);
+    btn(d, /^Submit 1$/).click();
+    await wait(300);
+  };
+
+  it("keeps a task handed in under the open move prompt in its box", async () => {
+    // It left the list when it was submitted, so the box showed "No task"
+    // while the warning named T-2, and choosing "No task" changed nothing.
+    const { dom, d } = await open(seed());
+    [...d.querySelectorAll(".row")]
+      .find((r) => r.querySelector(".row-meta")?.textContent.startsWith("No task"))
+      .querySelector(".row-check").click();
+    await wait(150);
+    btn(d, /Assign to task/).click();
+    await wait(200);
+    setValue(dom.window, d.querySelector(".prompt select"), "t2");
+    await wait(150);
+    await submitT2(d);
+
+    const select = d.querySelector(".prompt select");
+    expect(select.selectedOptions[0].textContent).toBe("T-2");
+    expect(select.selectedOptions[0].disabled).toBe(true);
+    setValue(dom.window, select, "t1");
+    await wait(150);
+    expect(d.querySelector(".prompt .hint.warn")).toBeNull();
+    expect(inPrompt(d, /^Move 1 session$/).disabled).toBe(false);
+  }, 30_000);
+
+  it("keeps a task handed in under the open Add time form in its box", async () => {
+    const { dom, d } = await open(seed());
+    btn(d, /add time/i).click();
+    await wait(200);
+    setValue(dom.window, field(d.querySelector(".prompt"), "^Task$"), "t2");
+    await wait(150);
+    await submitT2(d);
+
+    const select = field(d.querySelector(".prompt"), "^Task$");
+    expect(select.selectedOptions[0].textContent).toBe("T-2");
+    expect(select.selectedOptions[0].disabled).toBe(true);
+    setValue(dom.window, select, "");
+    await wait(150);
+    expect(d.querySelector(".prompt .hint.warn")).toBeNull();
+  }, 30_000);
+});

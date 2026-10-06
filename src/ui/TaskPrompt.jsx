@@ -109,6 +109,11 @@ export default function TaskPrompt({
                   onChange={(e) => setTaskId(e.target.value)}>
             <option value={NONE}>{words.noTask}</option>
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            {/* Handed in while this was open, so no longer on offer, but still
+                the one picked. Left out, the box would show the first option
+                while the warning named this one, and choosing that first option
+                would change nothing, so it could not be chosen at all. */}
+            {closed && <option value={named.id} disabled>{named.label}</option>}
           </select>
           {refusal}
         </label>

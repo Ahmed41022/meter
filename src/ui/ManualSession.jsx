@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
 import { KIND } from "../domain/sessions.js";
-import { tasksFor } from "../domain/tasks.js";
+import { findTask, tasksFor } from "../domain/tasks.js";
 import { takesTime } from "../domain/taskState.js";
 import { closedTaskNote } from "./TaskPrompt.jsx";
 
@@ -121,6 +121,10 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
               <select className="inp" value={taskId} onChange={(e) => setTaskId(e.target.value)}>
                 <option value="">{offClock ? "Unsorted" : "No task"}</option>
                 {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                {/* Handed in while this form was open: no longer on offer, but
+                    still the one picked, so the box shows it rather than a
+                    first option that choosing would not change. */}
+                {closed && <option value={taskId} disabled>{findTask(project, taskId)?.label}</option>}
               </select>
             </label>
           )}
