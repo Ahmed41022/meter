@@ -6446,6 +6446,9 @@ describe("fixes: paydays and settling", () => {
     };
   };
   const payLabels = (d) => [...d.querySelectorAll(".payrow .trow-label")].map((e) => e.textContent);
+  const payRows = (d) => [...d.querySelectorAll(".payrow .trow-sub")].map((e) => e.textContent);
+  /** A weekly schedule on this device's clock: in before Monday, paid Wednesday. */
+  const WEEKLY = { kind: "weekly", cutoff: 1, payday: 3, after: 0 };
 
   it("prints a client's payday on the client's calendar, not the day before", async () => {
     // Kolkata's Wednesday begins on Cairo's Tuesday evening, and printing that
@@ -6521,5 +6524,25 @@ describe("fixes: paydays and settling", () => {
     dom.window.__skew += 60_000;
     await wait(1_500);
     expect(payLabels(d)).toEqual([`Not before ${payday(9)}`]);
+  }, 30_000);
+
+  it("lists a reward shared across tasks with the payday it rides", async () => {
+    // A reward naming several tasks was left off Upcoming payments entirely.
+    const now = Date.now();
+    const accepted = (id) => ({ id, label: id, createdAt: now - 80 * HOUR,
+                                state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR });
+    const seed = scheduled({ company: "Northwind", rules: { Northwind: WEEKLY },
+                             tasks: [accepted("1234"), accepted("1235")] });
+    seed.earnings = [{
+      id: "bonus", projectId: "a", kind: "bonus", cents: 6_000, currency: "USD",
+      taskIds: ["1234", "1235"], units: 2, note: "Two-task bonus", status: "pending",
+      at: now - HOUR, createdAt: now - HOUR, deletedAt: null,
+    }];
+    const d = (await bootDash(seed)).window.document;
+    expect(payRows(d)).toEqual(["Northwind · 2 tasks · 1 shared reward"]);
+    d.querySelector(".payrow .trow").click();
+    await wait(150);
+    const lines = [...d.querySelectorAll(".payline")].map((e) => e.textContent);
+    expect(lines).toContain("Two-task bonus · 2 tasks · Gateway$60.00");
   }, 30_000);
 });

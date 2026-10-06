@@ -6,7 +6,7 @@ import {
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
 import { TASK, setAnsweredAt, setSubmittedAt } from "../src/domain/taskState.js";
-import { PAY } from "../src/domain/earnings.js";
+import { EARNING, PAY, addEarning } from "../src/domain/earnings.js";
 import { KIND, startSession, stopSession } from "../src/domain/sessions.js";
 import { addTask } from "../src/domain/tasks.js";
 
@@ -688,17 +688,111 @@ describe("what is coming in", () => {
     expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [] });
   });
 
-  it("does not schedule a reward shared across many tasks", () => {
-    // Fifty tasks covered by one milestone is not this task's money to date.
+  it("lists a reward shared across many tasks on a line of its own", () => {
+    // Fifty tasks covered by one milestone is not this task's money, so it is
+    // not added to the task's line; but it is money coming in, so it is not
+    // left off the panel either. A task id the project no longer has holds
+    // nothing back.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     s = {
       ...s,
       earnings: s.earnings.map((e) => ({ ...e, taskIds: ["t1", "other"], status: PAY.PENDING })),
     };
-    // The hours are still this task's and still waiting; the milestone is
-    // not, so the figure is 3h at 80 and nothing more.
     const { waiting } = upcomingPay(s, T);
     expect(waiting).toHaveLength(1);
-    expect(waiting[0].cents).toBe(24_000);
+    expect(waiting[0]).toMatchObject({ cents: 27_000, items: 1, rewards: 1 });
+    const task = waiting[0].tasks.find((line) => line.kind === "task");
+    const reward = waiting[0].tasks.find((line) => line.kind === "reward");
+    expect(task.cents).toBe(24_000); // 3h at 80, and nothing of the milestone
+    expect(reward).toMatchObject({ cents: 3_000, covers: 2 });
+  });
+});
+
+describe("a reward shared across several tasks", () => {
+  /*
+   * "Finish six and we pay you X." One payment, paid in the run for the
+   * period its LAST task got there: the latest acceptance where the project
+   * pays once accepted, the latest hand-in where it pays as worked.
+   */
+  const T = on(2026, 10, 3); // Saturday
+  const base = {
+    id: "p1", name: "Orion", company: "Outlier", currentRate: 80, currency: "USD",
+    paysOnAcceptance: true, tasks: [],
+  };
+
+  /** Three tasks with an hour each, all handed in, and a $60 reward naming
+   *  all three. */
+  const ledger = (project = base) => {
+    let s = { projects: [project], sessions: [], earnings: [], companies: [] };
+    s = setPayPeriod(s, "Outlier", outlier, T);
+    for (const id of ["t1", "t2", "t3"]) {
+      s = addTask(s, "p1", { id, label: id }, T);
+      s = startSession(s, s.projects[0], { now: T - 5 * HOUR, id: `s-${id}`, taskId: id });
+      s = stopSession(s, `s-${id}`, T - 4 * HOUR);
+    }
+    s = submitTasks(s, s.projects[0], ["t1", "t2", "t3"], T, () => "unused");
+    return addEarning(s, s.projects[0], {
+      cents: 6_000, kind: EARNING.BONUS, taskIds: ["t1", "t2", "t3"],
+      status: PAY.PENDING, note: "Six-task bonus",
+    }, T, "bonus");
+  };
+  const answer = (s, ids, verdict, at) => answerTasks(s, s.projects[0], ids, verdict, at);
+  const rewardRow = (list) => list.find((row) => row.tasks.some((line) => line.kind === "reward"));
+
+  it("is paid with the last of its tasks to be accepted", () => {
+    // t1 beat Monday's cutoff and is paid on the 7th; t2 and t3 came back on
+    // the Tuesday, after it, so they and the bonus are paid on the 14th.
+    let s = answer(ledger(), ["t1"], TASK.ACCEPTED, on(2026, 10, 4, 10));
+    s = answer(s, ["t2", "t3"], TASK.ACCEPTED, on(2026, 10, 6, 10));
+    const { due, waiting } = upcomingPay(s, on(2026, 10, 6, 12));
+    expect(waiting).toEqual([]);
+    expect(due.map((row) => row.date)).toEqual(["2026-10-07", "2026-10-14"]);
+    expect(rewardRow(due).date).toBe("2026-10-14");
+    expect(rewardRow(due)).toMatchObject({ items: 2, rewards: 1, cents: 2 * 8_000 + 6_000 });
+    const line = rewardRow(due).tasks.find((l) => l.kind === "reward");
+    expect(line).toMatchObject({ label: "Six-task bonus", covers: 3, cents: 6_000, project: "Orion" });
+  });
+
+  it("waits with a floor while any of its tasks is unanswered", () => {
+    const s = answer(ledger(), ["t1", "t2"], TASK.ACCEPTED, on(2026, 10, 4, 10));
+    const { due, waiting } = upcomingPay(s, on(2026, 10, 4, 12));
+    expect(rewardRow(due)).toBeUndefined();
+    // The same floor as t3, which is under review with it: the period now.
+    expect(rewardRow(waiting).date).toBe("2026-10-07");
+  });
+
+  it("leaves a rejected task out of the reckoning", () => {
+    // t3 will never be accepted, so it cannot hold the bonus back.
+    let s = answer(ledger(), ["t1", "t2"], TASK.ACCEPTED, on(2026, 10, 4, 10));
+    s = answer(s, ["t3"], TASK.CANCELLED, on(2026, 10, 6, 10));
+    expect(rewardRow(upcomingPay(s, on(2026, 10, 6, 12)).due).date).toBe("2026-10-07");
+  });
+
+  it("has nothing to date once every one of its tasks is rejected", () => {
+    const s = answer(ledger(), ["t1", "t2", "t3"], TASK.CANCELLED, on(2026, 10, 4, 10));
+    expect(upcomingPay(s, on(2026, 10, 4, 12))).toEqual({ due: [], waiting: [] });
+  });
+
+  it("is dated from the last hand-in where the project pays as worked", () => {
+    // Nobody's answer is waited for there: t3 went in on the Tuesday, after
+    // Monday's cutoff, so the bonus is paid on the 14th though none of the
+    // three has been accepted.
+    let s = ledger({ ...base, paysOnAcceptance: false });
+    s = setSubmittedAt(s, "p1", "t3", on(2026, 10, 6, 9));
+    const { due } = upcomingPay(s, on(2026, 10, 6, 12));
+    expect(rewardRow(due).date).toBe("2026-10-14");
+  });
+
+  it("never lists one that was cancelled", () => {
+    let s = answer(ledger(), ["t1", "t2", "t3"], TASK.ACCEPTED, on(2026, 10, 4, 10));
+    s = { ...s, earnings: s.earnings.map((e) => (e.id === "bonus" ? { ...e, status: PAY.CANCELLED } : e)) };
+    const { due } = upcomingPay(s, on(2026, 10, 4, 12));
+    expect(rewardRow(due)).toBeUndefined();
+    expect(due[0].cents).toBe(3 * 8_000);
+  });
+
+  it("drops off once its payday has passed, like everything else", () => {
+    const s = answer(ledger(), ["t1", "t2", "t3"], TASK.ACCEPTED, on(2026, 10, 4, 10));
+    expect(upcomingPay(s, on(2026, 10, 8, 12))).toEqual({ due: [], waiting: [] });
   });
 });

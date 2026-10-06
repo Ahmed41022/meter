@@ -172,6 +172,14 @@ export default function DashboardView({
   const payDay = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
     timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
   });
+  /** What a payday row is made of: its tasks, and any reward shared across a
+   *  batch, which is one payment however many tasks it names. */
+  const payParts = (row, soft) => [
+    row.items > 0 && (soft
+      ? `${row.items} waiting on a review`
+      : `${row.items} task${row.items === 1 ? "" : "s"}`),
+    row.rewards > 0 && `${row.rewards} shared reward${row.rewards === 1 ? "" : "s"}`,
+  ].filter(Boolean).join(" · ");
   // Which payday is open, by its own key. One at a time: these are read one
   // at a time, and all of them open at once is a wall of task names.
   const [openPay, setOpenPay] = useState(null);
@@ -527,10 +535,7 @@ export default function DashboardView({
                         {soft ? `Not before ${payDay(row.date)}` : payDay(row.date)}
                       </div>
                       <div className={"trow-sub" + (soft ? " owed" : "")}>
-                        {row.company || "No company"} · {row.items}{" "}
-                        {soft
-                          ? "waiting on a review"
-                          : `task${row.items === 1 ? "" : "s"}`}
+                        {row.company || "No company"} · {payParts(row, soft)}
                       </div>
                     </div>
                     <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
@@ -538,9 +543,11 @@ export default function DashboardView({
                   {openPay === row.key && (
                     <div className="paylist">
                       {row.tasks.map((t) => (
-                        <div className="payline" key={t.taskId}>
+                        <div className="payline" key={t.key}>
                           <span>
-                            {t.label}
+                            {/* A shared reward says how many tasks it covers,
+                                because that is what tells it from a task. */}
+                            {t.kind === "reward" ? `${t.label} · ${t.covers} tasks` : t.label}
                             <span className="payline-of"> · {t.project}</span>
                           </span>
                           <span className="payline-amt">
@@ -556,8 +563,10 @@ export default function DashboardView({
               Dates come from each client&apos;s payday, set in a project&apos;s settings,
               and run from the period a task was ANSWERED in — a task accepted after its
               own period shut rides the next run. Work nobody has reviewed yet has no
-              date, only the soonest it could arrive. Open a row to see which tasks make
-              it up. Anything whose payday has passed has dropped off.
+              date, only the soonest it could arrive. A reward shared by several tasks is
+              paid with the last of them to be accepted (handed in, where the project pays
+              as worked), and waits like unreviewed work until then. Open a row to see
+              what makes it up. Anything whose payday has passed has dropped off.
             </div>
           </div>
         </div>

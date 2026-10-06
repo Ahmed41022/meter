@@ -45,7 +45,7 @@ import { isBilled } from "./sessions.js";
 import { isOffClock } from "./projects.js";
 import { rateFor, tasksFor } from "./tasks.js";
 import { TASK, taskState } from "./taskState.js";
-import { isCancelled, tasksOf } from "./earnings.js";
+import { isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
 import { dayOnClock, payPeriodFor, paydayFor } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
@@ -71,21 +71,41 @@ const into = (map, key, seed) => {
 };
 
 /**
- * The buckets as the panel reads them, biggest task first inside each.
+ * The buckets as the panel reads them, biggest line first inside each.
  *
  * The key is prefixed with which list it came from, because a dated row and a
  * not-before row can agree on company, day and currency — which is the common
  * case, not a corner one — and anything keying off it would then treat the
  * two as the same row.
+ *
+ * `items` counts tasks and `rewards` the shared rewards beside them: a reward
+ * covering six tasks is one payment, and counting it as a task, or as six,
+ * would misreport what the row is made of.
  */
 const rows = (map, kind) => [...map.values()]
   .map((row) => ({
     ...row,
     key: `${kind}|${row.key}`,
-    items: row.tasks.length,
+    items: row.tasks.filter((line) => line.kind === "task").length,
+    rewards: row.tasks.filter((line) => line.kind === "reward").length,
     tasks: [...row.tasks].sort((a, b) => b.cents - a.cents),
   }))
   .sort((a, b) => a.at - b.at || a.company.localeCompare(b.company));
+
+/**
+ * When a task got as far as its money waits for, or null while it has not:
+ * accepted, where the project pays once accepted; handed in, where it pays as
+ * worked. An accepted task was handed in too, whether or not it was ever
+ * marked so — answering stamps the hand-in where there was none.
+ */
+const reachedAt = (project, task) => {
+  const status = taskState(task);
+  if (paysOnAcceptance(project)) {
+    return status === TASK.ACCEPTED && Number.isFinite(task.stateAt) ? task.stateAt : null;
+  }
+  return (status === TASK.SUBMITTED || status === TASK.ACCEPTED)
+    && Number.isFinite(task.submittedAt) ? task.submittedAt : null;
+};
 
 /**
  * Money with a date, and money still waiting on somebody.
@@ -100,7 +120,22 @@ export const upcomingPay = (state, now) => {
   const due = new Map();
   const waiting = new Map();
   const sessions = state.sessions ?? [];
-  const earnings = (state.earnings ?? []).filter((e) => !e.deletedAt && !isCancelled(e));
+  // Lines naming one task, by that task; lines naming several, by project.
+  // The number of tasks a line names is what tells a task's own reward from
+  // one shared across a batch, and the two are dated differently.
+  const sole = new Map();
+  const shared = new Map();
+  for (const earning of state.earnings ?? []) {
+    if (earning.deletedAt || isCancelled(earning)) continue;
+    const named = tasksOf(earning);
+    if (named.length === 1) {
+      if (!sole.has(named[0])) sole.set(named[0], []);
+      sole.get(named[0]).push(earning);
+    } else if (named.length > 1) {
+      if (!shared.has(earning.projectId)) shared.set(earning.projectId, []);
+      shared.get(earning.projectId).push(earning);
+    }
+  }
 
   for (const project of state.projects ?? []) {
     if (project.deletedAt || isOffClock(project)) continue;
@@ -147,21 +182,53 @@ export const upcomingPay = (state, now) => {
         if (cents > 0) owed.set(cur, (owed.get(cur) ?? 0) + cents);
       };
       add(currency, hourlyCents(sessions, project, task.id, now));
-      // A reward shared across many tasks is not this one's to schedule, and
-      // the number of tasks it names is what tells them apart.
-      for (const earning of earnings) {
-        if (tasksOf(earning).length !== 1 || tasksOf(earning)[0] !== task.id) continue;
-        add(earning.currency, earning.cents);
-      }
+      // Only lines naming this task alone. A reward shared across many tasks
+      // is not this one's to date, and is dated on its own below.
+      for (const earning of sole.get(task.id) ?? []) add(earning.currency, earning.cents);
 
       for (const [cur, cents] of owed) {
         const row = into(pendingReview ? waiting : due, `${company}|${pay.date}|${cur}`,
                          { company, at: pay.at, date: pay.date, currency: cur });
         row.cents += cents;
         row.tasks.push({
+          key: `task:${task.id}`, kind: "task",
           taskId: task.id, label: task.label, project: project.name, cents, status,
         });
       }
+    }
+
+    /*
+     * A reward shared across several tasks: "finish six and we pay you X".
+     *
+     * It is paid in the run for the period its LAST task got there — the
+     * latest acceptance where the project pays once accepted, the latest
+     * hand-in where it pays as worked — because that is when it was earned.
+     * A rejected task is left out of the reckoning: it will never get there,
+     * and the reward is still owed for the rest. Until every other task has
+     * got there it has no date, only the same floor as work under review.
+     * Ids naming no task this project still has are left out the same way.
+     * A cancelled reward is not coming at all, and was dropped above; and,
+     * as with a task's own lines, only money coming in is forecast.
+     */
+    for (const earning of shared.get(project.id) ?? []) {
+      if (!(earning.cents > 0)) continue;
+      const counted = tasksOf(earning)
+        .map((id) => tasksFor(project).find((t) => t.id === id))
+        .filter((task) => task && taskState(task) !== TASK.CANCELLED);
+      if (counted.length === 0) continue;
+      const times = counted.map((task) => reachedAt(project, task));
+      const earned = times.every((t) => t !== null);
+      const pay = paydayFor(rule, earned ? Math.max(...times) : now);
+      if (pay === null || pay.date < today) continue;
+
+      const row = into(earned ? due : waiting, `${company}|${pay.date}|${earning.currency}`,
+                       { company, at: pay.at, date: pay.date, currency: earning.currency });
+      row.cents += earning.cents;
+      row.tasks.push({
+        key: `reward:${earning.id}`, kind: "reward",
+        label: earning.note || "Reward", covers: tasksOf(earning).length,
+        project: project.name, cents: earning.cents,
+      });
     }
   }
 
