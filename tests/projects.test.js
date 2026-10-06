@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   acceptsTime, activeProjects, addProject, companiesIn, companyOf, finishedProjects,
   isActive, isDone, isPaused, liveProjects, matchesQuery, patchProject, removeProject,
@@ -57,6 +57,20 @@ describe("removal", () => {
     removeProject(s, "p1", T + 1);
     expect(snapshot.projects).toHaveLength(1); // reducers never mutate
     expect(snapshot.sessions).toHaveLength(1);
+  });
+
+  it("reads no clock, even when the caller forgets to pass the time", () => {
+    // A default of Date.now() was the one clock read left in the domain. Every
+    // caller passes the time, so it only ever waited for the first one that
+    // did not.
+    const clock = vi.spyOn(Date, "now");
+    try {
+      const s = addProject(empty, { name: "A", rate: 450, currency: "EGP" }, T, "p1");
+      removeProject(s, "p1");
+      expect(clock).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

@@ -120,8 +120,6 @@ export const patchProject = (state, id, patch) => ({
   projects: state.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
 });
 
-/** Removes the project and its sessions together. The caller keeps the prior
- *  state to offer an undo. */
 /**
  * Deleting a project is a field, not a removal.
  *
@@ -144,7 +142,10 @@ export const liveProjects = (projects = []) => projects.filter((p) => !isDeleted
 const tombstone = (rows, id, now) => (rows ?? []).map((r) =>
   (r.projectId === id && !r.deletedAt ? { ...r, deletedAt: now } : r));
 
-export const removeProject = (state, id, now = Date.now()) => ({
+/** Tombstones the project and everything filed under it at `now`, which the
+ *  caller must pass: nothing in the domain reads the clock, not even as a
+ *  default. The caller keeps the prior state to offer an undo. */
+export const removeProject = (state, id, now) => ({
   // Spread, because this used to return an object of two keys and silently
   // dropped every objective and every earning in the ledger along with them.
   ...state,
