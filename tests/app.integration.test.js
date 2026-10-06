@@ -5968,4 +5968,26 @@ describe("fixes: editors and entry forms", () => {
     expect(btn(d, /^Save$/).disabled).toBe(true);
     expect(stored(dom).projects[0].tasks.map((t) => t.label)).toEqual(["T-1", "T-2"]);
   }, 30_000);
+
+  it("will not save a session whose end is not after its start", async () => {
+    // A session's end moved to before its start previewed and saved the two
+    // times swapped round: an hour nobody worked, recorded without a word.
+    const seed = twoTasks();
+    const [a] = seed.sessions;
+    const { dom, d } = await openProject(seed, "Acme");
+    await press(ledgerRow(d, "T-1"), "edit");
+    const [, end] = d.querySelectorAll('.prompt input[type="datetime-local"]');
+
+    setValue(dom.window, end, stamp(a.segments[0].startedAt - HOUR));
+    await wait(150);
+    expect(d.querySelector(".prompt .hint.warn").textContent).toMatch(/It ends before it starts/);
+    expect(d.querySelector(".preview-now").textContent).toBe("—");
+    expect(btn(d, /Save correction/).disabled).toBe(true);
+
+    setValue(dom.window, end, stamp(a.segments[0].startedAt));
+    await wait(150);
+    expect(d.querySelector(".prompt .hint.warn").textContent).toMatch(/would record nothing/);
+    expect(btn(d, /Save correction/).disabled).toBe(true);
+    expect(stored(dom).sessions.find((x) => x.id === "s1")).toEqual(a);
+  }, 30_000);
 });

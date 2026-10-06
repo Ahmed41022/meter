@@ -29,7 +29,15 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
 
   const start = fromInput(from);
   const end = fromInput(to);
-  const valid = start !== null && end !== null;
+  const readable = start !== null && end !== null;
+  /**
+   * An end at or before the start is a slip to point out, not one to repair.
+   * Swapping the two quietly would turn a 09:00–11:00 session whose end was
+   * moved to 08:00 into 08:00–09:00, an hour nobody worked and nobody asked
+   * for. The domain still orders the pair whatever it is handed, as a net.
+   */
+  const backwards = readable && end <= start;
+  const valid = readable && !backwards;
 
   // Mirror the domain rule rather than assuming end - start.
   const preview = valid
@@ -71,7 +79,9 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
         <span className="eyebrow">Will record</span>
         <div className="preview-line">
           <span className="preview-now">
-            {formatShortDuration(nowMs)} · {formatMoney(earningsCents(rate, nowMs), session.currency)}
+            {valid
+              ? `${formatShortDuration(nowMs)} · ${formatMoney(earningsCents(rate, nowMs), session.currency)}`
+              : "—"}
           </span>
           <span className="preview-was">
             was {formatShortDuration(wasMs)} · {formatMoney(earningsCents(rate, wasMs), session.currency)}
@@ -84,6 +94,15 @@ export default function SessionEditor({ session, project, onSave, onRevert, onCa
           </div>
         )}
       </div>
+
+      {backwards && (
+        <div className="hint warn" role="alert" style={{ marginTop: 14 }}>
+          {end === start
+            ? "It ends the minute it starts, so it would record nothing."
+            : "It ends before it starts."}
+          {" "}Put the end after the start to save it.
+        </div>
+      )}
 
       <div className="hint" style={{ marginTop: 14 }}>
         {wasCorrected(session)
