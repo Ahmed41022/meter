@@ -4,8 +4,8 @@ import { companiesIn, companyOf, fold, isOffClock, statusOf } from "../domain/pr
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 import {
-  PERIOD, WEEKDAYS, describePeriod, findCompany, nextClose, normalisePeriod, paydayFor,
-  samePeriod,
+  PERIOD, WEEKDAYS, describePeriod, findCompany, knownZone, nextClose, paydayFor,
+  samePeriod, storedPeriod,
 } from "../domain/payPeriod.js";
 
 /**
@@ -216,9 +216,10 @@ export default function Settings({
    */
   const payee = companyOf(project);
   const target = company.trim();
-  /** The schedule a company already has, or null: none, or no such company. */
+  /** The schedule a company already has, as kept, or null: none, or no such
+   *  company. */
   const scheduleOf = (name) =>
-    normalisePeriod(findCompany({ companies }, name)?.payPeriod) ?? null;
+    storedPeriod(findCompany({ companies }, name)?.payPeriod) ?? null;
   /**
    * The company box, and the payday that goes with it. While the payday boxes
    * are untouched they follow the company named: one that already has a
@@ -254,9 +255,12 @@ export default function Settings({
    *
    * Only when another zone is named and it is not this one: "19:00 your time
    * is 19:00 your time" is noise, and the whole point of printing it is the
-   * cases where seven in the evening is two in the morning.
+   * cases where seven in the evening is two in the morning. Never for a zone
+   * this browser cannot read, whose hour it has no way to convert.
    */
-  const closesHere = period.zone && period.zone !== HERE ? nextClose(rule, now) : null;
+  const zoneUnknown = period.zone !== "" && knownZone(period.zone) === null;
+  const closesHere = period.zone && period.zone !== HERE && !zoneUnknown
+    ? nextClose(rule, now) : null;
   // A rate that is not a number above zero has never been applied, and with an
   // explicit Save that silence would read as the button not working.
   const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
@@ -571,6 +575,15 @@ export default function Settings({
                     <select className="inp" value={period.zone}
                             onChange={(e) => setPeriod({ zone: e.target.value })}>
                       <option value="">Mine{HERE ? ` — ${HERE}` : ""}</option>
+                      {/* The zone saved, where neither list has it: without
+                          an option of its own the box would show "Mine" and
+                          the next Save would erase it. */}
+                      {period.zone && !QUOTED_ZONES.includes(period.zone)
+                        && !ZONES.includes(period.zone) && (
+                        <option value={period.zone}>
+                          {zoneUnknown ? `${period.zone} (not known here)` : period.zone}
+                        </option>
+                      )}
                       <optgroup label="Commonly quoted">
                         {QUOTED_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
                       </optgroup>
@@ -580,6 +593,16 @@ export default function Settings({
                       </optgroup>
                     </select>
                   </label>
+                </div>
+              )}
+              {/* Kept, not dropped: it is still the client's clock, and the
+                  device that set it may know it. Saying so is the difference
+                  between a payday an hour out and one nobody can explain. */}
+              {period.kind !== "none" && zoneUnknown && (
+                <div className="hint warn">
+                  {period.zone} isn&apos;t known to this browser, so paydays are worked out on
+                  this device&apos;s clock until it is. It stays saved as it is unless you pick
+                  another clock.
                 </div>
               )}
 

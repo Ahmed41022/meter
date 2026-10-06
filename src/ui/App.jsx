@@ -23,7 +23,7 @@ import {
   TASK, isAccepted, isRejected, setAnsweredAt, setSubmittedAt,
 } from "../domain/taskState.js";
 import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
-import { payPeriodFor, setPayPeriod } from "../domain/payPeriod.js";
+import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -865,7 +865,9 @@ export default function App({ store: injectedStore }) {
               flash(`Reward recorded across ${taskIds.length} tasks.`, "Undo",
                     () => commit(() => snapshot));
             }}
-            payPeriod={payPeriodFor(state, project)}
+            /* As stored, so a zone this browser does not know is shown and
+               saved back rather than quietly dropped. */
+            payPeriod={storedPeriodFor(state, project)}
             /* Every client's schedule, so Settings can say when a company
                typed into it already has one that saving would replace. */
             companies={state.companies ?? []}

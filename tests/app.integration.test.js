@@ -6643,4 +6643,26 @@ describe("fixes: paydays and settling", () => {
     expect(stored(dom).projects[0].company).toBe("outlier");
     expect(ruleOf(dom, "Outlier").payday).toBe(5);
   }, 30_000);
+
+  it("keeps a client's clock this browser does not know, and says so", async () => {
+    // It was dropped silently: the box read "Mine" and the next Save erased it.
+    const mars = { ...MONDAY_WEDNESDAY, closesAt: 19 * 60, zone: "Mars/Olympus_Mons" };
+    const { dom, d } = await openSettings(scheduled({
+      company: "Northwind", rules: { Northwind: mars }, tasks: [acceptedTask()],
+    }));
+    expect(d.querySelector(".wrap").textContent)
+      .toMatch(/Mars\/Olympus_Mons isn't known to this browser, so paydays are worked out on this device's clock until it is/);
+    expect(control(d, "By which clock").value).toBe("Mars/Olympus_Mons");
+
+    setValue(dom.window, control(d, "Project name"), "Gateway 2");
+    await wait(150);
+    await save(d);
+    expect(ruleOf(dom, "Northwind").zone).toBe("Mars/Olympus_Mons");
+
+    // Picking another clock is what changes it.
+    setValue(dom.window, control(d, "By which clock"), "UTC");
+    await wait(150);
+    await save(d);
+    expect(ruleOf(dom, "Northwind").zone).toBe("UTC");
+  }, 30_000);
 });

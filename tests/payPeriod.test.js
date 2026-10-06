@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  PERIOD, companyId, dayOnClock, describePeriod, findCompany, nextClose, nextPayout,
-  normalisePeriod, payPeriodFor, paydayFor, setPayPeriod,
+  PERIOD, companyId, dayOnClock, describePeriod, findCompany, knownZone, nextClose, nextPayout,
+  normalisePeriod, payPeriodFor, paydayFor, samePeriod, setPayPeriod, storedPeriodFor,
 } from "../src/domain/payPeriod.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
@@ -283,6 +283,25 @@ describe("a cutoff with an hour and a clock of its own", () => {
     expect(normalisePeriod({ ...stated, zone: "Mars/Olympus_Mons" }).zone).toBeNull();
     expect(normalisePeriod({ ...stated, zone: "  " }).zone).toBeNull();
     expect(normalisePeriod({ ...stated, closesAt: 9_999 }).closesAt).toBe(0);
+  });
+
+  it("keeps a zone it has never heard of when the rule is saved", () => {
+    // Dropped for working dates out, but kept in the ledger: it is still the
+    // client's clock, the device that set it may know it, and a save here
+    // erased it for every device.
+    const s = setPayPeriod({ projects: [], companies: [] }, "Outlier",
+                           { ...stated, zone: "Mars/Olympus_Mons" }, 1);
+    expect(s.companies[0].payPeriod.zone).toBe("Mars/Olympus_Mons");
+    expect(payPeriodFor(s, { company: "Outlier" }).zone).toBeNull();
+    expect(storedPeriodFor(s, { company: "Outlier" }).zone).toBe("Mars/Olympus_Mons");
+    expect(knownZone("Mars/Olympus_Mons")).toBeNull();
+    expect(knownZone(" Asia/Kolkata ")).toBe("Asia/Kolkata");
+  });
+
+  it("compares two rules by what they say, unknown zones by name", () => {
+    expect(samePeriod(stated, { ...stated, closesAt: 19 * 60, after: 0 })).toBe(true);
+    expect(samePeriod({ ...stated, zone: "Mars/A" }, { ...stated, zone: "Mars/B" })).toBe(false);
+    expect(samePeriod(null, stated)).toBe(false);
   });
 
   it("says the hour and the clock out loud", () => {

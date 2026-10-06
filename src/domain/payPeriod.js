@@ -164,11 +164,12 @@ const nextMonth = ({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }
 
 /** A zone only where this device knows the name. An unknown one throws inside
  *  `Intl` on every render, so it is dropped here and the rule falls back to
- *  the local clock — hours out at worst, rather than a blank screen. Asked
- *  once per name: the answer cannot change while the page is open, and every
- *  read of a rule asks it. */
+ *  the local clock — hours out at worst, rather than a blank screen. Dropped
+ *  for working dates out only: the rule as kept still names it (see
+ *  `storedPeriod`). Asked once per name: the answer cannot change while the
+ *  page is open, and every read of a rule asks it. */
 const known = new Map();
-const knownZone = (value) => {
+export const knownZone = (value) => {
   const name = String(value ?? "").trim();
   if (!name) return null;
   if (!known.has(name)) {
@@ -373,12 +374,30 @@ export const describePeriod = (rule) => {
 };
 
 /**
+ * A rule in the shape it is KEPT in: normalised like `normalisePeriod`, except
+ * that the zone stays the name it was given, whether or not this device knows
+ * it.
+ *
+ * A zone this browser has never heard of is still the client's clock. It may
+ * have been set on another device, or in a browser with a newer list of
+ * zones, and dropping it on the way back into the ledger erased it for every
+ * device the next time anything here was saved. Working dates out is a
+ * separate question, and that falls back to this device's clock.
+ */
+export const storedPeriod = (rule) => {
+  const r = normalisePeriod(rule);
+  if (!r) return null;
+  return { ...r, zone: String(rule.zone ?? "").trim() || null };
+};
+
+/**
  * Whether two rules say the same thing, however each was written down — a
  * stored rule and the same rule read back out of the editor's boxes must not
- * count as two different schedules.
+ * count as two different schedules. Zones are compared by the names kept,
+ * so two unknown ones are not mistaken for each other.
  */
 export const samePeriod = (a, b) =>
-  JSON.stringify(normalisePeriod(a)) === JSON.stringify(normalisePeriod(b));
+  JSON.stringify(storedPeriod(a)) === JSON.stringify(storedPeriod(b));
 
 /* ── the company record the rule lives on ─────────────────────────────────── */
 
@@ -399,6 +418,11 @@ export const findCompany = (state, name) => {
 export const payPeriodFor = (state, project) =>
   normalisePeriod(findCompany(state, project?.company ?? "")?.payPeriod);
 
+/** The same rule as it is kept, zone and all, for the editor: what it shows
+ *  is what it saves back, so it must be what is stored. */
+export const storedPeriodFor = (state, project) =>
+  storedPeriod(findCompany(state, project?.company ?? "")?.payPeriod);
+
 /**
  * Writes a company's schedule, creating the record the first time.
  *
@@ -409,7 +433,7 @@ export const payPeriodFor = (state, project) =>
 export const setPayPeriod = (state, name, rule, now) => {
   const clean = String(name ?? "").trim();
   if (!clean) return state;
-  const period = normalisePeriod(rule);
+  const period = storedPeriod(rule);
   const rows = state.companies ?? [];
   const key = fold(clean);
   const found = rows.find((c) => fold(c.name) === key);
