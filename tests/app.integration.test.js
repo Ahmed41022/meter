@@ -4605,6 +4605,16 @@ describe("the Today tab", () => {
   const HOUR = 3_600_000;
   const seed = () => {
     const now = Date.now();
+    // Inside today and inside the day before yesterday, whatever the hour. A
+    // sitting that crosses midnight is listed under both of its days, so one
+    // timed back from now would turn these two days into three or four in
+    // the small hours.
+    const midnight = new Date(now).setHours(0, 0, 0, 0);
+    const today = (share) => midnight + (now - midnight) * share;
+    const before = new Date(now);
+    before.setDate(before.getDate() - 2);
+    before.setHours(9, 0, 0, 0);
+    const back = before.getTime();
     return {
       projects: [
         { id: "a", name: "Gateway", currentRate: 60, currency: "USD", createdAt: now - 80 * HOUR,
@@ -4615,11 +4625,11 @@ describe("the Today tab", () => {
       sessions: [
         // Today, and two days back — so the list has more than one day in it.
         { id: "s1", projectId: "a", kind: "billed", taskId: "t1", rate: 60, currency: "USD",
-          createdAt: now - 3 * HOUR, closedAt: now - 2 * HOUR, deletedAt: null,
-          segments: [{ startedAt: now - 3 * HOUR, endedAt: now - 2 * HOUR }] },
+          createdAt: today(0.25), closedAt: today(0.5), deletedAt: null,
+          segments: [{ startedAt: today(0.25), endedAt: today(0.5) }] },
         { id: "s2", projectId: "b", kind: "billed", taskId: null, rate: 40, currency: "USD",
-          createdAt: now - 50 * HOUR, closedAt: now - 49 * HOUR, deletedAt: null,
-          segments: [{ startedAt: now - 50 * HOUR, endedAt: now - 49 * HOUR }] },
+          createdAt: back, closedAt: back + HOUR, deletedAt: null,
+          segments: [{ startedAt: back, endedAt: back + HOUR }] },
       ],
       earnings: [],
     };
@@ -5314,6 +5324,48 @@ describe("fixes: clock, Today and Overview", () => {
       expect(rows[1].querySelector(".trow-sub").textContent).toMatch(/off the clock/);
       expect(rows[1].querySelector(".trow-time").textContent).toBe("7h 00m");
       expect(rows[1].querySelector(".trow-amt")).toBeNull();
+    }, 20_000);
+  });
+
+  describe("a sitting across midnight in the Recent list", () => {
+    /** The figure in a row or heading, as a number of dollars. */
+    const dollars = (text) => Number(text.replace(/[^0-9.]/g, ""));
+    // An hour before midnight and two after, then an hour on Monday morning.
+    const seed = () => ({
+      projects: [project("a", "Acme")],
+      sessions: [
+        sitting("s1", "a", at(10, 4, 23), at(10, 5, 2)),
+        sitting("s2", "a", at(10, 5, 9), at(10, 5, 10)),
+      ],
+    });
+
+    it("is listed under each day with that day's share of the hours and the money", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 12));
+      const d = dom.window.document;
+      const [monday, sunday] = [...d.querySelectorAll(".day")];
+      expect(monday.querySelector(".day-sum").textContent).toBe("$180.00 · 3h 00m");
+      expect(sunday.querySelector(".day-sum").textContent).toBe("$60.00 · 1h 00m");
+
+      const carried = [...monday.querySelectorAll(".row")]
+        .find((r) => /of 3h 00m/.test(r.querySelector(".row-meta").textContent));
+      expect(carried.querySelector(".row-meta").textContent).toBe("2h 00m of 3h 00m");
+      expect(carried.querySelector(".row-amt").textContent).toBe("$120.00");
+      // it says which day it started on, since Monday's list holds no start
+      expect(carried.querySelector(".row-when").textContent).toContain(short(at(10, 4)));
+
+      const started = sunday.querySelector(".row");
+      expect(started.querySelector(".row-meta").textContent)
+        .toBe("1h 00m of 3h 00m · ran past midnight");
+      expect(started.querySelector(".row-amt").textContent).toBe("$60.00");
+    }, 20_000);
+
+    it("leaves every day's rows adding up to its heading", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 12));
+      for (const day of dom.window.document.querySelectorAll(".day")) {
+        const rows = [...day.querySelectorAll(".row-amt")]
+          .reduce((sum, r) => sum + dollars(r.textContent), 0);
+        expect(rows).toBeCloseTo(dollars(day.querySelector(".day-sum").textContent.split(" · ")[0]), 2);
+      }
     }, 20_000);
   });
 });

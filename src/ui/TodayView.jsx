@@ -14,6 +14,7 @@ import { rateFor, taskLabel } from "../domain/tasks.js";
 const STEP = 7;
 
 const clock = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const dayShort = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 const longDay = (t) => new Date(t).toLocaleDateString(undefined, {
   weekday: "long", day: "numeric", month: "long",
 });
@@ -31,11 +32,14 @@ const money = (cents) =>
  * because the answer to "what was I doing" is never "in March".
  *
  * Every figure here is computed by `performanceIn` over a day's window — the
- * same call the Overview makes with its selector on Day. It is not summed
- * from the rows listed beneath it, which are grouped by the day a session
- * STARTED in. A sitting that ran past midnight belongs to one list and two
- * totals, and reading the totals off the list would make this screen disagree
- * with every other one. See the note atop `domain/recent.js`.
+ * same call the Overview makes with its selector on Day — and never summed
+ * from the rows listed beneath it, which would let this screen drift from
+ * every other one. The rows are measured over the same window instead: a
+ * sitting that ran past midnight is listed under each day it touched, each
+ * listing carrying that day's share of its hours and its money, so the
+ * sittings under a heading add up to it. Money no clock measured — a bonus,
+ * an accepted item's price — is counted in the heading and has no row of its
+ * own. See the note atop `domain/recent.js`.
  *
  * Those figures are work, drawn from on-the-clock projects only, exactly as
  * the Overview draws them. Sleep tracked at a rate is still time you
@@ -54,7 +58,7 @@ export default function TodayView({
   const nameOf = (id) => projects.find((p) => p.id === id) ?? null;
 
   const picks = recentPicks(sessions, projects);
-  const days = daysOfWork(sessions);
+  const days = daysOfWork(sessions, now);
 
   const { work, offClock } = splitByClock(projects, sessions);
   // Off the clock cannot earn, so money filed against it is left out with its
@@ -155,8 +159,8 @@ export default function TodayView({
         )}
 
         {days.slice(0, shown).map((day) => {
-          // Over the day's window, not over the rows below: a sitting that
-          // crossed midnight is listed once and counted in two days.
+          // Over the day's window, never summed from the rows below. Each row
+          // is measured over the same window, which is why they agree.
           const totals = performanceIn(work, day.dayStart, day.dayEnd, now, rateOf, workEarnings);
           return (
             <div key={day.dayStart} className="day">
@@ -170,32 +174,43 @@ export default function TodayView({
               <div className="panel">
                 {day.sessions.map((s) => {
                   const owner = nameOf(s.projectId);
-                  const ms = elapsedMs(s, now);
-                  const over = spillsPast(s, day.dayEnd, now);
-                  // How much of this sitting the day above was credited with.
-                  // Without it the rows visibly fail to add up to the heading,
-                  // and a ledger whose arithmetic does not work in front of
-                  // you is not one you go on trusting.
+                  // This day's share of the sitting, in hours and in money,
+                  // split at midnight. A sitting that crossed it is listed
+                  // under each of its days, and the whole of it under both
+                  // would put its hours in front of you twice while the
+                  // headings counted them once. Measured this way the rows add
+                  // up to the heading above them, and a ledger whose
+                  // arithmetic does not work in front of you is not one you go
+                  // on trusting.
                   const here = sessionMsInWindow(s, day.dayStart, day.dayEnd, now);
+                  const whole = elapsedMs(s, now);
+                  const over = spillsPast(s, day.dayEnd, now);
+                  // Carried in from an earlier day, where its clock time alone
+                  // would read as a start this day never had.
+                  const carried = startedAt(s) < day.dayStart;
                   return (
                     <div className="row clickable" key={s.id} onClick={() => onShowSession(s.id)}>
                       <div>
                         <div className="row-when">
+                          {carried && `${dayShort(startedAt(s))}, `}
                           {clock(startedAt(s))} · {owner?.name ?? "a removed project"}
-                          {isRunning(s) && <span className="tag">running</span>}
+                          {/* Only where it is still going: the earlier day's
+                              share of a running sitting is over. */}
+                          {isRunning(s) && !over && <span className="tag">running</span>}
                           {isIdle(s) && <span className="tag">idle</span>}
                         </div>
                         <div className="row-meta">
                           {owner && isOffClock(owner) ? "off the clock · " : ""}
                           {s.taskId && owner ? `${taskLabel(owner, s.taskId)} · ` : ""}
-                          {formatShortDuration(ms)}
-                          {over && ` · ran past midnight · ${formatShortDuration(here)} of it here`}
+                          {formatShortDuration(here)}
+                          {here !== whole && ` of ${formatShortDuration(whole)}`}
+                          {over && " · ran past midnight"}
                         </div>
                       </div>
                       <span className="row-amt">
                         {owner && !isOffClock(owner) && !isIdle(s)
-                          ? formatMoney(earningsCents(rateOf(s), ms), s.currency)
-                          : formatShortDuration(ms)}
+                          ? formatMoney(earningsCents(rateOf(s), here), s.currency)
+                          : formatShortDuration(here)}
                       </span>
                     </div>
                   );

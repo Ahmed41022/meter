@@ -6,22 +6,23 @@
  * different shape: a list of events in the order they occurred, not a total.
  *
  * That difference decides how a session crossing midnight is handled, and it
- * is the one thing to be careful about in this file. Everywhere else in the
- * app a session is distributed across the days it TOUCHES, by overlap, so a
- * 23:30 → 00:30 sitting puts half an hour in each of two days. A list cannot
- * do that without showing the same work twice, so a session is listed under
- * the day it STARTED in, and only there.
+ * is the one thing to be careful about in this file. Everywhere in the app a
+ * session is distributed across the days it TOUCHES, by overlap, so a
+ * 23:30 → 00:30 sitting puts half an hour in each of two days. The list
+ * follows the same rule rather than one of its own: the sitting is listed
+ * under both days, and each listing stands for that day's half of it. Filed
+ * whole under the day it started, the rows under a heading could not add up
+ * to the heading, which counts by overlap like every other figure.
  *
- * The two rules disagree on purpose, and callers must not mix them: the
- * figures beside a day heading have to come from `performanceIn` over that
+ * The figures beside a day heading still come from `performanceIn` over that
  * day's window, the same way the Overview computes them, and never from
- * summing the rows this file grouped. Otherwise the same day reads two
- * different totals on two screens, which is the class of bug this codebase
- * spends most of its effort avoiding.
+ * summing the rows grouped here. That keeps the heading equal to the same
+ * day on every other screen by construction; a caller measures each row over
+ * the same window, so the rows agree with the heading as well.
  *
  * Like the rest of `domain/`, nothing here reads the clock or storage.
  */
-import { startedAt } from "./time.js";
+import { overlapMs, startedAt } from "./time.js";
 import { periodBoundary } from "./goals.js";
 import { acceptsTime } from "./projects.js";
 import { takesTimeIn } from "./taskState.js";
@@ -65,7 +66,15 @@ export const recentPicks = (sessions, projects, limit = 5) => {
 };
 
 /**
- * Every day that has something in it, newest first, with its sessions.
+ * Every day that has something in it, newest first, with the sessions that
+ * touched it.
+ *
+ * A session is listed under the day it started and under every later day it
+ * was still going into, so one that ran past midnight appears under each of
+ * its days. Only days it actually ran on: a sitting paused overnight and
+ * resumed two days later is not listed under the day in between. A running
+ * session reaches as far as `now`; without one it is listed under the day it
+ * started, which is also where a session with no time in it yet belongs.
  *
  * Days with no work are absent rather than present and empty: a fortnight off
  * would otherwise be fourteen rows saying nothing, between the two days you
@@ -75,13 +84,26 @@ export const recentPicks = (sessions, projects, limit = 5) => {
  * `performanceIn` without re-deriving a boundary — and, more to the point,
  * without being tempted to total the rows instead. See the note at the top.
  */
-export const daysOfWork = (sessions) => {
+export const daysOfWork = (sessions, now) => {
   const days = new Map();
+  const file = (dayStart, session) => {
+    if (!days.has(dayStart)) days.set(dayStart, []);
+    const list = days.get(dayStart);
+    if (!list.includes(session)) list.push(session);
+  };
   for (const session of sessions) {
     if (session.deletedAt) continue;
-    const key = periodBoundary("day", startedAt(session), 0);
-    if (!days.has(key)) days.set(key, []);
-    days.get(key).push(session);
+    file(periodBoundary("day", startedAt(session), 0), session);
+    for (const segment of session.segments ?? []) {
+      const end = segment.endedAt ?? now;
+      // Day by day along the calendar rather than in steps of 24 hours, so a
+      // 23- or 25-hour day is still one day.
+      for (let day = periodBoundary("day", segment.startedAt, 0); day < end; ) {
+        const next = periodBoundary("day", day, 1);
+        if (overlapMs(segment, day, next, now) > 0) file(day, session);
+        day = next;
+      }
+    }
   }
   return [...days.entries()]
     .sort((a, b) => b[0] - a[0])
