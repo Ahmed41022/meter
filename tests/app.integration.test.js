@@ -1348,7 +1348,9 @@ describe("the overall view", () => {
     // whole under either day would move money onto the wrong date.
     const dom = await bootDash({
       projects: [project("p1", "Acme")],
-      sessions: [block("s1", "p1", dayStart(1) + 23 * HOUR + 30 * MIN, dayStart() + 30 * MIN)],
+      // Counted back from today's start rather than forward from yesterday's:
+      // yesterday may have been a day the clocks changed, 23 or 25 hours long.
+      sessions: [block("s1", "p1", dayStart() - 30 * MIN, dayStart() + 30 * MIN)],
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
@@ -2500,7 +2502,10 @@ describe("the activity calendar", () => {
     // neither of them coloured for the whole of it.
     const { d } = await open({
       projects: [project()],
-      sessions: [block("a", "p1", dayStart(3) + 23.5 * HOUR, dayStart(2) + 2.5 * HOUR)],
+      // Half an hour before day 2 began, counted back from it: added to day
+      // 3's start, 23.5 hours ran into day 2 on the day Lord Howe's clocks
+      // went forward half an hour, and day 3 had nothing in it.
+      sessions: [block("a", "p1", dayStart(2) - 0.5 * HOUR, dayStart(2) + 2.5 * HOUR)],
     });
     expect(cell(d, dayStart(3)).dataset.level).not.toBe("0");
     expect(cell(d, dayStart(2)).dataset.level).not.toBe("0");
