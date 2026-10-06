@@ -5368,4 +5368,45 @@ describe("fixes: clock, Today and Overview", () => {
       }
     }, 20_000);
   });
+
+  describe("rows whose money has not landed", () => {
+    // Three hours on Monday: one paid, one waiting on an answer, one rejected.
+    const seed = () => ({
+      projects: [project("a", "Acme")],
+      sessions: [
+        sitting("s1", "a", at(10, 5, 9), at(10, 5, 10)),
+        sitting("s2", "a", at(10, 5, 10), at(10, 5, 11), { status: "pending" }),
+        sitting("s3", "a", at(10, 5, 11), at(10, 5, 12), { status: "cancelled" }),
+      ],
+    });
+    const rowOf = (d, id) => {
+      // newest first: the rejected hour, the pending one, then the paid one
+      const order = ["s3", "s2", "s1"];
+      return d.querySelectorAll(".day .row")[order.indexOf(id)];
+    };
+    const tags = (row) => [...row.querySelectorAll(".tag")].map((t) => t.textContent);
+
+    it("marks a rejected sitting and strikes its money, as the ledger does", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 13));
+      const row = rowOf(dom.window.document, "s3");
+      expect(tags(row)).toEqual(["cancelled"]);
+      expect(row.className).toMatch(/\bis-void\b/);
+    }, 20_000);
+
+    it("marks a sitting still waiting on an answer as pending", async () => {
+      const dom = await bootAt(seed(), at(10, 5, 13));
+      const d = dom.window.document;
+      expect(tags(rowOf(d, "s2"))).toEqual(["pending"]);
+      expect(rowOf(d, "s2").className).not.toMatch(/is-void/);
+      expect(tags(rowOf(d, "s1"))).toEqual([]);
+    }, 20_000);
+
+    it("says in the heading what is pending, apart from what was earned", async () => {
+      // Every row's figure is then in the heading or visibly struck out of it.
+      const dom = await bootAt(seed(), at(10, 5, 13));
+      const d = dom.window.document;
+      expect(d.querySelector(".day .day-sum").textContent).toBe("$60.00 · 3h 00m · $60.00 pending");
+      expect(todayHead(d)).toBe("$60.00 · 3h 00m · $60.00 pending");
+    }, 20_000);
+  });
 });

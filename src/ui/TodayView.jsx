@@ -6,6 +6,7 @@ import {
 } from "../domain/performance.js";
 import { daysOfWork, recentPicks, spillsPast } from "../domain/recent.js";
 import { isIdle } from "../domain/sessions.js";
+import { isCancelled, isPending } from "../domain/earnings.js";
 import { isOffClock, offClockProjects, workProjects } from "../domain/projects.js";
 import { rateFor, taskLabel } from "../domain/tasks.js";
 
@@ -23,6 +24,23 @@ const longDay = (t) => new Date(t).toLocaleDateString(undefined, {
  *  EGP and 100 USD are not 200 of anything. */
 const money = (cents) =>
   currenciesByValue(cents).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
+
+/**
+ * What a day came to, the way its heading says it: what was earned, the hours
+ * worked, and what is still waiting on an answer. The last is said apart, as
+ * the Overview keeps it, so a day of unanswered work never reads as paid —
+ * and it is said at all because its rows are listed underneath, and a row
+ * whose money is in no figure above it reads as a sum that does not add up.
+ */
+const daySum = (totals, nothing = "") => {
+  const waiting = money(Object.fromEntries(
+    Object.entries(totals.pendingCents).filter(([, c]) => c !== 0)));
+  return [
+    money(totals.billedCents) || nothing,
+    totals.billedMs > 0 ? formatShortDuration(totals.billedMs) : "",
+    waiting ? `${waiting} pending` : "",
+  ].filter(Boolean).join(" · ");
+};
 
 /**
  * What today is, and what to start next.
@@ -103,10 +121,7 @@ export default function TodayView({
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">Today</span>
-          <span className="eyebrow">
-            {money(today.billedCents) || "nothing yet"}
-            {today.billedMs > 0 && ` · ${formatShortDuration(today.billedMs)}`}
-          </span>
+          <span className="eyebrow">{daySum(today, "nothing yet")}</span>
         </div>
         <div className="panel">
           {todayRows.length === 0 ? (
@@ -166,10 +181,7 @@ export default function TodayView({
             <div key={day.dayStart} className="day">
               <div className="day-head">
                 <span className="day-name">{longDay(day.dayStart)}</span>
-                <span className="day-sum">
-                  {money(totals.billedCents)}
-                  {totals.billedMs > 0 && ` · ${formatShortDuration(totals.billedMs)}`}
-                </span>
+                <span className="day-sum">{daySum(totals)}</span>
               </div>
               <div className="panel">
                 {day.sessions.map((s) => {
@@ -188,8 +200,17 @@ export default function TodayView({
                   // Carried in from an earlier day, where its clock time alone
                   // would read as a start this day never had.
                   const carried = startedAt(s) < day.dayStart;
+                  // Whether the row's figure is money at all. Idle and off
+                  // the clock read as time; so does work whose project is gone.
+                  const priced = owner && !isOffClock(owner) && !isIdle(s);
+                  // Rejected work keeps its row, its hours and what it would
+                  // have paid, struck through the way the ledger shows it, so
+                  // the column cannot be read as money the heading leaves
+                  // out. Unanswered work says so instead of passing for paid.
+                  const voided = priced && isCancelled(s);
                   return (
-                    <div className="row clickable" key={s.id} onClick={() => onShowSession(s.id)}>
+                    <div className={"row clickable" + (voided ? " is-void" : "")} key={s.id}
+                         onClick={() => onShowSession(s.id)}>
                       <div>
                         <div className="row-when">
                           {carried && `${dayShort(startedAt(s))}, `}
@@ -198,6 +219,8 @@ export default function TodayView({
                               share of a running sitting is over. */}
                           {isRunning(s) && !over && <span className="tag">running</span>}
                           {isIdle(s) && <span className="tag">idle</span>}
+                          {priced && isPending(s) && <span className="tag">pending</span>}
+                          {voided && <span className="tag">cancelled</span>}
                         </div>
                         <div className="row-meta">
                           {owner && isOffClock(owner) ? "off the clock · " : ""}
@@ -208,7 +231,7 @@ export default function TodayView({
                         </div>
                       </div>
                       <span className="row-amt">
-                        {owner && !isOffClock(owner) && !isIdle(s)
+                        {priced
                           ? formatMoney(earningsCents(rateOf(s), here), s.currency)
                           : formatShortDuration(here)}
                       </span>
