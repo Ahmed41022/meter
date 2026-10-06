@@ -6207,6 +6207,33 @@ describe("fixes: found in review", () => {
     expect(stored(dom).projects[0].tasks[1].price).toBe(12.5);
   }, 30_000);
 
+  it("reads a new task's pay box as it is labelled, and says what it cannot read", async () => {
+    // On hourly work with a per-item bonus the box says Rate, but what was
+    // typed was saved as the task's item price: 45 meant as $45 an hour gave
+    // the task a $45 item price and no rate.
+    const { dom, d } = await open(seed({ perTask: 70 }));
+    btn(d, /Start the meter/i).click();
+    await wait(200);
+    btn(d, /New task/i).click();
+    await wait(150);
+    const form = d.querySelector(".prompt");
+    setValue(dom.window, field(form, "Name it"), "T-9");
+    const pay = field(form, "^Rate$");
+    setValue(dom.window, pay, "abc");
+    await wait(150);
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/“abc” isn't a rate/);
+    expect(inPrompt(d, /Start the meter/i).disabled).toBe(true);
+
+    setValue(dom.window, pay, "45");
+    await wait(150);
+    expect(form.querySelector(".hint.warn")).toBeNull();
+    inPrompt(d, /Start the meter/i).click();
+    await wait(300);
+    const task = stored(dom).projects[0].tasks.find((t) => t.label === "T-9");
+    expect(task.rate).toBe(45);
+    expect(task).not.toHaveProperty("price");
+  }, 30_000);
+
   it("reads a decimal comma in a new task's price on work paid per item", async () => {
     const { dom, d } = await open(seed({ currentRate: 0, perTask: 50 }));
     btn(d, /Start the meter/i).click();
