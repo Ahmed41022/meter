@@ -9,15 +9,23 @@
  * hours are fixed forever: the platform priced what it received, and minutes
  * added afterwards are minutes nobody is paying for. Only the money moves
  * after that, which is why this is a state on the task rather than a flag on
- * each session.
+ * each session. What the money does at each step is `settle.js`'s to do; in
+ * short:
  *
- *  - SUBMITTED  handed in. The hourly money is settled — it was worked and
- *               delivered — and only the acceptance reward is still waiting on
- *               somebody else's decision.
- *  - ACCEPTED   the decision came back yes. The reward is paid.
- *  - CANCELLED  it came back no. The hours stay, and stay paid; only the
- *               reward is cancelled. Work that was done and then rejected is
- *               a fact about how the month went, not an error to erase.
+ *  - SUBMITTED  handed in, and waiting on somebody else's decision. The hours
+ *               count as earned where the project pays as worked and stay
+ *               pending where it pays once accepted; the acceptance reward is
+ *               pending either way. None of it is final — a rejection still
+ *               takes it all back.
+ *  - ACCEPTED   the decision came back yes. The hours and the task's own
+ *               reward are paid, in the run for the period the answer fell in.
+ *  - CANCELLED  it came back no, and reads "rejected". The hours stay on the
+ *               record and in every time figure; their money and the reward
+ *               are cancelled. Work that was done and then rejected is a fact
+ *               about how the month went, not an error to erase.
+ *
+ * Reopening clears the state, and on an answered task puts its money back to
+ * pending until it is accepted again.
  *
  * This module imports nothing on purpose. `sessions.js` has to ask whether a
  * task still takes time, and it cannot import `tasks.js` — that file already
@@ -55,8 +63,9 @@ export const takesTimeIn = (project, taskId) => {
  *
  * Plural because that is how acceptance actually arrives — a platform reviews
  * a week of submissions and answers them together. `null` reopens a task,
- * clearing both fields rather than leaving a stale date behind, the same way
- * returning a project to active does.
+ * clearing the state and both its dates rather than leaving a stale one
+ * behind, the same way returning a project to active does. What a move does
+ * to the money is `settle.js`'s business; this only records where the task is.
  */
 export const setTaskStateMany = (state, projectId, taskIds, next, now) => {
   const wanted = new Set(taskIds ?? []);
@@ -81,15 +90,19 @@ export const setTaskStateMany = (state, projectId, taskIds, next, now) => {
           /**
            * When the work went in, kept apart from when it was answered.
            *
-           * Two dates, because the two kinds of money ride different clocks:
-           * the hourly money is earned by submitting and the reward by being
-           * accepted, and those can be a fortnight apart. One field would be
-           * overwritten by the answer and would silently re-date the hours to
-           * a period they were never part of.
+           * Two dates, because they answer different questions and can be a
+           * fortnight apart. The answer (`stateAt`) decides which pay run a
+           * task's money is in. The hand-in is the record of delivery — what
+           * a bonus window or a query about a slow review turns on, and what
+           * dates a reward shared across a batch where the project pays as
+           * worked. One field would be overwritten by the answer and lose
+           * the day the work went in.
            *
-           * Set once and then left alone, so an answer never moves it. A task
-           * reopened and handed in again starts a new one, which is right: it
-           * is genuinely going in on a different day.
+           * Set once and then left alone, so an answer never moves it; an
+           * answer to a task never marked submitted stamps it, since the work
+           * had gone in by then. A task reopened and handed in again starts a
+           * new one, which is right: it is genuinely going in on a different
+           * day.
            */
           if (next === TASK.SUBMITTED) copy.submittedAt = now;
           else if (copy.submittedAt == null) copy.submittedAt = now;
@@ -121,10 +134,11 @@ const patchStated = (state, projectId, taskId, field, at) => (!Number.isFinite(a
 /**
  * Corrects the day the work went in, after the fact.
  *
- * Needed because the app used to stamp the moment you ticked the box. It no
- * longer decides a payday — the answer does — but it is the record of when
- * the work was delivered, which is what a bonus window or a query about a
- * slow review turns on, and a date taken from the clock was simply untrue.
+ * Needed because the app used to stamp the moment you ticked the box. It does
+ * not decide a task's own payday — the answer does — but it is the record of
+ * when the work was delivered, which is what a bonus window or a query about
+ * a slow review turns on, and it dates a reward shared across a batch on a
+ * project paid as worked. A date taken from the clock was simply untrue.
  */
 export const setSubmittedAt = (state, projectId, taskId, at) =>
   patchStated(state, projectId, taskId, "submittedAt", at);

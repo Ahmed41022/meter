@@ -1,24 +1,20 @@
 /**
  * What is coming in, and when.
  *
- * Built from two facts the ledger already holds: the day a task changed state,
+ * Built from two facts the ledger already holds: when a task was answered,
  * and the company's schedule. Nothing here is stored — a forecast that was
  * written down would be wrong the moment a schedule changed, and it would be
  * wrong silently.
  *
- * Money belongs to the period the work was SUBMITTED in. That is the
- * platforms' own rule, stated plainly: a task straddling two pay periods
- * counts toward the week you handed it in, not the week somebody got round to
- * reviewing it. With one exception, which is the whole subtlety: a decision
- * arriving after that period's money has already gone out cannot be in it,
- * and rides the next run that can still carry it.
+ * A task's money belongs to the period its ANSWER fell in, hours and reward
+ * together. A payout run covers the tasks accepted during a period, so the
+ * acceptance is the event that puts money in a particular run: a task handed
+ * in on the Sunday and accepted on the Wednesday missed the period that shut
+ * on the Monday, and rides the next run. The day it was handed in decides
+ * nothing about its own payday.
  *
- * Which means an ANSWERED task has a date and an unanswered one does not. A
- * payout run covers the tasks accepted during a period, so the acceptance is
- * the event that puts money in a particular run; until somebody has reviewed
- * it, which run it makes is a fact about the future.
- *
- * So the panel reports two different things:
+ * Which means an ANSWERED task has a date and an unanswered one does not, and
+ * the panel reports two different things:
  *
  *   DUE      answered work, dated from the period its answer fell in, and as
  *            close to a promise as this app is willing to make.
@@ -30,11 +26,23 @@
  *            soonest it could make, and "not before Friday" is worth more
  *            than silence.
  *
- * Rejected work appears in neither. It earns nothing, so there is nothing to
- * date.
+ * A reward shared across several tasks is one payment, and is paid in the run
+ * for the period its LAST task got there: the latest acceptance where the
+ * project pays once accepted, the latest hand-in where it pays as worked.
+ * Until the rest have all got there it waits, like unreviewed work. Rejected
+ * tasks are left out of that reckoning.
  *
- * Each row carries the tasks behind it, so a figure can be opened and
- * accounted for rather than taken on trust.
+ * Rejected work appears nowhere. It earns nothing, so there is nothing to
+ * date — and a cancelled reward is not coming either.
+ *
+ * A payday is a DATE on the client's own clock, carried as one all the way to
+ * the screen, and it has passed once that clock has moved past it; read on
+ * this device's clock it can land on the day before. Rows are one per client,
+ * day and currency, a client being its folded name, so "Northwind" and
+ * "northwind" are the one payment they are.
+ *
+ * Each row carries what makes it up — its tasks, and any shared reward — so a
+ * figure can be opened and accounted for rather than taken on trust.
  *
  * Anything whose payday has already passed is left out. It arrived, or it is a
  * conversation with the client rather than a forecast.
@@ -61,9 +69,9 @@ const hourlyCents = (sessions, project, taskId, now) => sessions
  * Sums into a keyed bucket, so several tasks landing on one payday read as
  * one payment — which is what the platform will actually send.
  *
- * Tasks are counted as a set rather than tallied, because one task files its
- * hours and its reward separately and both land here. Adding one each time
- * would report a single task as two.
+ * A task's hours and its own reward are added up before they get here and
+ * arrive as one line per currency, so a task is counted once however many
+ * records its money is written on.
  */
 const into = (map, key, seed) => {
   if (!map.has(key)) map.set(key, { ...seed, key, cents: 0, tasks: [] });

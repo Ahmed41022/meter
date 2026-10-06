@@ -3,7 +3,7 @@
  *
  * Every other figure in this app answers what you have earned. This one
  * answers a different question — when it lands — and the two are weeks apart.
- * Work handed in on Tuesday is earned on Tuesday and paid on some Wednesday a
+ * Work accepted on Tuesday is earned on Tuesday and paid on some Wednesday a
  * platform decided, and only one of those is a fact about your bank account.
  *
  * The rule belongs to the COMPANY, not the project. A platform pays on one
@@ -23,6 +23,11 @@
  *            whole months later. Day numbers past the end of a short month
  *            clamp to its last day, so the 31st is the 28th in February
  *            rather than silently becoming the 3rd of March.
+ *
+ * Rules are written in the platforms' own words, "work in before ...", and
+ * nothing here minds which moment it is handed. Which moment counts is the
+ * forecast's decision: `payout.js` dates a task from when it was ANSWERED,
+ * because that is the event that puts money into a run.
  *
  * A cutoff is an INSTANT, not a day, because that is how the platforms state
  * it: "the week closes Sunday 7pm Eastern" is a Sunday evening, and work
