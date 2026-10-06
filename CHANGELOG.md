@@ -9,22 +9,39 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
-- **A payday for each client, and a Getting paid panel that uses it.** You set
-  the schedule yourself — weekly (“work in before Monday is paid the following
-  Wednesday”) or monthly (“work in before the 1st is paid on the 15th”) — and
-  the Overview says what lands on which day. Knowing what you have earned and
-  knowing when it arrives are different questions, and the app only answered
-  the first.
+- **A payday for each client, and an Upcoming payments panel that uses it.**
+  You set the schedule yourself — weekly (“work in before Monday is paid the
+  following Wednesday”) or monthly (“work in before the 1st is paid on the
+  15th”) — and the Overview says what lands on which day. Knowing what you have
+  earned and knowing when it arrives are different questions, and the app only
+  answered the first.
   - The schedule belongs to the **company**, not the project, so every project
     under one client shares it instead of being kept in step by hand. Two
     spellings of a name fold to one record, so two devices cannot end up with
-    two schedules that disagree.
-  - The hours ride from the day a task was **submitted**; an acceptance reward
-    rides from the day it was **accepted**. A reward still waiting on a
-    decision has no date at all and is reported apart, because “owed on
-    Wednesday” and “owed if they say yes” are different kinds of hope.
-  - Anything whose payday has passed drops off. It arrived, or it is a
-    conversation with the client rather than a forecast.
+    two schedules that disagree, and one client is one row in the panel however
+    its name was typed.
+  - A period shuts at a **minute on the client's own clock** — “the week shuts
+    Sunday 7pm Eastern” — rather than at midnight here, because seven hours
+    across a cutoff is not hours, it is a whole payday. The offset is read off
+    the zone at each instant, so a daylight-saving change on either side moves
+    the boundary with it. A zone this browser does not know is kept as it was
+    saved, and Settings says paydays are worked out on this device's clock
+    until it is.
+  - A task is paid in the run for the period its **answer** fell in, hours and
+    reward together. A payout run covers the tasks accepted during a period, so
+    a task handed in on Sunday and accepted on Wednesday missed the period that
+    shut on Monday and rides the next one. Work nobody has answered yet has no
+    payday, only the earliest it could arrive — “Not before Wed 7 Oct” — and
+    only answered work is totalled.
+  - A reward shared across several tasks is paid with the last of them to get
+    there — accepted, where the project pays once accepted; handed in, where it
+    pays as worked — and waits like unreviewed work until then.
+  - Every row opens to list the tasks and rewards that make it up, so a figure
+    can be accounted for rather than taken on trust. Anything whose payday has
+    passed drops off: it arrived, or it is a conversation with the client
+    rather than a forecast.
+  - A payday is a date on the client's own calendar all the way to the screen,
+    so a client east of you is never shown a day early.
 
 - **Money says which task it was for.** Every earning names its task, in the
   list, in the CSV export and on the task itself. A row that read `$10.00 ·
@@ -48,11 +65,24 @@ ledger changed such that an older build can no longer read it.
   holds exactly one of them.
 - **Tasks have a life: submitted, accepted, rejected.** Submitting stops the
   clock on a task for good — no more hours can be recorded against it, by the
-  meter or by hand, because the platform priced what it received — and settles
-  the hourly money, since delivering the work is what earns it. Only the
-  acceptance reward waits. Accepting pays that reward; rejecting cancels it
-  and leaves the hours paid, because the work was still done and delivered.
-  Reopening a task puts the hours back in reach and never moves the money.
+  meter or by hand, because the platform priced what it received — and stops a
+  meter still running on it. Where the project pays as worked the hours count
+  as earned from then; where it pays once accepted they stay pending, with the
+  acceptance reward, until the answer. Accepted pays them. Rejected cancels
+  their money and the reward with it, while the hours stay on the record and
+  in every time figure: the work happened, it simply was not paid for. Any task
+  can be handed in, turned down or reopened, whatever the project pays.
+  Reopening an answered task puts its money back to pending until it is
+  accepted again; reopening one that was only handed in leaves its money where
+  it is.
+- **The settle bar records when things happened, to the minute.** Submit
+  records when the last sitting on the tasks ended, because work is nearly
+  always handed in as it is finished; Accepted and Rejected record the minute
+  you press them; a time typed in the box is what every button records instead.
+  Both times can be corrected in the task editor afterwards. The answer's is the
+  one that decides a pay period, so it is kept to the minute of the cutoff.
+  Answers recorded before this were stored at noon, and the editor's hint says
+  those are the ones worth checking.
 - **One reward across many tasks.** "Finish fifty and we pay you X" is a single
   payment naming all fifty. Each of them then reads as paid for without being
   given a share of it — splitting it fifty ways would invent a per-task price
@@ -79,11 +109,15 @@ ledger changed such that an older build can no longer read it.
   - A day with nothing in it is absent rather than empty. A fortnight off
     would otherwise be fourteen rows saying nothing between the two days you
     wanted to compare.
-  - A sitting that crossed midnight is listed once, under the day it started
-    in, while the figures beside each day still split it by overlap the way
-    every other screen does. The row says how much of itself landed on the day
-    above it, because a ledger whose arithmetic does not work in front of you
-    is not one anybody goes on trusting.
+  - A sitting that crossed midnight is listed under each day it touched, each
+    row carrying that day's share of the hours and the money, so the rows under
+    a day add up to its heading — the same overlap split every other screen
+    uses. A ledger whose arithmetic does not work in front of you is not one
+    anybody goes on trusting.
+  - Its figures are work only, as the Overview's are: time off the clock is
+    listed with its hours and never counted as earnings. Rejected sittings are
+    struck through and pending ones say so, and each day says what is still
+    pending after its total.
 - The task note is shown beside the sessions when you filter the ledger down
   to that task, with an edit link — filtering to a task is what you do in
   order to work on it, and the ids are the reason you came.
@@ -91,33 +125,52 @@ ledger changed such that an older build can no longer read it.
   moment focus left the box, so a half-typed `4` on the way to `45` was
   briefly the project's real rate. Nothing typed there is saved until asked
   now. The three toggles below it stay immediate: each is one decisive click,
-  and Status already has an Undo.
+  and Status already has an Undo. What is typed and not saved is kept while the
+  panel is closed or the project is left, the closed panel says **Unsaved**,
+  and in a browser closing the window asks first.
 - **The overlap warning names the sessions it is about**, and opens either
   one. Counting two records and leaving the reader to find them by matching
   timestamps by eye was throwing away work the app had already done. The
   warning you meet while typing in a manual entry names them too, but does not
   link — following a link mid-form would cost the entry you were filling in.
+  Correcting a session makes the same check and asks the same “anyway”.
+- **The task list sorts** by amount, by the day the work went in, by hours
+  taken or by hours lost, either way round, with undated rows kept at the
+  bottom whichever way it points.
+- **Rejected work says what it cost.** The project card, By project and By
+  client name the money withheld beside the hours (“$991.63 cancelled”), so a
+  zero next to real hours reads as a fact about the month rather than a fault.
+- **Marking sessions against their task's answer asks first.** Mark paid on a
+  rejected task's sessions, or Mark pending on an accepted task's, says what
+  the mark would claim and waits for “anyway”. Either can be meant; far more
+  often it is a row ticked by mistake.
+- **Restoring a backup asks first.** It sets the ledger here beside the one in
+  the file — projects, sessions and payments, and the dates they span — and
+  says that it replaces rather than merges, before either is touched. The Undo
+  after it stays.
+- **A ledger that cannot be read is kept, not saved over.** Stored data that
+  does not parse used to open as an empty ledger, and the first change wrote
+  over the original for good. It is now copied to a key of its own before
+  anything is written, and a banner offers it as a download, or a backup to
+  restore.
 
 ### Changed
-
-- The Overview panel is called **Upcoming payments**.
 
 - An earning's task is stored as `taskIds`, a list, because one payment can
   cover a batch. The singular `taskId` an earlier build wrote is still read and
   never written again, so no record holds two answers to one question.
 - A batch of rows changes pay state in one write rather than one write each —
   it was one stamp and one upload per row.
-- On work paid once accepted, the hourly money now settles when the task is
-  **submitted** rather than waiting for acceptance. Handing the work in is
-  what earns it; only the top-up depends on somebody else's decision. Money
-  already in the ledger keeps whatever state it was in.
+- On work paid once accepted, accepting a task settles its hours along with
+  its reward, instead of each session being marked paid by hand.
 - The task list speaks the vocabulary the platforms use. What was "Accept"
   is now **Submit**, and the answer that comes back later is **Accepted** or
   **Rejected** — two different days, which the one button had conflated.
 - The task picker and the Today tab's one-click starts leave out tasks that
-  have been submitted. Offering one would be a start that does nothing, and
-  starting a meter closes whatever else is open, so the failure would not
-  have been quiet.
+  have been handed in. Offering one would be a start that does nothing, and
+  starting a meter closes whatever else is open, so the failure would not have
+  been quiet. A handed-in task's name typed under New task says why it takes
+  no more time instead.
 - The task note is a box rather than a line, and keeps its line breaks. One
   task runs across many sittings and collects an id from each, so what goes in
   it is usually a list that grows.
@@ -125,25 +178,91 @@ ledger changed such that an older build can no longer read it.
   device opened it. One running elsewhere is neither a crash nor a second tab,
   and closing it at a heartbeat that was never going to arrive would have cut
   hours off work still being done.
+- **Comparisons are like for like.** On a period still going, “vs this point
+  last week” sets the week so far against last week up to the same weekday and
+  time, rather than against the whole of it, which only ever said the week was
+  not over. A past period is still compared whole with the whole one before it.
+- **Money in two currencies is never added together or divided across.** The
+  Overview leads with the currency most of the hours were worked in, gives
+  each currency its own hourly figure, over the hours worked in it, and its own
+  change against the period before, and charts each amount on its own line. How much rides on one project and
+  which paid best by the hour appear only when the period's money is in one
+  currency.
+- **Money targets count settled money no clock measured** — a bonus, an
+  accepted item's price — the way the headline does, on the Overview and on the
+  project page. The project page's goal no longer counts money still pending.
 
 ### Fixed
 
-- **Submitting dated the work by when you ticked the box.** Work handed in on
-  Saturday and marked off on Monday crossed the weekly cutoff and was forecast
-  a whole payday late, with nothing on screen to explain why. The settle bar
-  now carries the day it actually went in — defaulting to when the last
-  sitting on those tasks ended, because work is nearly always handed in as it
-  is finished — and a date recorded wrong can be corrected on the task
-  afterwards. The day decides which pay period the money falls in and nothing
-  else; it never reaches an amount.
-
+- **Editing one task, then another, saved the first one's values onto the
+  second** — name, note and rate. Every editor now starts from the thing it
+  was opened on: tasks, sessions, the settle prompt, objectives, and the whole
+  project page when the project changes underneath it. Removing a session while
+  its editor was open no longer takes the page down.
+- **A reward could be paid twice.** Rejecting a task, reopening it, handing it
+  in again and having it accepted paid the first reward beside a new one, so
+  $40 of hours and a $50 item read as $140 earned. A task has one acceptance
+  reward, re-priced when the task is handed in again.
+- **The app's clock stood still while no meter ran.** A window opened on
+  Sunday night still showed Sunday as today on Monday, and dated answers from
+  the moment it was opened.
+- **The settle bar fixed its time when it opened**, from whatever was ticked
+  first, so an acceptance could be stored at the time another task was last
+  worked on — a payday early. Its defaults are worked out at the click now.
+- **Handing in a task left its meter running**, on work that could take no more
+  time, and the extra hour was counted as the task's pay.
+- **Today counted time off the clock as work** — eight hours of sleep at a
+  snapshot rate read as $70 earned — and priced rejected and pending sittings
+  as if they had been paid.
+- **Time could be filed under work already handed in**: moved there under a
+  typed name, started there with no word, or added by hand while the form said
+  “Time added.” and recorded nothing. Each now says which task and why, and
+  keeps what was typed.
+- **The rate and price boxes saved what they could not read as no rate or
+  price at all**, so “12,5” or “-5” cleared what the task had. A decimal comma
+  is read as one, and anything else is named under the box. The box that
+  prices a task as it is made also read a rate as an item price on hourly work
+  with a per-item bonus.
+- **Two tasks could share a name**, and the second could no longer be reached
+  by it.
+- **A correction could lay one session over another**, counting the overlap
+  twice, and an end moved before the start was quietly swapped into an hour
+  nobody worked.
+- **An earning saved with its date cleared counted in no period**, and the CSV
+  would have dated it 1970.
+- **The CSV exported time off the clock as billed money.** It keeps its hours,
+  carries no money and says what it is. The file also starts with a
+  byte-order mark, so Excel reads Arabic names and emoji, and a text cell that
+  starts with =, +, - or @ is written so Excel shows it rather than runs it.
+- **Paydays for clients east of you showed a day early** and dropped off a day
+  before they came.
+- **Upcoming payments could keep a passed cutoff's date all day**, because it
+  was worked out once a day. It is worked out every minute.
+- **One client typed two ways was two clients** in By company, though the two
+  spellings share one payday.
+- **Renaming a project's company dropped its payday**: the schedule was saved
+  to the old name. Settings saves it to the company typed, and says so before
+  replacing another company's schedule.
+- **The activity legend could repeat one boundary**, “to 1h 00m” three times
+  over.
+- **The backup nudge read “1 record exist”.**
+- **At 320px wide the tab bar stuck out**, and every main screen scrolled
+  sideways.
+- **Opening the desktop app while it was already open showed an error**
+  blaming another program for port 47823. The other program was Meter. A
+  second copy now just hands over to the first.
+- Several hints still described rules that had changed: that handing work in
+  settles its money, that rejected hours stay paid, that a payday follows the
+  hand-in, and that Paused and Done stop a running meter.
+- Tests that seeded work a day or two back failed every Monday, two all-time
+  tests failed from 1 to 19 January, and two that put a session across
+  midnight failed when the day before had been one the clocks changed on.
 - **The activity calendar printed its month labels in the wrong place.** A flex
   item defaults to refusing to shrink below its own text, so each labelled
   column came out 18px wide instead of the 10px asked for, and the error
   compounded left to right. By the far end of the year September sat 80px past
   the week it named, printed over empty space off the end of the grid — which
   read as September missing from every year.
-
 - **A stray backtick in a CSS comment ended the stylesheet**, which is one
   template literal, and took the whole app down with it. Caught by the test
   suite before it left the working tree; the comment now says so.

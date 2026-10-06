@@ -52,8 +52,13 @@ rates. `npm run shots` regenerates every one of them.</sub>
   received.
 - **Says which task has been paid for** and which is still only done — and
   settles a batch of them in one go, since approval never arrives one task at
-  a time. One reward can cover fifty tasks without pretending to be a price
+  a time: handed in, then accepted or rejected, with the money following the
+  answer. One reward can cover fifty tasks without pretending to be a price
   per task.
+- **Says when the money lands.** Each client gets a payday — weekly or
+  monthly, cut off at the minute and on the clock the client states it in —
+  and Upcoming payments lists what arrives on which day, task by task, with
+  work still under review shown only as the earliest it could arrive.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.
@@ -170,7 +175,7 @@ Windows desktop app. See [CHANGELOG.md](CHANGELOG.md).
 
 - **Corrections replace, they don't accumulate.** `original` holds what the meter recorded, and that's it — there's no log of each successive edit or when. Enough to prove a figure was adjusted; not a full audit trail.
 - **No re-filing or repricing history.** A session doesn't record that it was moved between tasks, and a task doesn't record that its rate changed or when.
-- **No archiving.** A task you've finished with stays in the start prompt's dropdown forever. Delete is the only way out, and that unfiles its sessions.
+- **No archiving.** A task leaves the start prompt once it is handed in, but the task list keeps every task, finished or not. Delete is the only way to take one off it, and that unfiles its sessions.
 - **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.
