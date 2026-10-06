@@ -16,7 +16,7 @@ import {
   removeEarning, restoreEarning, setEarningTasks, setPayState, setPayStateMany,
 } from "../domain/earnings.js";
 import {
-  addTask, parseTaskRate, removeTask, renameTask, resolveTaskId, setTaskNote,
+  addTask, parseTaskRate, readPrice, removeTask, renameTask, resolveTaskId, setTaskNote,
   setTaskPrice, setTaskRate, taskLabel,
 } from "../domain/tasks.js";
 import { TASK, setAnsweredAt, setSubmittedAt } from "../domain/taskState.js";
@@ -88,7 +88,8 @@ const resolveTaskPick = (project, pick, createTask) => {
 /**
  * What the one pay box on the task prompt means, which depends on how the
  * project pays. A piece-rate project reads it as what one accepted item is
- * worth; an hourly one reads it as a rate, or as a share of the base.
+ * worth; an hourly one reads it as a rate, or as a share of the base. Both
+ * readings take a decimal comma, as the editor does.
  *
  * Nothing is written when the box was left empty, because empty already has a
  * meaning — inherit — and a stored null would say it less clearly.
@@ -96,8 +97,8 @@ const resolveTaskPick = (project, pick, createTask) => {
 const payFields = (project, pay) => {
   if (!String(pay ?? "").trim()) return {};
   if (isPerTask(project)) {
-    const price = Number(pay);
-    return Number.isFinite(price) && price >= 0 ? { price } : {};
+    const price = readPrice(pay);
+    return price === null ? {} : { price };
   }
   const { rate, factor } = parseTaskRate(pay);
   // `!= null`, not truthiness: zero is a rate somebody meant to type.

@@ -132,6 +132,21 @@ export const taskRateProblem = (input) => {
   return n < 0 ? RATE_PROBLEM.NEGATIVE : null;
 };
 
+/**
+ * What is wrong with a price box, or null when it can be saved.
+ *
+ * The rate box's rules without the share: what one accepted item pays is an
+ * amount, never a proportion of anything, so "30%" is no more a price than
+ * "abc" is. Asked for the same reason — read as "nothing", either would clear
+ * the price the task already had.
+ */
+export const taskPriceProblem = (input) =>
+  (String(input ?? "").trim().endsWith("%") ? RATE_PROBLEM.UNREADABLE : taskRateProblem(input));
+
+/** A price typed into a box, read the way a rate is, decimal comma and all;
+ *  null where the box is empty or holds something that is not a price. */
+export const readPrice = (input) => (taskPriceProblem(input) ? null : amount(input));
+
 /** How a task's rate should be shown in a box the user can edit again. */
 export const taskRateInput = (task) => {
   if (task?.rate != null) return String(task.rate);
@@ -218,8 +233,11 @@ export const setTaskNote = (state, projectId, taskId, note) => {
 };
 
 /** What one accepted item pays under this task, overriding the project's own
- *  price the same way a task rate overrides the session snapshot. */
+ *  price the same way a task rate overrides the session snapshot. Anything
+ *  that is not a price leaves the task as it was, as `setTaskRate` does;
+ *  empty still clears it. */
 export const setTaskPrice = (state, projectId, taskId, price) => {
+  if (taskPriceProblem(price)) return state;
   const value = amount(price);
   return {
     ...state,

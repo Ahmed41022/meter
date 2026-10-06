@@ -6096,6 +6096,7 @@ describe("fixes: editors and entry forms", () => {
 describe("fixes: found in review", () => {
   const HOUR = 3_600_000;
   const at = Math.floor(Date.now() / 60_000) * 60_000 - 8 * HOUR;
+  const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
   const sitting = (id, taskId, from) => ({
     id, projectId: "p1", kind: "billed", taskId, rate: 20, currency: "USD",
     createdAt: from, closedAt: from + HOUR, deletedAt: null,
@@ -6175,5 +6176,50 @@ describe("fixes: found in review", () => {
     setValue(dom.window, select, "");
     await wait(150);
     expect(d.querySelector(".prompt .hint.warn")).toBeNull();
+  }, 30_000);
+
+  it("reads a task's price as its rate is read, and refuses what is not a price", async () => {
+    // The price box was a number box, which hands back nothing for "12,5",
+    // and nothing saved as no price at all.
+    const ledger = seed({ currentRate: 0, perTask: 50 });
+    ledger.projects[0].tasks[1].price = 35;
+    const { dom, d } = await open(ledger);
+    [...taskRow(d, "T-2").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
+    await wait(200);
+    const form = d.querySelector(".prompt");
+    const price = field(form, "Per accepted item");
+    expect(price.placeholder).toMatch(/the project's price$/);
+
+    setValue(dom.window, price, "30%");
+    await wait(150);
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/“30%” isn't a price/);
+    expect(inPrompt(d, /^Save$/).disabled).toBe(true);
+    setValue(dom.window, price, "-5");
+    await wait(150);
+    expect(form.querySelector(".hint.warn").textContent).toMatch(/price can't be below zero/);
+    expect(stored(dom).projects[0].tasks[1].price).toBe(35);
+
+    setValue(dom.window, price, "12,5");
+    await wait(150);
+    expect(form.querySelector(".hint.warn")).toBeNull();
+    inPrompt(d, /^Save$/).click();
+    await wait(300);
+    expect(stored(dom).projects[0].tasks[1].price).toBe(12.5);
+  }, 30_000);
+
+  it("reads a decimal comma in a new task's price on work paid per item", async () => {
+    const { dom, d } = await open(seed({ currentRate: 0, perTask: 50 }));
+    btn(d, /Start the meter/i).click();
+    await wait(200);
+    btn(d, /New task/i).click();
+    await wait(150);
+    const form = d.querySelector(".prompt");
+    setValue(dom.window, field(form, "Name it"), "T-9");
+    setValue(dom.window, field(form, "Per accepted item"), "12,5");
+    await wait(150);
+    expect(form.querySelector(".hint.warn")).toBeNull();
+    inPrompt(d, /Start the meter/i).click();
+    await wait(300);
+    expect(stored(dom).projects[0].tasks.find((t) => t.label === "T-9").price).toBe(12.5);
   }, 30_000);
 });

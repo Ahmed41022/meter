@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { wordsFor } from "./words.js";
-import { findTask, findTaskByLabel, tasksFor } from "../domain/tasks.js";
+import {
+  findTask, findTaskByLabel, taskPriceProblem, taskRateProblem, tasksFor,
+} from "../domain/tasks.js";
 import { TASK, takesTime, taskState } from "../domain/taskState.js";
 import { isPieceOnly, perTask } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
+import { payProblemWords } from "./TaskEditor.jsx";
 
 const NONE = "__none__";
 
@@ -54,6 +57,14 @@ export default function TaskPrompt({
   const [note, setNote] = useState("");
   const piece = isPieceOnly(project);
   /**
+   * A pay box that cannot be read, read the way the task editor reads its own
+   * boxes. Anything it cannot read used to make the task with no rate or
+   * price at all and say nothing, so it says what is wrong and waits.
+   */
+  const payIssue = mode === "new" && pay.trim()
+    ? (piece ? taskPriceProblem(pay) : taskRateProblem(pay))
+    : null;
+  /**
    * A task already handed in, named in either box.
    *
    * A typed name resolves to the task that has it rather than minting a
@@ -76,7 +87,7 @@ export default function TaskPrompt({
   );
 
   const confirm = () => {
-    if (closed) return;
+    if (closed || payIssue) return;
     if (mode === "new") {
       const clean = draft.trim();
       return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim() } : { taskId: null });
@@ -146,6 +157,11 @@ export default function TaskPrompt({
                    if (e.key === "Enter") confirm();
                    if (e.key === "Escape") onCancel();
                  }} />
+          {payIssue && (
+            <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+              {payProblemWords(payIssue, pay, piece)}
+            </span>
+          )}
           <span className="hint" style={{ marginTop: 8, display: "block" }}>
             {!piece && <>A percentage stays a percentage: work paid at 30% of the base follows
               the base when it changes, instead of going stale the day it moves. </>}
@@ -174,7 +190,9 @@ export default function TaskPrompt({
       )}
 
       <div className="controls">
-        <button className="btn primary" disabled={!!closed} onClick={confirm}>{confirmLabel}</button>
+        <button className="btn primary" disabled={!!closed || !!payIssue} onClick={confirm}>
+          {confirmLabel}
+        </button>
         <button className="btn ghost" onClick={onCancel}>Cancel</button>
       </div>
     </div>

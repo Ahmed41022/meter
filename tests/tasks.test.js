@@ -3,7 +3,7 @@ import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
   resolveTaskId, sessionsUnderTask, setTaskNote, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
   parseTaskRate, taskRateInput, ORDER, sortTaskRows, UNASSIGNED, RATE_PROBLEM, taskRateProblem,
-  nameTakenBy,
+  nameTakenBy, readPrice, taskPriceProblem,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -553,6 +553,28 @@ describe("a rate written with a comma, or not a rate at all", () => {
       expect(findTask(proj(s), "t1").rate).toBe(35);
     }
     expect(findTask(proj(setTaskRate(s, "p1", "t1", "12,5")), "t1").rate).toBe(12.5);
+  });
+
+  it("reads a price the way it reads a rate, without the share", () => {
+    // What one accepted item pays is an amount, never a share of anything.
+    expect(taskPriceProblem("30%")).toBe(RATE_PROBLEM.UNREADABLE);
+    expect(taskPriceProblem("-5")).toBe(RATE_PROBLEM.NEGATIVE);
+    expect(taskPriceProblem("1,250")).toBe(RATE_PROBLEM.AMBIGUOUS);
+    for (const fine of ["", "0", "12.5", "12,5", null]) expect(taskPriceProblem(fine)).toBeNull();
+    expect(readPrice("12,5")).toBe(12.5);
+    expect(readPrice("0")).toBe(0);
+    for (const none of ["", "30%", "-5", "abc", "1,250"]) expect(readPrice(none)).toBeNull();
+  });
+
+  it("keeps the price a task has when handed something that is not one", () => {
+    // A number box gave back nothing for "12,5", which cleared the price.
+    let s = setTaskPrice(addTask(base, "p1", { id: "t1", label: "x" }, T), "p1", "t1", "35");
+    for (const bad of ["-5", "abc", "1,250", "30%"]) {
+      s = setTaskPrice(s, "p1", "t1", bad);
+      expect(findTask(proj(s), "t1").price).toBe(35);
+    }
+    expect(findTask(proj(setTaskPrice(s, "p1", "t1", "12,5")), "t1").price).toBe(12.5);
+    expect(findTask(proj(setTaskPrice(s, "p1", "t1", "")), "t1").price).toBeNull();
   });
 });
 

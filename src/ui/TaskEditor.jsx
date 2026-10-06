@@ -1,7 +1,7 @@
 import { wordsFor } from "./words.js";
 import { useState } from "react";
 import { formatMoney } from "../domain/money.js";
-import { RATE_PROBLEM, taskRateInput, taskRateProblem } from "../domain/tasks.js";
+import { RATE_PROBLEM, taskPriceProblem, taskRateInput, taskRateProblem } from "../domain/tasks.js";
 import { TASK, taskState } from "../domain/taskState.js";
 
 /** What the second date is called, which is what actually happened to the
@@ -20,6 +20,22 @@ const RATE_WORDS = {
   [RATE_PROBLEM.AMBIGUOUS]: (typed) =>
     `“${typed}” could be ${typed.replace(",", "")} or ${typed.replace(",", ".")}. Type it without `
     + "the comma, or with a point before the decimals.",
+};
+
+/** The same for a price box, which takes an amount and never a share. */
+const PRICE_WORDS = {
+  ...RATE_WORDS,
+  [RATE_PROBLEM.UNREADABLE]: (typed) => `“${typed}” isn't a price. Type an amount such as 12.5.`,
+  [RATE_PROBLEM.NEGATIVE]: () => "A price can't be below zero. Type 0 if an accepted item pays nothing here.",
+};
+
+/** What a pay box that cannot be saved says. `price` for what an accepted
+ *  item pays, otherwise a rate, which may also be a share of the base, so its
+ *  percent sign is left off what is quoted back. Shared with the box that
+ *  prices a task as it is made, so both say it alike. */
+export const payProblemWords = (problem, typed, price = false) => {
+  const text = String(typed ?? "").trim();
+  return price ? PRICE_WORDS[problem](text) : RATE_WORDS[problem](text.replace(/%$/, "").trim());
 };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -73,9 +89,9 @@ export default function TaskEditor({
    * holds, so each box says what is wrong and Save waits until it is right.
    */
   const rateIssue = taskRateProblem(rate);
-  // A number box hands back "" for anything it cannot read, so all that is
-  // left to refuse in a price is a figure below zero.
-  const priceIssue = piece && price.trim() !== "" && Number(price) < 0;
+  // Read as the rate box is read. A number box would hand back "" for a
+  // decimal comma, which saved as no price at all.
+  const priceIssue = piece ? taskPriceProblem(price) : null;
   // Another task already called this. A name is how a typed task is found,
   // so two sharing one would leave the second unreachable by it.
   const clash = label.trim() ? nameTakenBy(label) : null;
@@ -126,13 +142,13 @@ export default function TaskEditor({
       {piece && (
         <label className="field">
           <span className="eyebrow">Per accepted item ({currency})</span>
-          <input className="inp" type="number" min="0" step="any" value={price}
-                 placeholder={`empty = ${formatMoney(Math.round(projectPrice * 100), currency)}, the project&apos;s price`}
+          <input className="inp" inputMode="decimal" value={price}
+                 placeholder={`empty = ${formatMoney(Math.round(projectPrice * 100), currency)}, the project's price`}
                  onChange={(e) => setPrice(e.target.value)}
                  onKeyDown={(e) => e.key === "Enter" && save()} />
           {priceIssue && (
             <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
-              A price can&apos;t be below zero. Type 0 if an accepted item pays nothing here.
+              {payProblemWords(priceIssue, price, true)}
             </span>
           )}
         </label>
@@ -145,7 +161,7 @@ export default function TaskEditor({
                onKeyDown={(e) => e.key === "Enter" && save()} />
         {rateIssue && (
           <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
-            {RATE_WORDS[rateIssue](rate.trim().replace(/%$/, "").trim())}
+            {payProblemWords(rateIssue, rate)}
           </span>
         )}
       </label>
