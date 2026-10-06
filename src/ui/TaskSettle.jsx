@@ -52,38 +52,67 @@ const fromInput = (text, fallback) => {
   return Number.isFinite(at) ? at : fallback;
 };
 
+/** A moment to the minute, read back through the box's own format, so what is
+ *  recorded is exactly what the box shows. */
+const toMinute = (t) => fromInput(toInput(t), t);
+
+/** A moment in words, for the hint that says what each button will record. */
+const spoken = (t) => new Date(t).toLocaleString(undefined, {
+  weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+});
+
 export default function TaskSettle({
-  project, taskIds, rows, sharedOwedIds, allIds, now = Date.now(), lastWorkedAt = null,
+  project, taskIds, rows, sharedOwedIds, allIds, now = Date.now(), lastWorkedOn = () => null,
   onSubmit, onAnswer, onReopen, onReward, onPay, onSelectAll, onClear,
 }) {
   const [rewarding, setRewarding] = useState(false);
   const [form, setForm] = useState({ amount: "", note: "" });
   /**
-   * The day the thing being recorded actually happened.
+   * A time typed into the box, or null while the defaults stand.
    *
-   * Which day that is depends on what you are recording, so the default does
-   * too. SUBMITTING is dated from the last sitting on these tasks, because
-   * work is nearly always handed in as it is finished. An ANSWER is dated
-   * from today, because you are entering it as you read it — and nothing
-   * about when you did the work says when somebody else got round to it.
+   * Which moment a button records depends on what it records. SUBMITTING is
+   * dated from the end of the last sitting on the tasks being handed in,
+   * because work is nearly always handed in as it is finished. An ANSWER is
+   * dated from the minute you press it, because you are entering it as you
+   * read it — and nothing about when you did the work says when somebody else
+   * got round to it.
    *
-   * The answer's date is the one that now decides a payday, so getting its
+   * So the defaults are worked out at the CLICK, from what is selected then.
+   * Fixing one when the bar opened went stale twice over: a selection changed
+   * after it (an open task ticked and then unticked) kept the first one's
+   * last sitting, and a bar left open across a cutoff kept a minute that had
+   * passed — either way an acceptance stored a payday early. Once a time is
+   * typed it is what every button records, because then it is a fact you
+   * have stated rather than a guess about which one you meant.
+   *
+   * The answer's time is the one that decides a payday, so getting its
    * default wrong is a whole pay period, not a cosmetic nicety.
    */
-  const [when, setWhen] = useState(() => toInput(
-    taskIds.some((id) => isOpenTask(findTask(project, id))) ? (lastWorkedAt ?? now) : now,
-  ));
+  const [typed, setTyped] = useState(null);
 
   const currency = project.currency;
   const model = rewardModel(project);
   const msOf = (id) => rows.find((r) => r.taskId === id)?.billedMs ?? 0;
-  const happenedAt = () => fromInput(when, now);
 
   const open = taskIds.filter((id) => isOpenTask(findTask(project, id)));
   // Anything handed in can be answered, including something answered before.
   // Re-answering is idempotent, so offering it costs nothing and withholding
   // it would strand a mistaken rejection.
   const stated = taskIds.filter((id) => taskState(findTask(project, id)) !== null);
+
+  const typedAt = typed === null ? null : fromInput(typed, null);
+  /** When the last sitting on the open tasks ended, as of `at` — a sitting
+   *  still running ends when they are handed in — or null where they have
+   *  none, which leaves the moment itself. */
+  const lastSitting = (at) => lastWorkedOn(open, at);
+  const submitDefault = (at) => toMinute(lastSitting(at) ?? at);
+  // Read from the clock at the click, not from `now`, which is only as fresh
+  // as the last render.
+  const submitAt = () => typedAt ?? submitDefault(Date.now());
+  const answerAt = () => typedAt ?? toMinute(Date.now());
+  // The box shows what will be recorded: the submission time where there is
+  // something to submit, the current minute where there are only answers.
+  const shown = typed ?? toInput(open.length > 0 ? submitDefault(now) : now);
 
   // What submitting the open ones would record. A null amount contributes
   // nothing rather than counting as zero — an unpriced task records no line.
@@ -113,16 +142,16 @@ export default function TaskSettle({
           {owed > 0 && ` · ${formatMoney(owed, currency)} to claim`}
         </span>
         {open.length > 0 && (
-          <button className="btn primary" onClick={() => onSubmit(open, happenedAt())}>
+          <button className="btn primary" onClick={() => onSubmit(open, submitAt())}>
             Submit {open.length}
           </button>
         )}
         {stated.length > 0 && (
           <>
-            <button className="btn primary" onClick={() => onAnswer(stated, TASK.ACCEPTED, happenedAt())}>
+            <button className="btn primary" onClick={() => onAnswer(stated, TASK.ACCEPTED, answerAt())}>
               Accepted {stated.length}
             </button>
-            <button className="btn ghost" onClick={() => onAnswer(stated, TASK.CANCELLED, happenedAt())}>
+            <button className="btn ghost" onClick={() => onAnswer(stated, TASK.CANCELLED, answerAt())}>
               Rejected {stated.length}
             </button>
           </>
@@ -130,10 +159,14 @@ export default function TaskSettle({
         {(open.length > 0 || stated.length > 0) && (
           <label className="selbar-when">
             <span className="eyebrow">On</span>
-            <input className="inp" type="datetime-local" value={when}
+            {/* Clearing the box is the other way back to the defaults. */}
+            <input className="inp" type="datetime-local" value={shown}
                    aria-label="When this happened"
-                   onChange={(e) => setWhen(e.target.value)} />
+                   onChange={(e) => setTyped(e.target.value || null)} />
           </label>
+        )}
+        {typed !== null && (
+          <button className="linkish" onClick={() => setTyped(null)}>use the defaults</button>
         )}
         <button className="btn ghost" onClick={() => setRewarding((v) => !v)}>
           {rewarding ? "Cancel reward" : "One reward"}
@@ -203,10 +236,28 @@ export default function TaskSettle({
               again — while reopening one only handed in leaves its money alone.{" "}
             </>
           )}
-          The time beside the buttons is when this happened, not when you
-          tick the box. On an answer it decides which pay period the money
-          falls in, to the minute of the cutoff, so an acceptance recorded late
-          slips a whole payday.
+          {/* What each button will record, said outright: the box can show
+              only one time, and with both kinds of task ticked the two
+              defaults differ. */}
+          {typedAt !== null ? (
+            <>
+              Every button records the time in the box,{" "}
+              <strong>{spoken(typedAt)}</strong>.{" "}
+            </>
+          ) : (
+            <>
+              {open.length > 0 && (lastSitting(now) === null
+                ? "Submit records the minute you press it"
+                : <>Submit records <strong>{spoken(submitDefault(now))}</strong>, when the last
+                  sitting on {these} ended</>)}
+              {open.length > 0 && stated.length > 0 && "; "}
+              {stated.length > 0 && "Accepted and Rejected record the minute you press them"}
+              {". Type a time in the box and every button records that instead. "}
+            </>
+          )}
+          The time is when this happened, not when you tick the box. On an answer it
+          decides which pay period the money falls in, to the minute of the cutoff, so an
+          acceptance recorded late slips a whole payday.
         </p>
       )}
 

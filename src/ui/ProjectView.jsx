@@ -230,15 +230,21 @@ export default function ProjectView({
    * buttons doing the same thing to the same line.
    */
   /**
-   * When the last sitting on the picked tasks ended.
+   * When the last sitting on some tasks ended, or null where they have none.
    *
-   * The default date for submitting, because work is nearly always handed in
-   * as it is finished — and when a pay cutoff falls between finishing and
-   * remembering to tick the box, the difference is a whole payday.
+   * The default time for submitting them, because work is nearly always
+   * handed in as it is finished — and when a pay cutoff falls between
+   * finishing and remembering to tick the box, the difference is a whole
+   * payday. Asked of the tasks actually being submitted, at the click, rather
+   * than of everything ticked when the bar opened: a task already handed in
+   * and ticked alongside has a last sitting that says nothing about these. A
+   * sitting still running ends when they go in, because submitting stops it,
+   * so it counts as ending at `at`.
    */
-  const lastWorkedAt = sessions
-    .filter((s) => pickedTasks.includes(s.taskId))
-    .reduce((latest, s) => Math.max(latest, lastActivityAt(s) ?? 0), 0) || null;
+  const lastWorkedOn = (ids, at) => sessions
+    .filter((s) => ids.includes(s.taskId))
+    .reduce((latest, s) => Math.max(latest, isRunning(s) ? at : (lastActivityAt(s) ?? 0)), 0)
+    || null;
 
   const sharedOwedIds = earnings
     .filter((e) => !e.deletedAt && isPending(e) && tasksOf(e).length > 1
@@ -577,7 +583,7 @@ export default function ProjectView({
             <TaskSettle
               project={project} taskIds={pickedTasks} rows={taskRows}
               sharedOwedIds={sharedOwedIds} allIds={pickable}
-              now={now} lastWorkedAt={lastWorkedAt}
+              now={now} lastWorkedOn={lastWorkedOn}
               onSubmit={(ids, at) => { onSubmitTasks(ids, at); setPickedTasks([]); }}
               onAnswer={(ids, answer, at) => { onAnswerTasks(ids, answer, at); setPickedTasks([]); }}
               onReopen={(ids) => { onReopenTasks(ids); setPickedTasks([]); }}

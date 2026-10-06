@@ -6343,4 +6343,83 @@ describe("fixes: paydays and settling", () => {
     expect(d.querySelector(".runbar")).toBeNull();
     expect(d.querySelector(".toast").textContent).toMatch(/The meter on it is stopped/);
   }, 30_000);
+
+  /** Task 1234 still open, last worked two days ago; task 1235 handed in an
+   *  hour ago, its sitting ending just before. */
+  const openAndHandedIn = () => {
+    const now = Date.now();
+    const sitting = (id, taskId, endedAgo) => ({
+      id, projectId: "a", kind: "billed", taskId, rate: 40, currency: "USD",
+      createdAt: now - endedAgo - HOUR, closedAt: now - endedAgo, deletedAt: null,
+      segments: [{ startedAt: now - endedAgo - HOUR, endedAt: now - endedAgo }],
+    });
+    return {
+      projects: [{
+        id: "a", name: "Gateway", currentRate: 40, currency: "USD", createdAt: now - 80 * HOUR,
+        sessionGoal: null, overallGoal: null,
+        tasks: [
+          { id: "t1", label: "1234", createdAt: now - 80 * HOUR },
+          { id: "t2", label: "1235", createdAt: now - 80 * HOUR,
+            state: "submitted", stateAt: now - HOUR, submittedAt: now - HOUR },
+        ],
+      }],
+      sessions: [sitting("s1", "t1", 50 * HOUR), sitting("s2", "t2", 2 * HOUR)],
+      earnings: [],
+    };
+  };
+  /** A moment cut to its minute on the local clock, as the box records it. */
+  const minuteOf = (t) => new Date(t).setSeconds(0, 0);
+
+  it("dates an answer at the minute it is pressed, whatever was ticked when the bar opened", async () => {
+    // The box used to take its default once, from the first selection: tick
+    // an open task, tick a submitted one, untick the open one, and Accepted
+    // recorded the open task's last sitting — two days early, a payday early.
+    const seed = openAndHandedIn();
+    const { dom, d } = await openFirst(seed);
+    await tick(d, "1234");
+    await tick(d, "1235");
+    await tick(d, "1234");
+    const before = minuteOf(Date.now());
+    await press(d, /^Accepted 1$/);
+
+    const t2 = stored(dom).projects[0].tasks.find((t) => t.id === "t2");
+    expect(t2.state).toBe("accepted");
+    expect(t2.stateAt).toBeGreaterThanOrEqual(before);
+    expect(t2.stateAt).toBeLessThanOrEqual(Date.now());
+  }, 30_000);
+
+  it("dates a submission from the open task's last sitting, not from one already handed in", async () => {
+    const seed = openAndHandedIn();
+    const { dom, d } = await openFirst(seed);
+    await tick(d, "1234");
+    await tick(d, "1235");
+    // Both defaults are said outright, because the box can show only one.
+    const hint = [...d.querySelectorAll(".hint")].map((h) => h.textContent).join(" ");
+    expect(hint).toMatch(/Submit records .*when the last sitting on this task ended/);
+    expect(hint).toMatch(/Accepted and Rejected record the minute you press them/);
+    await press(d, /^Submit 1$/);
+
+    const t1 = stored(dom).projects[0].tasks.find((t) => t.id === "t1");
+    expect(t1.submittedAt).toBe(minuteOf(seed.sessions[0].closedAt));
+  }, 30_000);
+
+  it("uses a typed time for every button until it is put back to the defaults", async () => {
+    const { dom, d } = await openFirst(openAndHandedIn());
+    await tick(d, "1235");
+    const box = d.querySelector(".selbar-when input");
+    const typed = minuteOf(Date.now() - 30 * HOUR);
+    const p = (n) => String(n).padStart(2, "0");
+    const x = new Date(typed);
+    setValue(dom.window, box,
+      `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`);
+    await wait(150);
+    expect(d.querySelector(".wrap").textContent).toMatch(/Every button records the time in the box/);
+    btn(d, /^use the defaults$/).click();
+    await wait(150);
+    expect(d.querySelector(".wrap").textContent).not.toMatch(/Every button records the time in the box/);
+    const before = minuteOf(Date.now());
+    await press(d, /^Rejected 1$/);
+    expect(stored(dom).projects[0].tasks.find((t) => t.id === "t2").stateAt)
+      .toBeGreaterThanOrEqual(before);
+  }, 30_000);
 });
