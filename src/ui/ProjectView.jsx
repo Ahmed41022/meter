@@ -12,6 +12,7 @@ import {
   paysOnAcceptance, perTask, priceFor, taskPay, tasksOf,
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
+import { TASK, taskState } from "../domain/taskState.js";
 import {
   ORDER, ORDERS, findTask, nameTakenBy, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
   taskTotals, UNASSIGNED,
@@ -37,6 +38,26 @@ const MS_PER_HOUR = 3_600_000;
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
+/** What marking these sessions would say against their tasks' answers: how
+ *  many it touches, under what, and what the mark would claim about them. */
+const contradiction = (status, { rejected, accepted }) => {
+  const n = rejected + accepted;
+  const under = rejected && accepted
+    ? `rejected tasks (${rejected}) and accepted ones (${accepted})`
+    : rejected
+      ? (rejected === 1 ? "a rejected task" : "rejected tasks")
+      : (accepted === 1 ? "an accepted task" : "accepted tasks");
+  const claim = status === PAY.PAID
+    ? "money came in for work that was turned down"
+    : !accepted
+      ? "money is still to come for work that was turned down"
+      : !rejected
+        ? "work already accepted is still waiting to be paid"
+        : "money is still to come for work that has already been answered";
+  return `${n} of the selected sessions ${n === 1 ? "is" : "are"} under ${under}. Marking `
+    + `${n === 1 ? "it" : "them"} ${status === PAY.PAID ? "paid" : "pending"} says ${claim}.`;
+};
+
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
@@ -60,6 +81,9 @@ export default function ProjectView({
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
   const [bulkPrompt, setBulkPrompt] = useState(false);
+  // A mark waiting on a yes because it would contradict a task's answer.
+  // Tied to the rows it was asked about, so changing the selection drops it.
+  const [asked, setAsked] = useState(null);           // {status, ids} | null
   const [pickedTasks, setPickedTasks] = useState([]); // task ids picked for settling
   // How the task list reads. Most-earned-first to begin with, as it always
   // was; the other orders answer questions that one cannot.
@@ -171,6 +195,41 @@ export default function ProjectView({
   const selecting = selected.length > 0;
   const toggleSelect = (id) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+
+  /**
+   * How many selected sessions a mark would set against their task's answer.
+   *
+   * A rejected task's sessions are cancelled because the work was turned
+   * down, so marking them paid or pending says money is coming for it. An
+   * accepted task's are paid, so marking them pending says it is still to
+   * come. Either can be meant — an answer overturned later, a payment that
+   * bounced — but it is far more often a row ticked by mistake, so the bar
+   * says so and waits for a yes. Nothing else is asked about.
+   */
+  const against = (status) => {
+    const count = { rejected: 0, accepted: 0 };
+    for (const s of ordered) {
+      if (!selected.includes(s.id) || !s.taskId) continue;
+      const answer = taskState(findTask(project, s.taskId));
+      if (answer === TASK.CANCELLED) count.rejected += 1;
+      else if (answer === TASK.ACCEPTED && status === PAY.PENDING) count.accepted += 1;
+    }
+    return count;
+  };
+  const mark = (status, anyway = false) => {
+    const count = against(status);
+    if (!anyway && count.rejected + count.accepted > 0) {
+      setAsked({ status, ids: selected });
+      return;
+    }
+    onSetPayStateMany(selected, status);
+    setSelected([]);
+    setAsked(null);
+  };
+  const askedAbout = asked && asked.ids.length === selected.length
+    && asked.ids.every((id) => selected.includes(id)) ? asked.status : null;
+  const objection = askedAbout ? against(askedAbout) : null;
+  const askedNow = objection && objection.rejected + objection.accepted > 0 ? askedAbout : null;
 
   const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now);
   const hasTasks = rawTaskRows.some((r) => r.taskId);
@@ -709,21 +768,30 @@ export default function ProjectView({
 
         {selecting && (
           <div className="selbar">
-            <span className="selbar-count">{selected.length} selected</span>
-            <button className="btn primary" onClick={() => setBulkPrompt(true)}>
-              {w.assign}
-            </button>
-            {/* Work paid on acceptance arrives pending and is settled in
-                batches, which is how it actually gets approved. */}
-            <button className="btn ghost" onClick={() => {
-              onSetPayStateMany(selected, PAY.PAID);
-              setSelected([]);
-            }}>Mark paid</button>
-            <button className="btn ghost" onClick={() => {
-              onSetPayStateMany(selected, PAY.PENDING);
-              setSelected([]);
-            }}>Mark pending</button>
-            <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
+            {askedNow ? (
+              <>
+                <span className="selbar-count" role="alert"
+                      style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+                  {contradiction(askedNow, objection)}
+                </span>
+                <button className="btn primary" onClick={() => mark(askedNow, true)}>
+                  Mark {askedNow === PAY.PAID ? "paid" : "pending"} anyway
+                </button>
+                <button className="btn ghost" onClick={() => setAsked(null)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <span className="selbar-count">{selected.length} selected</span>
+                <button className="btn primary" onClick={() => setBulkPrompt(true)}>
+                  {w.assign}
+                </button>
+                {/* Work paid on acceptance arrives pending and is settled in
+                    batches, which is how it actually gets approved. */}
+                <button className="btn ghost" onClick={() => mark(PAY.PAID)}>Mark paid</button>
+                <button className="btn ghost" onClick={() => mark(PAY.PENDING)}>Mark pending</button>
+                <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
+              </>
+            )}
           </div>
         )}
 

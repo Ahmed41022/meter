@@ -6091,6 +6091,78 @@ describe("fixes: editors and entry forms", () => {
     await wait(200);
     expect(closing()).toBe(false);
   }, 30_000);
+
+  /** One sitting under each kind of task: rejected, with its money
+   *  cancelled; accepted, and paid; and one still being worked. */
+  const oneOfEach = () => {
+    const at = minute(Date.now()) - 9 * HOUR;
+    const answered = (state) => ({ state, stateAt: at + 6 * HOUR, submittedAt: at + 5 * HOUR });
+    return {
+      projects: [project("p1", "Acme", {
+        tasks: [
+          { id: "tr", label: "T-r", createdAt: at, ...answered("cancelled") },
+          { id: "ta", label: "T-a", createdAt: at, ...answered("accepted") },
+          { id: "to", label: "T-o", createdAt: at },
+        ],
+      })],
+      sessions: [
+        sitting("sr", "p1", "tr", at, at + HOUR, { status: "cancelled" }),
+        sitting("sa", "p1", "ta", at + 2 * HOUR, at + 3 * HOUR),
+        sitting("so", "p1", "to", at + 4 * HOUR, at + 5 * HOUR),
+      ],
+    };
+  };
+  const pick = async (d, label) => {
+    ledgerRow(d, label).querySelector(".row-check").click();
+    await wait(150);
+  };
+  const statusOf = (dom, id) => stored(dom).sessions.find((x) => x.id === id).status;
+
+  it("asks before marking a rejected task's session paid, and marks it once told to", async () => {
+    const { dom, d } = await openProject(oneOfEach(), "Acme");
+    await pick(d, "T-r");
+    btn(d, /^Mark paid$/).click();
+    await wait(200);
+
+    expect(d.querySelector(".selbar").textContent).toMatch(
+      /1 of the selected sessions is under a rejected task\. Marking it paid says money came in for work that was turned down\./);
+    expect(statusOf(dom, "sr")).toBe("cancelled");
+
+    btn(d, /^Mark paid anyway$/).click();
+    await wait(250);
+    expect(statusOf(dom, "sr")).toBeUndefined();
+    expect(d.querySelector(".selbar")).toBeNull();
+  }, 30_000);
+
+  it("asks before marking an accepted task's session pending, and Cancel leaves it be", async () => {
+    const { dom, d } = await openProject(oneOfEach(), "Acme");
+    await pick(d, "T-a");
+    btn(d, /^Mark pending$/).click();
+    await wait(200);
+
+    expect(d.querySelector(".selbar").textContent).toMatch(
+      /1 of the selected sessions is under an accepted task\. Marking it pending says work already accepted is still waiting to be paid\./);
+    btn(d, /^Cancel$/).click();
+    await wait(200);
+    expect(d.querySelector(".selbar-count").textContent).toBe("1 selected");
+    expect(statusOf(dom, "sa")).toBeUndefined();
+  }, 30_000);
+
+  it("marks without asking when nothing it touches contradicts a task", async () => {
+    const { dom, d } = await openProject(oneOfEach(), "Acme");
+    await pick(d, "T-o");
+    btn(d, /^Mark pending$/).click();
+    await wait(250);
+    expect(statusOf(dom, "so")).toBe("pending");
+    expect(d.querySelector(".selbar")).toBeNull();
+
+    // Paid is what an accepted task's sessions already are, so it says nothing.
+    await pick(d, "T-a");
+    btn(d, /^Mark paid$/).click();
+    await wait(250);
+    expect(d.querySelector(".selbar")).toBeNull();
+    expect(statusOf(dom, "sa")).toBeUndefined();
+  }, 30_000);
 });
 
 describe("fixes: found in review", () => {
