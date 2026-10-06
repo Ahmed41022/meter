@@ -250,13 +250,26 @@ export const removeTask = (state, projectId, taskId) => ({
   ),
 });
 
+/**
+ * Another task on the project already answering to this name, or null.
+ *
+ * Compared the way a typed name is looked up, trimmed and regardless of case,
+ * because being looked up is what a name is for: with two tasks called "T-b"
+ * the prompt resolves that name to whichever came first, and the other can
+ * never be reached by it again.
+ */
+export const nameTakenBy = (project, label, exceptId = null) =>
+  tasksFor(project).find((t) => t.id !== exceptId && key(t.label) === key(label)) ?? null;
+
+/** Refuses a name another task already has, the same way `addTask` refuses
+ *  to mint a second task under one. Its own name in another case is fine. */
 export const renameTask = (state, projectId, taskId, label) => {
   const clean = normaliseLabel(label);
   if (!clean) return state;
   return {
     ...state,
     projects: state.projects.map((p) =>
-      p.id === projectId
+      p.id === projectId && !nameTakenBy(p, clean, taskId)
         ? { ...p, tasks: tasksFor(p).map((t) => (t.id === taskId ? { ...t, label: clean } : t)) }
         : p
     ),

@@ -5953,4 +5953,19 @@ describe("fixes: editors and entry forms", () => {
     await wait(300);
     expect(stored(dom).projects[0].tasks[1].rate).toBe(12.5);
   }, 30_000);
+
+  it("refuses to give a task another task's name", async () => {
+    // Two tasks could both be "T-b", and the prompt then resolved the name to
+    // the first one, leaving the second out of reach by name.
+    const { dom, d } = await openProject(twoTasks(), "Acme");
+    await press(taskRow(d, "T-2"), "edit");
+    const form = d.querySelector(".prompt");
+    setValue(dom.window, field(form, "^Name$"), " t-1 ");
+    await wait(150);
+
+    expect(form.querySelector(".hint.warn").textContent)
+      .toMatch(/Another task is already called “T-1”/);
+    expect(btn(d, /^Save$/).disabled).toBe(true);
+    expect(stored(dom).projects[0].tasks.map((t) => t.label)).toEqual(["T-1", "T-2"]);
+  }, 30_000);
 });

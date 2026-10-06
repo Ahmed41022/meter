@@ -42,7 +42,7 @@ const fromInput = (value) => {
  */
 export default function TaskEditor({
   task, currency, projectRate, projectPrice = null, sessionCount,
-  onSave, onDelete, onCancel, words = wordsFor(false),
+  nameTakenBy = () => null, onSave, onDelete, onCancel, words = wordsFor(false),
 }) {
   const [label, setLabel] = useState(task.label);
   // Shown back as it was meant, so "30%" does not reappear as 4.92 and turn a
@@ -76,7 +76,10 @@ export default function TaskEditor({
   // A number box hands back "" for anything it cannot read, so all that is
   // left to refuse in a price is a figure below zero.
   const priceIssue = piece && price.trim() !== "" && Number(price) < 0;
-  const blocked = Boolean(rateIssue || priceIssue);
+  // Another task already called this. A name is how a typed task is found,
+  // so two sharing one would leave the second unreachable by it.
+  const clash = label.trim() ? nameTakenBy(label) : null;
+  const blocked = Boolean(rateIssue || priceIssue || clash);
 
   const save = () => !blocked && onSave({
     label: label.trim() || task.label,
@@ -113,6 +116,12 @@ export default function TaskEditor({
         <span className="eyebrow">Name</span>
         <input className="inp" value={label} autoFocus onChange={(e) => setLabel(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && save()} />
+        {clash && (
+          <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+            Another {words.task} is already called “{clash.label}”. A name is how a typed
+            {" "}{words.task} is found, so two can&apos;t share one.
+          </span>
+        )}
       </label>
       {piece && (
         <label className="field">

@@ -3,6 +3,7 @@ import {
   addTask, findTask, findTaskByLabel, normaliseLabel, rateFor, removeTask, renameTask,
   resolveTaskId, sessionsUnderTask, setTaskNote, setTaskRate, setTaskPrice, taskLabel, taskTotals, tasksFor,
   parseTaskRate, taskRateInput, ORDER, sortTaskRows, UNASSIGNED, RATE_PROBLEM, taskRateProblem,
+  nameTakenBy,
 } from "../src/domain/tasks.js";
 import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
@@ -87,6 +88,23 @@ describe("renaming", () => {
     let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
     s = renameTask(s, "p1", "t1", "  ");
     expect(taskLabel(proj(s), "t1")).toBe("1234");
+  });
+
+  it("refuses a name another task already has, however it is typed", () => {
+    // A name is how a typed task is found. With two tasks called "T-b" the
+    // prompt resolved that name to the first, and the second was out of reach.
+    let s = addTask(base, "p1", { id: "t1", label: "Task-A" }, T);
+    s = addTask(s, "p1", { id: "t2", label: "Task-B" }, T);
+    s = renameTask(s, "p1", "t2", "  task-a ");
+    expect(taskLabel(proj(s), "t2")).toBe("Task-B");
+    expect(nameTakenBy(proj(s), " TASK-A", "t2")?.id).toBe("t1");
+  });
+
+  it("lets a task change how its own name is written", () => {
+    let s = addTask(base, "p1", { id: "t1", label: "task-a" }, T);
+    s = renameTask(s, "p1", "t1", "Task-A");
+    expect(taskLabel(proj(s), "t1")).toBe("Task-A");
+    expect(nameTakenBy(proj(s), "task-a", "t1")).toBeNull();
   });
 });
 

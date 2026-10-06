@@ -13,7 +13,7 @@ import {
 } from "../domain/earnings.js";
 import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
 import {
-  ORDER, ORDERS, findTask, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
+  ORDER, ORDERS, findTask, nameTakenBy, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
   taskTotals, UNASSIGNED,
 } from "../domain/tasks.js";
 import TaskPrompt from "./TaskPrompt.jsx";
@@ -597,6 +597,7 @@ export default function ProjectView({
                 projectRate={project.currentRate}
                 projectPrice={perTask(project)}
                 sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
+                nameTakenBy={(label) => nameTakenBy(project, label, editingTask)}
                 onCancel={() => setEditingTask(null)}
                 onSave={(patch) => { onSaveTask(editingTask, patch); setEditingTask(null); }}
                 onDelete={() => {
