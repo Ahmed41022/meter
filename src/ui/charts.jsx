@@ -28,12 +28,19 @@ const pct = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0);
  *
  * `goodWhenUp` is explicit because direction and desirability are separate
  * questions: more billed time is good news, more idle time is not.
+ *
+ * `unit` names the currency a change is in, where money in several is
+ * compared one currency at a time; `bare` leaves the "vs" off all but the
+ * last of such a run, so it is said once.
  */
-export function Delta({ ratio, goodWhenUp = true, label }) {
+export function Delta({ ratio, goodWhenUp = true, label, unit = null, bare = false }) {
+  const named = unit ? `${unit} ` : "";
+  const vs = bare ? null : <span className="delta-vs"> vs {label}</span>;
   if (ratio === null || ratio === undefined) {
     return (
-      <span className="delta none" title={`Nothing from ${label} to compare with`}>
-        —<span className="delta-vs"> vs {label}</span>
+      <span className="delta none"
+            title={`Nothing ${unit ? `in ${unit} ` : ""}from ${label} to compare with`}>
+        {named}—{vs}
       </span>
     );
   }
@@ -41,8 +48,8 @@ export function Delta({ ratio, goodWhenUp = true, label }) {
   const tone = rounded === 0 ? "flat" : (rounded > 0) === goodWhenUp ? "up" : "down";
   return (
     <span className={`delta ${tone}`}>
-      {rounded > 0 ? "+" : rounded < 0 ? "−" : ""}{Math.abs(rounded)}%
-      <span className="delta-vs"> vs {label}</span>
+      {named}{rounded > 0 ? "+" : rounded < 0 ? "−" : ""}{Math.abs(rounded)}%
+      {vs}
     </span>
   );
 }
@@ -116,8 +123,16 @@ export function SplitBar({ billedMs, idleMs, share }) {
  * Columns are capped at 24px and centred in their slot, so a seven-bar week
  * doesn't render as seven slabs. Adjacent columns and the two stacked segments
  * are all separated by a 2px gap in the surface colour, never by a border.
+ *
+ * A column's tooltip names each currency's money on its own line, in the
+ * headline's order (`currencies`). Added together, $40 and EGP 300 printed
+ * as "EGP 340.00", and a column of $30 alone came out labelled in pounds.
  */
-export function TrendChart({ trend, period, currency, emptyNote }) {
+export function TrendChart({ trend, period, currencies = [], emptyNote }) {
+  const order = (cur) => {
+    const at = currencies.indexOf(cur);
+    return at === -1 ? currencies.length : at;
+  };
   const peak = Math.max(...trend.map((b) => b.billedMs + b.idleMs), 0);
   const anyIdle = trend.some((b) => b.idleMs > 0);
 
@@ -135,7 +150,9 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
       <div className="trend-plot">
         {trend.map((b) => {
           const total = b.billedMs + b.idleMs;
-          const cents = Object.values(b.billedCents).reduce((a, c) => a + c, 0);
+          const amounts = Object.entries(b.billedCents)
+            .filter(([, c]) => c > 0)
+            .sort((x, y) => order(x[0]) - order(y[0]));
           const when = new Date(b.from).toLocaleString(undefined, {
             weekday: "short", day: "numeric", month: "short",
             ...(period === "day" ? { hour: "2-digit", minute: "2-digit" } : {}),
@@ -161,7 +178,7 @@ export function TrendChart({ trend, period, currency, emptyNote }) {
                   <strong>{when}</strong>
                   <span>{formatShortDuration(b.billedMs)} billed</span>
                   {b.idleMs > 0 && <span className="ttip-idle">{formatShortDuration(b.idleMs)} idle</span>}
-                  {cents > 0 && <span>{formatMoney(cents, currency)}</span>}
+                  {amounts.map(([cur, c]) => <span key={cur}>{formatMoney(c, cur)}</span>)}
                 </div>
               )}
             </div>

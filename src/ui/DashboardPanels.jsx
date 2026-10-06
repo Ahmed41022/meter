@@ -98,9 +98,12 @@ export function ByCompanyPanel({ show, companies, named, shares }) {
   );
 }
 
-/** Where the period's time and money actually went. */
+/** Where the period's time and money actually went. `rateCurrency` is the one
+ *  currency the ranking by the hour was taken in, and so the one its figures
+ *  are in. */
 export function ByProjectPanel({
-  rows, shownRows, ranked, byRate, top, widest, projectSort, setProjectSort, onOpenProject,
+  rows, shownRows, ranked, byRate, rateCurrency, top, widest, projectSort, setProjectSort,
+  onOpenProject,
 }) {
   return (
       <div className="sec">
@@ -152,7 +155,7 @@ export function ByProjectPanel({
                 </span>
                 <span className="prow-meta">
                   {byRate && perHour !== null
-                    && <strong>{formatMoney(perHour, project.currency)}/hr · </strong>}
+                    && <strong>{formatMoney(perHour, rateCurrency)}/hr · </strong>}
                   {formatShortDuration(billedMs)} billed
                   {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
                   {/* Otherwise a project whose money is all waiting on

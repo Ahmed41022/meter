@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { utilisation } from "../domain/sessions.js";
 import { activeProjects, offClockProjects, workProjects } from "../domain/projects.js";
@@ -6,8 +6,8 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, comparisonRanges, concentration, effectiveRate, firstRecord, heatDepth,
-  revenueShare, streaks, untimedShare, worthPerHour,
+  byCompany, comparisonRanges, concentration, currenciesByWork, firstRecord, heatDepth,
+  hourlyRates, revenueShare, soleCurrency, streaks, worthPerHour,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -268,18 +268,29 @@ export default function DashboardView({
   const stretchShare = stretch ? shareOf(view.rhythm.hours, stretch.billedMs) : null;
   const behind = targets.filter((t) => t.state === "behind").length;
   const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
-  const earned = currenciesByValue(current.billedCents);
+  // The currency most of the period's hours were worked in leads, rather than
+  // whichever figure is the bigger number: EGP 300 is not more than $70.
+  const earned = currenciesByWork(current);
   const pending = currenciesByValue(current.pendingCents).filter(([, c]) => c !== 0);
   const share = utilisation(current.billedMs, current.idleMs);
   const active = activeBuckets(trend);
-  const lead = earned[0]?.[0] ?? projects[0]?.currency ?? "USD";
-  // What an hour came to, and what an hour of TIMED work came to. On work
-  // paid per accepted item those are different numbers, and quoting only the
-  // first one implies a clock measured money that no clock ever saw.
-  const untimed = untimedShare(current, lead);
-  const blendedRate = effectiveRate(current.billedCents[lead] ?? 0, current.billedMs);
-  const timedRate = effectiveRate(current.timedCents[lead] ?? 0, current.billedMs);
+  // What an hour came to, and what an hour of TIMED work came to, once for
+  // each currency, each over its own hours. On work paid per accepted item
+  // the two are different numbers, and quoting only the first one implies a
+  // clock measured money that no clock ever saw.
+  const rates = hourlyRates(current);
+  /** The one currency the period's money is in, or null when there are
+   *  several. The figures that set projects against each other — how much of
+   *  the money rides on one, and which paid best by the hour — exist only
+   *  within one currency: a share of a total that adds pounds to dollars is
+   *  not a share, and neither is a ranking that sets one against the other. */
+  const sole = soleCurrency(current.billedCents);
   const vs = offset < 0 ? BEFORE[period] : SO_FAR[period];
+  /** The headline's change, one figure per currency it lists — never one
+   *  figure for money that is in two. */
+  const moneyDeltas = previous
+    ? earned.map(([cur]) => [cur, deltaRatio(base.billedCents[cur] ?? 0, previous.billedCents[cur] ?? 0)])
+    : [];
   /** Bars are scaled to the longest desk time on screen. Scaling to the first
    *  row instead would break the moment a row below it had more idle time than
    *  the leader had billed — the rows are ordered by billed time, not total. */
@@ -288,10 +299,10 @@ export default function DashboardView({
   // What an hour came to, per project. Answers a different question from the
   // default order: not "where did the time go" but "which of these was worth
   // it" — and on work paid per accepted item those have different answers.
-  const ranked = worthPerHour(rows, lead);
+  const ranked = sole ? worthPerHour(rows, sole) : [];
   const byRate = projectSort === "rate" && ranked.length > 1;
   const shownRows = byRate ? ranked : rows;
-  const top = concentration(rows, lead);
+  const top = sole ? concentration(rows, sole) : null;
 
   // Today's focus is the same whichever period is on screen: what is left to
   // do now does not change because you are looking at last month.
@@ -339,10 +350,13 @@ export default function DashboardView({
             ))}
         <div className="dash-sub">
           {rangeNote(period, from, to)}
-          {previous && earned.length > 0 && (
-            <> · <Delta ratio={deltaRatio(base.billedCents[lead] ?? 0, previous.billedCents[lead] ?? 0)}
-                        label={vs} /></>
-          )}
+          {/* One currency reads as it always has. Several are each named, and
+              the comparison is said once, after the last of them. */}
+          {moneyDeltas.length === 1 && <> · <Delta ratio={moneyDeltas[0][1]} label={vs} /></>}
+          {moneyDeltas.length > 1 && moneyDeltas.map(([cur, ratio], i) => (
+            <Fragment key={cur}> · <Delta ratio={ratio} unit={cur} label={vs}
+                                          bare={i < moneyDeltas.length - 1} /></Fragment>
+          ))}
         </div>
         {/* Money still waiting on someone else's decision. Below the headline
             rather than inside it: the figure you glance at should be what has
@@ -407,20 +421,22 @@ export default function DashboardView({
           value={active} sub={`of ${trend.length}`} />
         {/* Both rates, because they answer different questions and only one of
             them is about the clock. Where nothing untimed was earned they are
-            the same number, so the second line would be noise and is dropped. */}
-        {blendedRate !== null && (
-          <StatTile label="An hour came to"
-                    value={`${formatMoney(blendedRate, lead)}/hr`}
+            the same number, so the second line would be noise and is dropped.
+            A tile for each currency the period was worked or paid in, since
+            no one figure can be an hour of two. */}
+        {rates.map(({ currency, rateCents, timedRateCents, untimed }) => (
+          <StatTile key={currency} label="An hour came to"
+                    value={`${formatMoney(rateCents, currency)}/hr`}
                     sub={untimed > 0.005
-                      ? `${formatMoney(timedRate, lead)}/hr on timed work · ${Math.round(untimed * 100)}% earned no tracked time`
+                      ? `${formatMoney(timedRateCents, currency)}/hr on timed work · ${Math.round(untimed * 100)}% earned no tracked time`
                       : "across billed time"} />
-        )}
+        ))}
       </div>
 
       <div className="sec">
         <div className="sec-head"><span className="eyebrow">Trend</span></div>
         <div className="panel">
-          <TrendChart trend={trend} period={period} currency={lead}
+          <TrendChart trend={trend} period={period} currencies={earned.map(([cur]) => cur)}
                       emptyNote={offset === 0 ? "Nothing recorded yet." : "Nothing recorded in this period."} />
         </div>
       </div>
@@ -438,7 +454,7 @@ export default function DashboardView({
                       shares={shares} />
 
       <ByProjectPanel rows={rows} shownRows={shownRows} ranked={ranked} byRate={byRate}
-                      top={top} widest={widest} projectSort={projectSort}
+                      rateCurrency={sole} top={top} widest={widest} projectSort={projectSort}
                       setProjectSort={setProjectSort} onOpenProject={onOpenProject} />
 
       {offRows.length > 0 && (

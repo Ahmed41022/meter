@@ -205,6 +205,11 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
   // actually timed. On a project paid per accepted item those are wildly
   // different numbers, and only showing one of them misleads.
   const timedCents = {};
+  // Billed time again, split by the currency it was worked in. A rate divides
+  // money by hours, and pounds divided by hours that earned dollars is a
+  // figure in no unit at all — so every per-hour figure takes its hours from
+  // here, in the currency of the money it divides.
+  const billedMsByCurrency = {};
   let billedMs = 0;
   let idleMs = 0;
 
@@ -219,7 +224,12 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
     // end: it threw away hours that were really spent, so a project whose
     // work was all turned down vanished from every breakdown, and the heat
     // map still shaded a day the headline above it called empty.
-    if (idle) idleMs += ms; else billedMs += ms;
+    if (idle) {
+      idleMs += ms;
+    } else {
+      billedMs += ms;
+      billedMsByCurrency[session.currency] = (billedMsByCurrency[session.currency] || 0) + ms;
+    }
     const cents = earningsCents(rateOf(session), ms);
     if (idle) {
       idleCents[session.currency] = (idleCents[session.currency] || 0) + cents;
@@ -242,7 +252,10 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
     into[earning.currency] = (into[earning.currency] || 0) + earning.cents;
   }
 
-  return { billedMs, idleMs, billedCents, idleCents, pendingCents, timedCents, cancelledCents };
+  return {
+    billedMs, idleMs, billedCents, idleCents, pendingCents, timedCents, cancelledCents,
+    billedMsByCurrency,
+  };
 };
 
 /** The share of settled money that no clock ever measured. Null when there is
@@ -260,6 +273,20 @@ export const untimedShare = ({ billedCents, timedCents }, currency) => {
  *  the top of the view. */
 export const currenciesByValue = (cents) =>
   Object.entries(cents).sort((a, b) => b[1] - a[1]);
+
+/**
+ * The currencies a window's settled money came in, the one most of its hours
+ * were worked in first.
+ *
+ * Also a display order and never a sum, but ranked by the hours rather than
+ * by the figure, because across currencies the figure says nothing: EGP 300
+ * is a bigger number than $70 and was a quarter of the work. Hours are the one
+ * quantity every currency shares. Money in a currency nothing was timed in —
+ * a bonus, an accepted item's price — follows, biggest first.
+ */
+export const currenciesByWork = ({ billedCents, billedMsByCurrency = {} }) =>
+  Object.entries(billedCents).sort((a, b) =>
+    (billedMsByCurrency[b[0]] ?? 0) - (billedMsByCurrency[a[0]] ?? 0) || b[1] - a[1]);
 
 /**
  * Signed change against the previous period, as a ratio of it.
@@ -457,6 +484,35 @@ export const effectiveRate = (cents, billedMs) =>
   billedMs > 0 ? Math.round(cents / (billedMs / MS_PER_HOUR)) : null;
 
 /**
+ * What an hour came to, once for each currency the window's hours or money
+ * were in, the currency most of the hours were worked in first.
+ *
+ * Each figure divides one currency's settled money by the hours worked in
+ * that currency and no other. Dividing EGP 300 by all four hours of a week in
+ * which three were dollar hours reported "EGP 75.00/hr", a rate nothing was
+ * ever paid at. A currency with money and no hours behind it has no rate and
+ * is left out; one with hours and nothing settled reads as nothing an hour,
+ * which is what rejected or unanswered work came to.
+ *
+ * `timedRateCents` is the same over only the money a clock measured, and
+ * `untimed` the share that no clock did, as `untimedShare` reads it.
+ */
+export const hourlyRates = (totals) => {
+  const hours = totals.billedMsByCurrency ?? {};
+  const held = new Set([...Object.keys(hours), ...Object.keys(totals.billedCents)]);
+  return [...held]
+    .sort((a, b) => (hours[b] ?? 0) - (hours[a] ?? 0)
+      || (totals.billedCents[b] ?? 0) - (totals.billedCents[a] ?? 0))
+    .map((currency) => ({
+      currency,
+      rateCents: effectiveRate(totals.billedCents[currency] ?? 0, hours[currency] ?? 0),
+      timedRateCents: effectiveRate(totals.timedCents[currency] ?? 0, hours[currency] ?? 0),
+      untimed: untimedShare(totals, currency),
+    }))
+    .filter((r) => r.rateCents !== null);
+};
+
+/**
  * The window's work grouped by who it was for.
  *
  * Projects with no company are kept as their own row rather than dropped, so
@@ -484,6 +540,9 @@ export const byCompany = (projects, sessions, from, to, now, rateOf, earnings = 
       const totals = performanceIn(group, from, to, now, rateOf,
         earnings.filter((e) => mine.has(e.projectId)));
       const currency = soleCurrency(totals.billedCents);
+      // Over the hours worked in that currency only. Hours in another one
+      // earned none of this money, even when none of theirs was settled.
+      const hours = currency ? totals.billedMsByCurrency[currency] ?? 0 : 0;
       return {
         company: key || null,
         projects: projects.filter((p) => (companyOf(p) ?? "") === key),
@@ -491,10 +550,10 @@ export const byCompany = (projects, sessions, from, to, now, rateOf, earnings = 
         currency,
         // Null rather than a figure when the row spans currencies: there is no
         // single unit for "per hour" to be in.
-        rateCents: currency ? effectiveRate(totals.billedCents[currency], totals.billedMs) : null,
+        rateCents: currency ? effectiveRate(totals.billedCents[currency], hours) : null,
         // The same rate across only the money a clock actually measured. Equal
         // to the one above wherever nothing untimed was earned.
-        timedRateCents: currency ? effectiveRate(totals.timedCents[currency] ?? 0, totals.billedMs) : null,
+        timedRateCents: currency ? effectiveRate(totals.timedCents[currency] ?? 0, hours) : null,
       };
     })
     .filter((row) => row.billedMs > 0 || row.idleMs > 0 || hasMoney(row))
@@ -566,10 +625,13 @@ export const streaks = (cells, isActive) => {
  */
 export const RATE_FLOOR_MS = 5 * 3_600_000;
 
+/** Ranked within one currency, and over that currency's hours only: the
+ *  money and the hours a rate divides have to be the same work. */
 export const worthPerHour = (rows, currency, floor = RATE_FLOOR_MS) =>
   rows
-    .filter((r) => r.billedMs >= floor && (r.billedCents[currency] ?? 0) > 0)
-    .map((r) => ({ ...r, perHour: effectiveRate(r.billedCents[currency] ?? 0, r.billedMs) }))
+    .map((r) => ({ r, ms: r.billedMsByCurrency?.[currency] ?? 0 }))
+    .filter(({ r, ms }) => ms >= floor && (r.billedCents[currency] ?? 0) > 0)
+    .map(({ r, ms }) => ({ ...r, perHour: effectiveRate(r.billedCents[currency] ?? 0, ms) }))
     .sort((a, b) => b.perHour - a.perHour);
 
 /**

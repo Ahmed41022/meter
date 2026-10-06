@@ -3,8 +3,8 @@ import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
-  byCompany, comparisonRanges, concentration, effectiveRate, firstRecord, revenueShare,
-  samePointBefore, soleCurrency, streaks, worthPerHour,
+  byCompany, comparisonRanges, concentration, currenciesByWork, effectiveRate, firstRecord,
+  hourlyRates, revenueShare, samePointBefore, soleCurrency, streaks, worthPerHour,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -256,6 +256,7 @@ describe("what a window was worth", () => {
     expect(result).toEqual({
       billedMs: 0, idleMs: 0,
       billedCents: {}, idleCents: {}, pendingCents: {}, timedCents: {}, cancelledCents: {},
+      billedMsByCurrency: {},
     });
   });
 
@@ -948,7 +949,7 @@ describe("all time", () => {
 describe("which work was actually worth the time", () => {
   const row = (name, hours, dollars, extra = {}) => ({
     project: { id: name, name, currency: "USD" },
-    billedMs: hours * HOUR, idleMs: 0,
+    billedMs: hours * HOUR, idleMs: 0, billedMsByCurrency: { USD: hours * HOUR },
     billedCents: { USD: Math.round(dollars * 100) },
     pendingCents: {}, timedCents: { USD: Math.round(dollars * 100) },
     ...extra,
@@ -994,5 +995,72 @@ describe("which work was actually worth the time", () => {
     expect(concentration([], "USD")).toBeNull();
     expect(concentration([row("a", 5, 0)], "USD")).toBeNull();
     expect(concentration([row("a", 5, 10)], null)).toBeNull();
+  });
+
+  it("ranks a row by the hours worked in the ranking's currency, not all of its hours", () => {
+    // Ten dollar hours paid $500; the row's six pound hours earned none of it.
+    const mixed = row("mixed", 16, 500, { billedMsByCurrency: { USD: 10 * HOUR, EGP: 6 * HOUR } });
+    expect(worthPerHour([mixed], "USD")[0].perHour).toBe(50_00);
+    // and the floor is on those hours too: three dollar hours are not five
+    const thin = row("thin", 9, 300, { billedMsByCurrency: { USD: 3 * HOUR, EGP: 6 * HOUR } });
+    expect(worthPerHour([thin], "USD")).toEqual([]);
+  });
+});
+
+describe("two currencies in one period", () => {
+  // The week from the review: $40 and EGP 300 on Tuesday, $30 on Wednesday.
+  // Three dollar hours and one pound hour.
+  const from = at(2026, 9, 5);
+  const to = at(2026, 9, 12);
+  const sessions = [
+    session(at(2026, 9, 6, 9), at(2026, 9, 6, 11), { rate: 20 }),
+    session(at(2026, 9, 6, 12), at(2026, 9, 6, 13), { rate: 300, currency: "EGP", projectId: "e" }),
+    session(at(2026, 9, 7, 9), at(2026, 9, 7, 10), { rate: 30, projectId: "u2" }),
+  ];
+  const week = performanceIn(sessions, from, to, at(2026, 9, 7, 18));
+
+  it("keeps the hours apart by the currency they were worked in", () => {
+    expect(week.billedMsByCurrency).toEqual({ USD: 3 * HOUR, EGP: HOUR });
+    expect(week.billedMs).toBe(4 * HOUR);
+    // idle time earns in no currency, so it is in none of them
+    const idle = session(at(2026, 9, 8, 9), at(2026, 9, 8, 10), { kind: KIND.IDLE });
+    expect(performanceIn([...sessions, idle], from, to, at(2026, 9, 8, 18)).billedMsByCurrency)
+      .toEqual({ USD: 3 * HOUR, EGP: HOUR });
+  });
+
+  it("leads with the currency the work was in, not the bigger number", () => {
+    // EGP 300 is a bigger figure than $70 and a quarter of the hours.
+    expect(currenciesByValue(week.billedCents).map(([c]) => c)).toEqual(["EGP", "USD"]);
+    expect(currenciesByWork(week)).toEqual([["USD", 7_000], ["EGP", 30_000]]);
+  });
+
+  it("puts money no clock measured after the hours, biggest first", () => {
+    const totals = { billedCents: { USD: 7_000, EUR: 50_000, GBP: 90_000 }, billedMsByCurrency: { USD: HOUR } };
+    expect(currenciesByWork(totals).map(([c]) => c)).toEqual(["USD", "GBP", "EUR"]);
+  });
+
+  it("quotes an hour in each currency over that currency's hours alone", () => {
+    // Never EGP 300 divided by all four hours, which read "EGP 75.00/hr".
+    const rates = hourlyRates(week);
+    expect(rates.map((r) => [r.currency, r.rateCents])).toEqual([["USD", 2_333], ["EGP", 30_000]]);
+  });
+
+  it("has no hour to quote for money with no hours, and nothing an hour for hours with no money", () => {
+    const totals = performanceIn(
+      [session(at(2026, 9, 6, 9), at(2026, 9, 6, 11), { status: "cancelled" })], from, to, at(2026, 9, 7),
+      undefined, [{ projectId: "p1", cents: 5_000, currency: "EUR", at: at(2026, 9, 6, 12) }]);
+    expect(hourlyRates(totals).map((r) => [r.currency, r.rateCents])).toEqual([["USD", 0]]);
+  });
+
+  it("gives a company's hour over that currency's hours only", () => {
+    // Settled dollars, and pound hours that were rejected: the dollars were
+    // earned in the dollar hours.
+    const rows = byCompany([{ id: "p1", name: "a", currency: "USD", company: "Northwind" },
+      { id: "e", name: "b", currency: "EGP", company: "Northwind" }], [
+      session(at(2026, 9, 6, 9), at(2026, 9, 6, 11)),
+      session(at(2026, 9, 6, 12), at(2026, 9, 6, 14), { currency: "EGP", rate: 300, projectId: "e", status: "cancelled" }),
+    ], from, to, at(2026, 9, 7));
+    expect(rows[0].currency).toBe("USD");
+    expect(rows[0].rateCents).toBe(100_00);
   });
 });

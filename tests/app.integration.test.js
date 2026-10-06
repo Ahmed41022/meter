@@ -5453,4 +5453,68 @@ describe("fixes: clock, Today and Overview", () => {
       expect(d.querySelector(".dash-sub .delta").textContent).toBe("+200% vs the week before");
     }, 20_000);
   });
+
+  describe("two currencies in one week", () => {
+    const fmt = (cents, currency) => new Intl.NumberFormat(undefined, {
+      style: "currency", currency, minimumFractionDigits: 2,
+    }).format(cents / 100);
+    // $40 and EGP 300 on Tuesday, $30 on Wednesday: three dollar hours and
+    // one pound hour. And a night's sleep at $10 an hour, which is no money.
+    const seed = () => ({
+      projects: [
+        project("u", "USD work", { currentRate: 20 }),
+        project("e", "EGP work", { currentRate: 300, currency: "EGP" }),
+        project("u2", "USD work 2", { currentRate: 30 }),
+        project("z", "Sleep", { currentRate: 10, offClock: true }),
+      ],
+      sessions: [
+        sitting("s1", "u", at(10, 6, 9), at(10, 6, 11), { rate: 20 }),
+        sitting("s2", "e", at(10, 6, 12), at(10, 6, 13), { rate: 300, currency: "EGP" }),
+        sitting("s3", "u2", at(10, 7, 9), at(10, 7, 10), { rate: 30 }),
+        sitting("s4", "z", at(10, 6, 23), at(10, 7, 7), { rate: 10 }),
+      ],
+    });
+    const open = async () => {
+      const dom = await bootAt(seed(), at(10, 7, 18));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      return d;
+    };
+
+    it("leads with the currency the hours were in, not the bigger number", async () => {
+      const d = await open();
+      expect(d.querySelector(".grand-amt").textContent).toBe("$70.00");
+      expect(d.querySelector(".grand-alt").textContent).toBe(fmt(30_000, "EGP"));
+    }, 20_000);
+
+    it("quotes an hour in each currency over that currency's own hours", async () => {
+      // EGP 300 over all four hours read "EGP 75.00/hr", a rate nobody paid.
+      const d = await open();
+      const hours = [...d.querySelectorAll(".tile")]
+        .filter((t) => /An hour came to/.test(t.textContent))
+        .map((t) => t.querySelector(".tile-val").textContent);
+      expect(hours).toEqual([`${fmt(2_333, "USD")}/hr`, `${fmt(30_000, "EGP")}/hr`]);
+    }, 20_000);
+
+    it("lists each currency in a day's tooltip rather than adding them", async () => {
+      const d = await open();
+      const tip = (i) => [...d.querySelectorAll(".tcol")[i].querySelectorAll(".ttip span")]
+        .map((s) => s.textContent);
+      // Monday first: Tuesday is the second column, Wednesday the third.
+      expect(tip(1)).toEqual(["3h 00m billed", fmt(4_000, "USD"), fmt(30_000, "EGP")]);
+      expect(tip(2)).toEqual(["1h 00m billed", fmt(3_000, "USD")]);
+    }, 20_000);
+
+    it("draws no share of a total that would add pounds to dollars", async () => {
+      // "EGP work is 100% of it" left $70 of dollar work out of "it".
+      const d = await open();
+      expect(d.querySelector(".concentration")).toBeNull();
+    }, 20_000);
+
+    it("compares each currency with itself, and says against what once", async () => {
+      const d = await open();
+      const deltas = [...d.querySelectorAll(".dash-sub .delta")].map((x) => x.textContent);
+      expect(deltas).toEqual(["USD —", "EGP — vs this point last week"]);
+    }, 20_000);
+  });
 });
