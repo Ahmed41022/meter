@@ -6,8 +6,8 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, comparisonRanges, concentration, currenciesByWork, firstRecord, heatDepth,
-  hourlyRates, revenueShare, soleCurrency, streaks, worthPerHour,
+  byCompany, comparisonRanges, concentration, currenciesByWork, firstRecord, goalValue,
+  heatDepth, hourlyRates, revenueShare, soleCurrency, streaks, worthPerHour,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -109,19 +109,21 @@ const earliestOf = (sessions) => Math.min(
  * Ordered by how many days' worth off the line each one is — unit-free, so a
  * money goal and an hours goal can be compared, and the one needing attention
  * is at the top.
+ *
+ * A money goal counts what the headline counts, the settled money no clock
+ * measured included; `goalValue` is the one place that says so, shared with
+ * the project page's own goal.
  */
-const targetsFor = (projects, work, now, rateOf) =>
+const targetsFor = (projects, work, now, rateOf, earnings) =>
   activeProjects(projects)
     .map((project) => {
       const goal = normaliseGoal(project.overallGoal);
       if (!goal || goal.period === "lifetime") return null;
       const from = periodBoundary(goal.period, now, 0);
       const to = periodBoundary(goal.period, now, 1);
-      const mine = work.filter((s) => s.projectId === project.id);
-      const { billedMs, billedCents } = performanceIn(mine, from, to, now, rateOf);
-      const value = goal.type === "money"
-        ? (billedCents[project.currency] ?? 0) / 100
-        : billedMs / 60_000;
+      const value = goalValue(goal, project,
+        work.filter((s) => s.projectId === project.id),
+        earnings.filter((e) => e.projectId === project.id), from, to, now, rateOf);
       const pacing = pace({ target: goal.target, from, to }, value, now);
       return { project, goal, value, pacing, state: paceState(pacing) };
     })
@@ -212,7 +214,7 @@ export default function DashboardView({
       trend: trendFor(period, work, now, offset, rateOf, earliest),
       rows: byProject(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
-      targets: targetsFor(workProjects(projects), work, now, rateOf),
+      targets: targetsFor(workProjects(projects), work, now, rateOf, workEarnings),
       companies: byCompany(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       // A fixed rolling year, like Targets and for the same reason: it is
       // context for everything above it, not another reading of the period.

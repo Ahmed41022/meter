@@ -6,7 +6,7 @@ import {
 import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
-import { effectiveRate, sessionMsInWindow } from "../domain/performance.js";
+import { effectiveRate, goalValue } from "../domain/performance.js";
 import {
   PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
   paysOnAcceptance, perTask, priceFor, taskPay, tasksOf,
@@ -133,16 +133,18 @@ export default function ProjectView({
    * it began in is what used to make this figure disagree with the very same
    * week on the Overview, which derives everything by overlap. Lifetime has no
    * boundaries, so its window is everything.
+   *
+   * Asked of `goalValue`, the same question the Overview's Targets ask, so a
+   * money goal counts what the headline counts: settled money, the clock's and
+   * the money no clock measured alike.
    */
   const goalWindow = overallGoal && overallGoal.period !== "lifetime"
     ? { from: periodBoundary(overallGoal.period, now, 0), to: periodBoundary(overallGoal.period, now, 1) }
     : { from: 0, to: Infinity };
-  const inGoalWindow = (s) => sessionMsInWindow(s, goalWindow.from, goalWindow.to, now);
-  const periodCents = overallGoal
-    ? sessions.reduce((a, s) => a + moneyOf(s, inGoalWindow(s)), 0) : 0;
-  const periodMs = overallGoal ? sessions.reduce((a, s) => a + inGoalWindow(s), 0) : 0;
   const overallValue = overallGoal
-    ? (overallGoal.type === "money" ? periodCents / 100 : periodMs / 60000) : 0;
+    ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now,
+                (s) => rateFor(project, s))
+    : 0;
 
   // The ledger shows both kinds; the totals above keep them apart.
   const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));

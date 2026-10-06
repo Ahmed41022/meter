@@ -5562,4 +5562,52 @@ describe("fixes: clock, Today and Overview", () => {
       expect(d.querySelector(`.hm-cell[data-at="${at(10, 5)}"]`).dataset.level).toBe("1");
     }, 25_000);
   });
+
+  describe("money targets and the money no clock measured", () => {
+    const weekly = (target) => ({ overallGoal: { type: "money", target, period: "week" } });
+    const earning = (id, projectId, cents, when, extra = {}) => ({
+      id, projectId, kind: "bonus", cents, currency: "USD", at: when, note: "",
+      createdAt: when, deletedAt: null, ...extra,
+    });
+    // Alpha: two hours at $60 and a $60 bonus this week, and $100 more still
+    // waiting on an answer. Beta is paid per accepted item, never by the clock.
+    const seed = () => ({
+      projects: [
+        project("a", "Alpha", weekly(500)),
+        project("b", "Beta", { currentRate: 0, perTask: 50, ...weekly(300) }),
+      ],
+      sessions: [sitting("s1", "a", at(10, 5, 9), at(10, 5, 11))],
+      earnings: [
+        earning("e1", "a", 6_000, at(10, 6, 12)),
+        earning("e2", "a", 10_000, at(10, 6, 13), { status: "pending" }),
+        earning("e3", "b", 15_000, at(10, 6, 12), { kind: "piece", units: 3 }),
+      ],
+    });
+    const target = (d, name) => [...d.querySelectorAll(".trg")]
+      .find((t) => t.querySelector(".trg-name").textContent === name)
+      .querySelector(".goal-val").textContent;
+
+    it("counts a settled bonus toward the week's target on the Overview", async () => {
+      const dom = await bootAt(seed(), at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      expect(target(d, "Alpha")).toBe("$180.00 / $500.00");
+    }, 20_000);
+
+    it("lets a target move on a project paid per accepted item", async () => {
+      const dom = await bootAt(seed(), at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      expect(target(d, "Beta")).toBe("$150.00 / $300.00");
+    }, 20_000);
+
+    it("reads the same on the project's own page", async () => {
+      const dom = await bootAt(seed(), at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Work");
+      [...d.querySelectorAll(".card")].find((c) => /Alpha/.test(c.textContent)).click();
+      await wait(250);
+      expect(d.querySelector(".goal .goal-val").textContent).toBe("$180.00 / $500.00");
+    }, 20_000);
+  });
 });

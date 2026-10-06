@@ -4,7 +4,7 @@ import {
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
   byCompany, comparisonRanges, concentration, currenciesByWork, effectiveRate, firstRecord,
-  hourlyRates, revenueShare, samePointBefore, soleCurrency, streaks, worthPerHour,
+  goalValue, hourlyRates, revenueShare, samePointBefore, soleCurrency, streaks, worthPerHour,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -1050,6 +1050,52 @@ describe("which work was actually worth the time", () => {
     // and the floor is on those hours too: three dollar hours are not five
     const thin = row("thin", 9, 300, { billedMsByCurrency: { USD: 3 * HOUR, EGP: 6 * HOUR } });
     expect(worthPerHour([thin], "USD")).toEqual([]);
+  });
+});
+
+describe("where a project's goal stands", () => {
+  // The week of Mon 5 Oct 2026, read on the Wednesday.
+  const from = at(2026, 9, 5);
+  const to = at(2026, 9, 12);
+  const now = at(2026, 9, 7, 12);
+  const alpha = { id: "p1", name: "Alpha", currency: "USD", currentRate: 60 };
+  const money = { type: "money", target: 500, period: "week" };
+  const time = { type: "time", target: 600, period: "week" };
+  const earning = (cents, when, extra = {}) => ({
+    id: `e${cents}`, projectId: "p1", kind: "bonus", cents, currency: "USD", at: when,
+    note: "", createdAt: when, deletedAt: null, ...extra,
+  });
+  const work = [session(at(2026, 9, 5, 9), at(2026, 9, 5, 11), { rate: 60 })]; // $120
+
+  it("counts the settled money no clock measured, as the headline does", () => {
+    // Alpha's week read $120 of $500 with a $60 bonus left out.
+    const earnings = [
+      earning(6_000, at(2026, 9, 6, 12)),                          // counts
+      earning(10_000, at(2026, 9, 6, 13), { status: "pending" }),  // waiting: not yet
+      earning(3_000, at(2026, 9, 6, 14), { status: "cancelled" }), // never
+      earning(4_000, at(2026, 8, 30, 12)),                         // last week
+    ];
+    expect(goalValue(money, alpha, work, earnings, from, to, now)).toBe(180);
+  });
+
+  it("lets a project paid per accepted item move its money goal", () => {
+    const piece = { ...alpha, currentRate: 0, perTask: 50 };
+    expect(goalValue(money, piece, [], [earning(15_000, at(2026, 9, 6, 12))], from, to, now)).toBe(150);
+  });
+
+  it("counts the project's own currency only", () => {
+    const pounds = earning(30_000, at(2026, 9, 6, 12), { currency: "EGP" });
+    expect(goalValue(money, alpha, work, [pounds], from, to, now)).toBe(120);
+  });
+
+  it("leaves clock money still waiting on an answer out, and its hours in", () => {
+    const waiting = [session(at(2026, 9, 5, 9), at(2026, 9, 5, 11), { rate: 60, status: "pending" })];
+    expect(goalValue(money, alpha, waiting, [], from, to, now)).toBe(0);
+    expect(goalValue(time, alpha, waiting, [], from, to, now)).toBe(120);
+  });
+
+  it("reads a time goal in minutes, which money with no hours cannot move", () => {
+    expect(goalValue(time, alpha, work, [earning(6_000, at(2026, 9, 6, 12))], from, to, now)).toBe(120);
   });
 });
 
