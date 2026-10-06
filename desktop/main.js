@@ -25,7 +25,16 @@ process.on("unhandledRejection", (err) => logCrash("unhandledRejection", err));
 
 // Single instance: a second launch focuses the existing window rather than
 // starting a rival process that would fight over the same storage.
-if (!app.requestSingleInstanceLock()) app.quit();
+//
+// Quitting is not enough on its own to make the second copy do nothing.
+// `app.quit()` only asks: Electron still becomes ready, and whatever is waiting
+// for that still runs. So the second copy went on to start its own server,
+// found the port held by the first, and showed an error blaming "another
+// program" — which was Meter. Everything that starts something is therefore
+// registered at the bottom of this file only in the copy that holds the lock,
+// as in Electron's own single-instance example.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 
 let win = null;
 let quitting = false;
@@ -206,42 +215,45 @@ function createWindow() {
   });
 }
 
-app.on("second-instance", () => {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.focus();
-});
+// Only in the copy holding the lock: see the note on `primary` above.
+if (primary) {
+  app.on("second-instance", () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  });
 
-app.whenReady().then(async () => {
-  try {
-    served = await start({
-      "/": path.join(__dirname, "meter.html"),
-      "/bridge": path.join(__dirname, "bridge.html"),
-    });
-  } catch (e) {
-    logCrash("starting the local server", e);
-    // Refusing to start is the safe answer. Falling back to `file://` would
-    // open the old store alongside a newer one at the served origin, and two
-    // ledgers drifting apart is much harder to recover from than one launch
-    // that did not happen.
-    dialog.showErrorBox(
-      "Meter could not start",
-      e?.code === "EADDRINUSE"
-        ? `Another program is using port ${PORT}, which Meter needs in order to ` +
-          `run. Close it and open Meter again.`
-        : `Meter could not open its local address (${ORIGIN}).
+  app.whenReady().then(async () => {
+    try {
+      served = await start({
+        "/": path.join(__dirname, "meter.html"),
+        "/bridge": path.join(__dirname, "bridge.html"),
+      });
+    } catch (e) {
+      logCrash("starting the local server", e);
+      // Refusing to start is the safe answer. Falling back to `file://` would
+      // open the old store alongside a newer one at the served origin, and two
+      // ledgers drifting apart is much harder to recover from than one launch
+      // that did not happen.
+      dialog.showErrorBox(
+        "Meter could not start",
+        e?.code === "EADDRINUSE"
+          ? `Another program is using port ${PORT}, which Meter needs in order to ` +
+            `run. Close it and open Meter again.`
+          : `Meter could not open its local address (${ORIGIN}).
 
 ${e?.message ?? e}`,
-    );
-    return app.quit();
-  }
-  try {
-    await carryLedgerOver(served.origin);
-  } finally {
-    createWindow();
-    starting = false;
-  }
-});
+      );
+      return app.quit();
+    }
+    try {
+      await carryLedgerOver(served.origin);
+    } finally {
+      createWindow();
+      starting = false;
+    }
+  });
 
-app.on("window-all-closed", () => { if (!starting) app.quit(); });
-app.on("will-quit", () => { served?.close?.(); });
+  app.on("window-all-closed", () => { if (!starting) app.quit(); });
+  app.on("will-quit", () => { served?.close?.(); });
+}

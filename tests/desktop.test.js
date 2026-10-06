@@ -5,7 +5,8 @@
  * nothing else would notice if it drifted from the real rule.
  */
 import { describe, it, expect } from "vitest";
-import { createRequire } from "node:module";
+import Module, { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const req = createRequire(import.meta.url);
@@ -217,6 +218,72 @@ describe("serving the app on loopback", () => {
     // and the port is part of the origin Google authorises.
     expect(PORT).toBeLessThan(49152);
     expect(createServer({ "/": page })).toBeDefined();
+  });
+});
+
+describe("opening the app while it is already open", () => {
+  /**
+   * Loads main.js against a stand-in for Electron and records what it asked
+   * of it. Nothing here starts Electron, a server or a window: the stand-in
+   * answers the lock question and never becomes ready.
+   */
+  const launch = (holdsLock) => {
+    const asked = { quit: 0, ready: 0, on: [], windows: 0, dialogs: 0 };
+    const app = {
+      requestSingleInstanceLock: () => holdsLock,
+      quit: () => { asked.quit += 1; },
+      whenReady: () => { asked.ready += 1; return new Promise(() => {}); },
+      on: (event) => { asked.on.push(event); return app; },
+      getPath: () => tmpdir(),
+    };
+    const electron = {
+      app,
+      BrowserWindow: function BrowserWindow() { asked.windows += 1; },
+      dialog: {
+        showErrorBox: () => { asked.dialogs += 1; },
+        showMessageBoxSync: () => { asked.dialogs += 1; return 0; },
+      },
+      shell: { openExternal: () => {} },
+    };
+    const crashEvents = ["uncaughtException", "unhandledRejection"];
+    const had = crashEvents.map((event) => process.listeners(event));
+    const realLoad = Module._load;
+    Module._load = function load(request, ...rest) {
+      return request === "electron" ? electron : realLoad.call(this, request, ...rest);
+    };
+    try {
+      const main = req.resolve("../desktop/main.js");
+      delete req.cache[main];
+      req(main);
+    } finally {
+      Module._load = realLoad;
+      // main.js logs crashes for the process it runs in, which here is the
+      // test runner's. Its handlers must not outlive the load.
+      crashEvents.forEach((event, i) => {
+        for (const listener of process.listeners(event)) {
+          if (!had[i].includes(listener)) process.removeListener(event, listener);
+        }
+      });
+    }
+    return asked;
+  };
+
+  it("has the second copy quit without starting anything", () => {
+    // It used to wait for Electron to be ready like the first, start its own
+    // server on the port the first one holds, and show an error box blaming
+    // "another program" — which was Meter.
+    const asked = launch(false);
+    expect(asked.quit).toBe(1);
+    expect(asked.ready).toBe(0);
+    expect(asked.on).toEqual([]);
+    expect(asked.windows + asked.dialogs).toBe(0);
+  });
+
+  it("starts the first copy exactly as before", () => {
+    const asked = launch(true);
+    expect(asked.quit).toBe(0);
+    expect(asked.ready).toBe(1);
+    expect(asked.on.sort()).toEqual(["second-instance", "will-quit", "window-all-closed"]);
   });
 });
 
