@@ -8,6 +8,7 @@ import {
   startSession, stopSession, assignTask, assignTaskToMany, deleteSession, KIND, allSessionsFor,
 } from "../src/domain/sessions.js";
 import { removeProject } from "../src/domain/projects.js";
+import { TASK, setTaskState } from "../src/domain/taskState.js";
 
 const T = 1_700_000_000_000;
 const HOUR = 3_600_000;
@@ -146,6 +147,20 @@ describe("assigning a task to a session", () => {
     s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
     s = stopSession(s, "s1", T + HOUR);
     expect(assignTask(s, "s1", null).sessions[0].taskId).toBeNull();
+  });
+
+  it("will not file time under a task that takes no more", () => {
+    // Moving an hour onto work already handed in changes what was handed in,
+    // and the money would not follow it: a paid session moved onto a rejected
+    // task would stay paid, and the rejected task would read as earning it.
+    for (const closed of [TASK.SUBMITTED, TASK.ACCEPTED, TASK.CANCELLED]) {
+      let s = addTask(base, "p1", { id: "t1", label: "1234" }, T);
+      s = addTask(s, "p1", { id: "t2", label: "5678" }, T);
+      s = startSession(s, proj(s), { now: T, id: "s1", taskId: "t1" });
+      s = stopSession(s, "s1", T + HOUR);
+      s = setTaskState(s, "p1", "t2", closed, T + HOUR);
+      expect(assignTaskToMany(s, ["s1"], "t2").sessions[0].taskId).toBe("t1");
+    }
   });
 });
 

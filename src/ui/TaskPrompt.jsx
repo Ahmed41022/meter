@@ -1,11 +1,32 @@
 import { useState } from "react";
 import { wordsFor } from "./words.js";
-import { tasksFor } from "../domain/tasks.js";
-import { takesTime } from "../domain/taskState.js";
+import { findTask, findTaskByLabel, tasksFor } from "../domain/tasks.js";
+import { TASK, takesTime, taskState } from "../domain/taskState.js";
 import { isPieceOnly, perTask } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 
 const NONE = "__none__";
+
+/** What became of a task that takes no more time, in the words its row uses:
+ *  "cancelled" is how the money is stored, but the work was rejected. */
+const CLOSED_WORD = {
+  [TASK.SUBMITTED]: "submitted",
+  [TASK.ACCEPTED]: "accepted",
+  [TASK.CANCELLED]: "rejected",
+};
+
+/**
+ * Why a task will not take time, in one sentence, or null when it will.
+ *
+ * Shared by every place that has to turn time away from a task, so that a
+ * refusal is never silent and always reads the same way: which task, and
+ * what became of it.
+ */
+export const closedTaskNote = (project, taskId) => {
+  const task = findTask(project, taskId);
+  if (!task || takesTime(task)) return null;
+  return `“${task.label}” was ${CLOSED_WORD[taskState(task)] ?? "closed"}, so it takes no more time.`;
+};
 
 /**
  * Asks which task before the meter starts. The choice is an explicit
@@ -18,8 +39,7 @@ export default function TaskPrompt({
   words = wordsFor(false),
 }) {
   // Submitted work takes no more hours, so offering it here would be a
-  // choice that starts nothing — and starting CLOSES whatever else is open,
-  // so the failure would not be quiet.
+  // choice that starts nothing and moves nothing.
   const tasks = tasksFor(project).filter(takesTime);
   const [mode, setMode] = useState(tasks.length ? "existing" : "new");
   const [taskId, setTaskId] = useState(initialTaskId ?? NONE);
@@ -33,8 +53,30 @@ export default function TaskPrompt({
   // saying what the thing actually is has to live somewhere.
   const [note, setNote] = useState("");
   const piece = isPieceOnly(project);
+  /**
+   * A task already handed in, named in either box.
+   *
+   * A typed name resolves to the task that has it rather than minting a
+   * second one, which is the point of matching names; and a task picked from
+   * the list can be handed in from the task list while this is still open.
+   * Either way it takes no more time, so confirming would start nothing and
+   * move nothing, and a prompt that closes on a click that did nothing reads
+   * as the click having worked. So it says which task and why, and stays
+   * open for another choice.
+   */
+  const named = mode === "new"
+    ? findTaskByLabel(project, draft)
+    : findTask(project, taskId === NONE ? null : taskId);
+  const closed = named ? closedTaskNote(project, named.id) : null;
+  const refusal = closed && (
+    <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+      {closed} Reopen it in the {words.byTask} list if there is more to do on it, or
+      choose another.
+    </span>
+  );
 
   const confirm = () => {
+    if (closed) return;
     if (mode === "new") {
       const clean = draft.trim();
       return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim() } : { taskId: null });
@@ -68,6 +110,7 @@ export default function TaskPrompt({
             <option value={NONE}>{words.noTask}</option>
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
+          {refusal}
         </label>
       ) : (
         <label className="field">
@@ -78,9 +121,11 @@ export default function TaskPrompt({
                    if (e.key === "Enter") confirm();
                    if (e.key === "Escape") onCancel();
                  }} />
-          <span className="hint" style={{ marginTop: 8, display: "block" }}>
-            Reusing a name you already have keeps it as one task.
-          </span>
+          {refusal || (
+            <span className="hint" style={{ marginTop: 8, display: "block" }}>
+              Reusing a name you already have keeps it as one task.
+            </span>
+          )}
         </label>
       )}
 
@@ -124,7 +169,7 @@ export default function TaskPrompt({
       )}
 
       <div className="controls">
-        <button className="btn primary" onClick={confirm}>{confirmLabel}</button>
+        <button className="btn primary" disabled={!!closed} onClick={confirm}>{confirmLabel}</button>
         <button className="btn ghost" onClick={onCancel}>Cancel</button>
       </div>
     </div>

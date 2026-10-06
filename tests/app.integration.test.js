@@ -5795,4 +5795,82 @@ describe("fixes: editors and entry forms", () => {
     expect(d.querySelector(".prompt")).toBeNull();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
   }, 30_000);
+
+  /** One task already answered, and one sitting filed under nothing. Nothing
+   *  is open, so every prompt opens on a new name. */
+  const answered = (state) => {
+    const at = minute(Date.now()) - 8 * HOUR;
+    return {
+      projects: [project("p1", "Acme", {
+        tasks: [{ id: "t1", label: "T-1", createdAt: at, state, stateAt: at + 3 * HOUR,
+                  submittedAt: at + 3 * HOUR }],
+      })],
+      sessions: [
+        sitting("s1", "p1", "t1", at, at + 2 * HOUR, state === "cancelled" ? { status: "cancelled" } : {}),
+        sitting("s2", "p1", null, at + 4 * HOUR, at + 5 * HOUR),
+      ],
+    };
+  };
+
+  it("says why a submitted task's name starts nothing, and stays open", async () => {
+    // Typing it under New task and pressing Start did nothing at all: no
+    // meter, no message, and the prompt closed as if it had worked.
+    const { dom, d } = await openProject(answered("submitted"), "Acme");
+    btn(d, /Start the meter/).click();
+    await wait(200);
+    const name = field(d.querySelector(".prompt"), "Name it");
+    setValue(dom.window, name, " t-1 ");
+    await wait(150);
+
+    const warning = d.querySelector(".prompt .hint.warn");
+    expect(warning.textContent).toMatch(/“T-1” was submitted, so it takes no more time/);
+    expect(btn(d, /^Start the meter$/).disabled).toBe(true);
+    name.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await wait(200);
+
+    expect(d.querySelector(".prompt")).not.toBeNull();
+    expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
+    expect(stored(dom).sessions).toHaveLength(2);
+  }, 30_000);
+
+  it("says why sessions cannot be moved onto a rejected task, and moves nothing", async () => {
+    // The name resolved to the rejected task and the move went through: a
+    // paid hour filed under rejected work stayed paid, and the task showed it
+    // as earned.
+    const { dom, d } = await openProject(answered("cancelled"), "Acme");
+    ledgerRow(d, "No task").querySelector(".row-check").click();
+    await wait(150);
+    btn(d, /Assign to task/).click();
+    await wait(200);
+    setValue(dom.window, field(d.querySelector(".prompt"), "Name it"), "T-1");
+    await wait(150);
+
+    expect(d.querySelector(".prompt .hint.warn").textContent)
+      .toMatch(/“T-1” was rejected, so it takes no more time/);
+    expect(btn(d, /^Move 1 session$/).disabled).toBe(true);
+    expect(stored(dom).sessions.find((x) => x.id === "s2").taskId).toBeNull();
+  }, 30_000);
+
+  it("says so when the task picked for a move is handed in while the prompt is open", async () => {
+    const seed = twoTasks();
+    seed.sessions.push(sitting("s3", "p1", null, seed.sessions[1].closedAt + HOUR,
+      seed.sessions[1].closedAt + 2 * HOUR));
+    const { dom, d } = await openProject(seed, "Acme");
+    ledgerRow(d, "No task").querySelector(".row-check").click();
+    await wait(150);
+    btn(d, /Assign to task/).click();
+    await wait(200);
+    setValue(dom.window, d.querySelector(".prompt select"), "t2");
+    await wait(150);
+
+    taskRow(d, "T-2").querySelector(".row-check").click();
+    await wait(200);
+    btn(d, /^Submit 1$/).click();
+    await wait(300);
+
+    expect(d.querySelector(".prompt .hint.warn").textContent)
+      .toMatch(/“T-2” was submitted, so it takes no more time/);
+    expect(btn(d, /^Move 1 session$/).disabled).toBe(true);
+    expect(stored(dom).sessions.find((x) => x.id === "s3").taskId).toBeNull();
+  }, 30_000);
 });

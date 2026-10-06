@@ -274,10 +274,21 @@ export const heartbeat = (state, now, device = null) =>
  * a label on that record. Moving it changes which bucket the same hours report
  * under, not the hours themselves. Immutability protects the measurement, not
  * the filing.
+ *
+ * The one place it will not file time is a task that takes no more. Moving an
+ * hour onto work already handed in changes what was handed in, exactly as
+ * starting a meter on it would, and the money does not follow the move: a
+ * paid session filed under a rejected task would stay paid, and the rejected
+ * task would read as having earned it. So the rule that guards `startSession`
+ * guards this too, asked of each session's own project.
  */
 export const assignTaskToMany = (state, sessionIds, taskId) => {
   const ids = new Set(sessionIds);
-  return mapSessions(state, (s) => (ids.has(s.id) && !s.deletedAt ? { ...s, taskId } : s));
+  return mapSessions(state, (s) => {
+    if (!ids.has(s.id) || s.deletedAt) return s;
+    const project = (state.projects ?? []).find((p) => p.id === s.projectId);
+    return takesTimeIn(project, taskId) ? { ...s, taskId } : s;
+  });
 };
 
 export const assignTask = (state, sessionId, taskId) =>
