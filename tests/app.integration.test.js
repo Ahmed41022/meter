@@ -5166,4 +5166,20 @@ describe("fixes: data, export and layout", () => {
       expect(names(dom)).toEqual(["Orion", "Lumen"]);
     }, 25_000);
   });
+
+  describe("the top bar on a narrow phone", () => {
+    it("narrows the tabs with the screen, so 320px does not scroll sideways", () => {
+      // Only a real browser can measure this, so it was measured in one: at
+      // 320px the tab bar stuck out 39px before and fits now, on all four main
+      // screens in both themes, and from 390px up every tab is exactly as wide
+      // as it was. What is pinned here are the two declarations that do it.
+      const css = readFileSync(DIST, "utf8");
+      const tab = css.match(/\.tab\{([^}]*)/)?.[1];
+      expect(tab).toContain("padding:8px clamp(5px,calc((100vw - 300px) / 6),15px)");
+      expect(tab).not.toContain("padding:8px 15px");
+      // And if the tabs still cannot fit beside the name, they wrap below it
+      // rather than push the page wider than the screen.
+      expect(css.match(/\.topbar\{([^}]*)/)?.[1]).toContain("flex-wrap:wrap");
+    });
+  });
 });

@@ -45,7 +45,10 @@ export const CSS = `
   font-size:10.5px;color:var(--muted);}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums;}
 
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:26px;}
+/* Wraps rather than overflows if the tabs still cannot fit beside the name: a
+   second line is a smaller cost than a page that scrolls sideways. */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:26px;
+  flex-wrap:wrap;row-gap:10px;}
 .mark{font-weight:700;letter-spacing:-.02em;font-size:19px;color:var(--ink);}
 .linkbtn{background:none;border:0;color:var(--muted);font-family:inherit;font-weight:600;
   font-size:13px;cursor:pointer;padding:7px 4px;border-radius:6px;}
@@ -557,7 +560,12 @@ export const CSS = `
 
 /* ── tabs + reporting ─────────────────────────────────────────────────── */
 .tabs{display:flex;gap:4px;background:var(--line-2);padding:3px;border-radius:10px;}
-.tab{font-family:inherit;font-weight:600;font-size:13px;padding:8px 15px;border:0;
+/* The tab bar is the widest thing in the top bar, and at a fixed 15px a side
+   it stuck out 39px on a 320px screen, which made every main screen scroll
+   sideways. The side padding narrows with the screen instead: 15px from 390px
+   up, exactly as before, and never under 5px, which it reaches at 330px. */
+.tab{font-family:inherit;font-weight:600;font-size:13px;border:0;
+  padding:8px clamp(5px,calc((100vw - 300px) / 6),15px);
   border-radius:8px;background:none;color:var(--muted);cursor:pointer;
   transition:background .15s,color .15s;}
 .tab:hover{color:var(--ink-2);}
