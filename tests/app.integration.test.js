@@ -5543,4 +5543,23 @@ describe("fixes: clock, Today and Overview", () => {
         .toBe(true);
     }, 20_000);
   });
+
+  describe("the activity legend with few days on it", () => {
+    it("states each boundary once", async () => {
+      // Two days of two hours: every quantile is the same day, and the legend
+      // read "to 2h 00m" three times before "over 2h 00m".
+      const dom = await bootAt({
+        projects: [project("a", "Acme")],
+        sessions: [
+          sitting("s1", "a", at(10, 2, 9), at(10, 2, 11)),
+          sitting("s2", "a", at(10, 5, 9), at(10, 5, 11)),
+        ],
+      }, at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      const legend = [...d.querySelectorAll(".hm-legend .legend-item")].map((e) => e.textContent);
+      expect(legend).toEqual(["to 2h 00m", "over 2h 00m"]);
+      expect(d.querySelector(`.hm-cell[data-at="${at(10, 5)}"]`).dataset.level).toBe("1");
+    }, 25_000);
+  });
 });

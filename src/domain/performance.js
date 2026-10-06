@@ -23,6 +23,7 @@ import { periodBoundary } from "./goals.js";
 export const PERIODS = ["day", "week", "month", "year", "all"];
 
 const MS_PER_HOUR = 3_600_000;
+const MS_PER_MINUTE = 60_000;
 
 /** Milliseconds of one segment inside [from, to) — the primitive the whole
  *  module rests on. Defined in time.js because the one-meter-at-a-time rule
@@ -444,12 +445,22 @@ export const heatGrid = (from, to, byDay, todayStart) => {
  * Empty days are excluded from the distribution. Including them would set every
  * boundary by how often you didn't work, so a single busy week in a blank year
  * would come out as the darkest shade available and tell you nothing.
+ *
+ * Every boundary is distinct, so there may be fewer than `steps - 1` of them.
+ * With few days on the calendar several quantiles land on the same day, and
+ * keeping each would have the legend state one boundary three times — "to
+ * 1h 00m", "to 1h 00m", "to 1h 00m", "over 1h 00m" — for shades no day could
+ * ever take. Boundaries are taken up to the whole minute first, the finest
+ * grain a duration is printed at, so two that differ only by seconds cannot
+ * print as the same figure either.
  */
 export const heatThresholds = (values, steps = 4) => {
   const sorted = values.filter((v) => v > 0).sort((a, b) => a - b);
   if (sorted.length === 0) return [];
-  return Array.from({ length: steps - 1 }, (_, i) =>
-    sorted[Math.floor(((i + 1) / steps) * (sorted.length - 1))]);
+  const cuts = Array.from({ length: steps - 1 }, (_, i) =>
+    Math.ceil(sorted[Math.floor(((i + 1) / steps) * (sorted.length - 1))] / MS_PER_MINUTE)
+      * MS_PER_MINUTE);
+  return [...new Set(cuts)];
 };
 
 /** 0 for a day with nothing on it, then 1..steps. */

@@ -659,6 +659,23 @@ describe("the activity calendar", () => {
       const cuts = heatThresholds(same, 4);
       expect(same.every((v) => heatLevel(v, cuts) === 1)).toBe(true);
     });
+
+    it("never states the same boundary twice, however few days there are", () => {
+      // Several quantiles land on the same day when there are few of them,
+      // and the legend printed "to 1h 00m" three times over.
+      expect(heatThresholds([HOUR], 4)).toEqual([HOUR]);
+      expect(heatThresholds([HOUR, HOUR, HOUR, 2 * HOUR], 4)).toEqual([HOUR]);
+      expect(heatThresholds(Array(20).fill(3 * HOUR), 4)).toEqual([3 * HOUR]);
+    });
+
+    it("takes boundaries to the minute, so none print as the same figure", () => {
+      // 59m50s, 59m55s and 59m58s all print as "1h 00m".
+      const near = [59 * MIN + 50_000, 59 * MIN + 55_000, 59 * MIN + 58_000, 2 * HOUR];
+      expect(heatThresholds(near, 4)).toEqual([HOUR]);
+      // a day at the boundary is still on the shade the legend says it is
+      expect(heatLevel(59 * MIN + 58_000, heatThresholds(near, 4))).toBe(1);
+      expect(heatLevel(2 * HOUR, heatThresholds(near, 4))).toBe(2);
+    });
   });
 });
 

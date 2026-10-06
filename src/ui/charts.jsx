@@ -338,7 +338,10 @@ export function Heatmap({ weeks, thresholds, scale = "work", valueOf, noun, stre
 
       {thresholds.length > 0 ? (
         <div className="legend hm-legend">
-          {ramp.map((color, i) => (
+          {/* One shade per boundary, and one past the last: exactly the shades
+              `heatLevel` can give a day. A ramp longer than the boundaries
+              would print the last of them again for shades nothing takes. */}
+          {ramp.slice(0, thresholds.length + 1).map((color, i) => (
             <span className="legend-item" key={color}>
               <span className="swatch" style={{ background: color }} />
               {i < thresholds.length
