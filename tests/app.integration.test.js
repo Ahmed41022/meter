@@ -6033,4 +6033,62 @@ describe("fixes: editors and entry forms", () => {
     await wait(200);
     expect(stored(dom).earnings ?? []).toHaveLength(0);
   }, 30_000);
+
+  const settingsTag = (d) => [...d.querySelectorAll(".sec-head")]
+    .find((h) => /^Settings/.test(h.textContent))?.querySelector(".tag") ?? null;
+  const alone = () => ({ projects: [project("a", "Alpha", { currentRate: 50 })], sessions: [] });
+
+  it("keeps unsaved settings through closing the panel and leaving the project", async () => {
+    // A rename typed and then "← All projects" went back to the old name
+    // without a word, and these boxes used to save on their own, so it is an
+    // easy thing to do.
+    const { dom, d } = await openProject(alone(), "Alpha");
+    btn(d, /^Open$/).click();
+    await wait(200);
+    setValue(dom.window, field(d, "Project name"), "Alpha renamed");
+    await wait(150);
+
+    btn(d, /^Close$/).click();
+    await wait(200);
+    expect(settingsTag(d).textContent).toBe("Unsaved");
+
+    btn(d, /All projects/).click();
+    await wait(250);
+    await toProjects(d, "Work");
+    [...d.querySelectorAll(".card")].find((c) => c.textContent.includes("Alpha")).click();
+    await wait(250);
+    expect(settingsTag(d).textContent).toBe("Unsaved");
+    expect(stored(dom).projects[0].name).toBe("Alpha");
+
+    btn(d, /^Open$/).click();
+    await wait(200);
+    expect(field(d, "Project name").value).toBe("Alpha renamed");
+    expect(d.querySelector(".savebar").textContent).toMatch(/Unsaved changes/);
+    btn(d, /Save changes/).click();
+    await wait(250);
+    expect(stored(dom).projects[0].name).toBe("Alpha renamed");
+    btn(d, /^Close$/).click();
+    await wait(200);
+    expect(settingsTag(d)).toBeNull();
+  }, 30_000);
+
+  it("asks before the window closes on settings that are not saved", async () => {
+    const { dom, d } = await openProject(alone(), "Alpha");
+    const closing = () => {
+      const event = new dom.window.Event("beforeunload", { cancelable: true });
+      dom.window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(closing()).toBe(false);
+
+    btn(d, /^Open$/).click();
+    await wait(200);
+    setValue(dom.window, field(d, "Hourly rate"), "45");
+    await wait(150);
+    expect(closing()).toBe(true);
+
+    btn(d, /^Discard$/).click();
+    await wait(200);
+    expect(closing()).toBe(false);
+  }, 30_000);
 });

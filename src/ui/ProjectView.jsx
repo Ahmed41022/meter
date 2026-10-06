@@ -28,7 +28,7 @@ import SessionEditor from "./SessionEditor.jsx";
 const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
 import { StatTile } from "./charts.jsx";
-import Settings from "./Settings.jsx";
+import Settings, { unsavedSettings } from "./Settings.jsx";
 import Objectives from "./Objectives.jsx";
 import ManualSession from "./ManualSession.jsx";
 import Earnings from "./Earnings.jsx";
@@ -839,7 +839,12 @@ export default function ProjectView({
 
       <div className="sec">
         <div className="sec-head">
-          <span className="eyebrow">Settings</span>
+          <span className="eyebrow">
+            Settings
+            {/* A draft outlives the closed panel, so the closed panel says it
+                is holding one. Nothing else on the page would. */}
+            {!settingsOpen && unsavedSettings(project.id) && <span className="tag">Unsaved</span>}
+          </span>
           <button className="linkbtn" onClick={() => setSettingsOpen((v) => !v)}>
             {settingsOpen ? "Close" : "Open"}
           </button>

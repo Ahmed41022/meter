@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects.js";
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
@@ -107,11 +107,67 @@ const formOf = (project, payPeriod) => ({
   overallGoal: project.overallGoal || { type: "money", target: "", period: "week" },
 });
 
+/**
+ * Settings typed and not yet saved, by project, kept outside the panel.
+ *
+ * The panel goes away whenever it is closed or its project is left, and a
+ * draft held only in its own state would go with it: a rename typed in, then
+ * "← All projects", and the project is back to its old name with nothing
+ * said. These boxes used to save as focus left them, so leaving straight
+ * after typing is an easy habit to have. Kept here, the draft is waiting when
+ * the panel opens again, the closed panel's header says it is there, and
+ * closing the window asks first.
+ */
+const drafts = new Map();
+
+/** Whether a project has settings typed and not saved. */
+export const unsavedSettings = (projectId) => drafts.has(projectId);
+
+/**
+ * The window is about to go, and every draft with it, so the browser is asked
+ * to check with the user first.
+ *
+ * Not inside the desktop app. Electron answers a page that objects to being
+ * closed by not closing, and shows nothing, so the window would simply refuse
+ * to shut; there a draft lives for as long as the app is open.
+ */
+const askBeforeLeaving = (e) => {
+  e.preventDefault();
+  e.returnValue = true; // how older browsers were asked the same thing
+};
+const inShell = () => /Electron\//.test(globalThis.navigator?.userAgent ?? "");
+let asking = false;
+const keepDraft = (projectId, draft) => {
+  if (draft) drafts.set(projectId, draft);
+  else drafts.delete(projectId);
+  const ask = drafts.size > 0 && !inShell();
+  if (ask === asking) return;
+  window[ask ? "addEventListener" : "removeEventListener"]("beforeunload", askBeforeLeaving);
+  asking = ask;
+};
+
+/**
+ * The panel as the project stands now, with a kept draft laid back over it.
+ *
+ * Only the fields that were edited come back. Every other one is read
+ * afresh, so a change that arrived in the meantime — from the other device,
+ * say — is not quietly undone by the next Save.
+ */
+const restored = (project, payPeriod) => {
+  const fresh = formOf(project, payPeriod);
+  const kept = drafts.get(project.id);
+  if (!kept) return fresh;
+  const edited = (key) => JSON.stringify(kept.form[key]) !== JSON.stringify(kept.saved[key]);
+  return Object.fromEntries(
+    Object.keys(fresh).map((key) => [key, edited(key) ? kept.form[key] : fresh[key]]),
+  );
+};
+
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
   payPeriod = null, onSetPayPeriod, now = Date.now(),
 }) {
-  const [form, setForm] = useState(() => formOf(project, payPeriod));
+  const [form, setForm] = useState(() => restored(project, payPeriod));
   /**
    * What the ledger holds, in the same terms.
    *
@@ -125,6 +181,11 @@ export default function Settings({
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setPeriod = (patch) => setForm((f) => ({ ...f, period: { ...f.period, ...patch } }));
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+  // Kept outside the panel for as long as anything is unsaved, and let go the
+  // moment nothing is: saved, discarded, or typed back to what it was.
+  useEffect(() => {
+    keepDraft(project.id, dirty ? { form, saved } : null);
+  }, [project.id, dirty, form, saved]);
 
   const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
 
@@ -624,7 +685,9 @@ export default function Settings({
             This removes {project.name} and every session recorded against it. You&apos;ll get one chance to undo.
           </div>
           <div className="controls">
-            <button className="btn danger" onClick={onDeleteProject}>Yes, delete it</button>
+            <button className="btn danger" onClick={() => { keepDraft(project.id, null); onDeleteProject(); }}>
+              Yes, delete it
+            </button>
             <button className="btn ghost" onClick={() => setConfirming(false)}>Keep it</button>
           </div>
         </>
