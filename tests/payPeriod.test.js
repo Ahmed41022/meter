@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  PERIOD, companyId, describePeriod, findCompany, nextClose, nextPayout, normalisePeriod,
-  payPeriodFor, setPayPeriod,
+  PERIOD, companyId, dayOnClock, describePeriod, findCompany, nextClose, nextPayout,
+  normalisePeriod, payPeriodFor, paydayFor, setPayPeriod,
 } from "../src/domain/payPeriod.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
@@ -314,6 +314,105 @@ describe("a cutoff with an hour and a clock of its own", () => {
       minute: "2-digit", hour12: false,
     }).format(closes)).toBe("Sun 19:00");
     expect(nextClose(null, 1)).toBeNull();
+  });
+});
+
+describe("a payday on a clock east of this one", () => {
+  /*
+   * Paid the Wednesday after a week that shuts at midnight on Monday, on the
+   * client's clock. Kolkata is 2h30m ahead of Cairo in October and Auckland
+   * ten hours ahead, so the client's Wednesday begins on Cairo's Tuesday —
+   * and on New York's Tuesday morning. A payday stamped as the client's
+   * midnight and then printed on the device's clock showed Tuesday, and
+   * dropped off the list at the device's midnight, a day early.
+   */
+  const kolkata = { kind: PERIOD.WEEKLY, cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "Asia/Kolkata" };
+  const auckland = { ...kolkata, zone: "Pacific/Auckland" };
+  /** Instants written as a clock reads them, offset and all, so no test
+   *  depends on the zone the suite runs in. */
+  const cairo = (text) => new Date(`${text}+03:00`).getTime();
+  const newYork = (text) => new Date(`${text}-04:00`).getTime();
+  const ist = (text) => new Date(`${text}+05:30`).getTime();
+  const nzdt = (text) => new Date(`${text}+13:00`).getTime();
+  /** A date as the Overview prints it: from the date itself, through UTC. */
+  const weekday = (date) => new Date(`${date}T00:00:00Z`)
+    .toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
+
+  /** One task on a client with `rule`, accepted at `answered`. */
+  const accepted = (rule, answered) => {
+    const T0 = answered - 30 * HOUR;
+    let s = {
+      projects: [{ id: "p1", name: "Ganges", company: "Client", currentRate: 20, currency: "USD", tasks: [] }],
+      sessions: [], earnings: [], companies: [],
+    };
+    s = setPayPeriod(s, "Client", rule, T0);
+    s = addTask(s, "p1", { id: "t1", label: "1234" }, T0);
+    s = startSession(s, s.projects[0], { now: T0, id: "s1", taskId: "t1" });
+    s = stopSession(s, "s1", T0 + HOUR);
+    s = submitTasks(s, s.projects[0], ["t1"], T0 + 2 * HOUR, () => "e1");
+    return answerTasks(s, s.projects[0], ["t1"], TASK.ACCEPTED, answered);
+  };
+
+  it("names a Kolkata payday by Kolkata's calendar", () => {
+    const pay = paydayFor(kolkata, ist("2026-10-03T12:00"));
+    expect(pay.date).toBe("2026-10-07");
+    expect(weekday(pay.date)).toBe("Wednesday");
+    // The instant is that midnight on Kolkata's clock, kept for ordering.
+    expect(pay.at).toBe(ist("2026-10-07T00:00"));
+  });
+
+  it("lists it on its own Wednesday when seen from Cairo, and only then drops it", () => {
+    const s = accepted(kolkata, ist("2026-10-03T12:00"));
+    // Wednesday noon in Cairo is Wednesday afternoon in Kolkata: payday. The
+    // old check compared Kolkata's midnight (Tuesday 21:30 here) with Cairo's
+    // and had already dropped it.
+    const noon = upcomingPay(s, cairo("2026-10-07T12:00")).due;
+    expect(noon).toHaveLength(1);
+    expect(noon[0].date).toBe("2026-10-07");
+    // Tuesday evening in Cairo is already Wednesday in Kolkata, and the row
+    // still says Wednesday, not the Tuesday this clock is on.
+    expect(upcomingPay(s, cairo("2026-10-06T22:30")).due[0].date).toBe("2026-10-07");
+    // 22:00 on Wednesday in Cairo is past midnight in Kolkata: it has come.
+    expect(upcomingPay(s, cairo("2026-10-07T22:00")).due).toEqual([]);
+  });
+
+  it("lists it on its own Wednesday when seen from New York, and only then drops it", () => {
+    const s = accepted(kolkata, ist("2026-10-03T12:00"));
+    expect(upcomingPay(s, newYork("2026-10-07T09:00")).due[0].date).toBe("2026-10-07");
+    // 15:00 in New York is 00:30 on Thursday in Kolkata.
+    expect(upcomingPay(s, newYork("2026-10-07T15:00")).due).toEqual([]);
+  });
+
+  it("does the same for Auckland, a whole day ahead of New York's morning", () => {
+    const s = accepted(auckland, nzdt("2026-10-03T12:00"));
+    expect(paydayFor(auckland, nzdt("2026-10-03T12:00")).date).toBe("2026-10-07");
+    // Tuesday 09:00 in New York is already Wednesday 02:00 in Auckland, and
+    // Tuesday 15:00 in Cairo is Wednesday 01:00 there: payday, both times.
+    expect(upcomingPay(s, newYork("2026-10-06T09:00")).due[0].date).toBe("2026-10-07");
+    expect(upcomingPay(s, cairo("2026-10-06T15:00")).due[0].date).toBe("2026-10-07");
+    // Wednesday 08:00 in New York and 14:00 in Cairo are both Thursday there.
+    expect(upcomingPay(s, newYork("2026-10-07T08:00")).due).toEqual([]);
+    expect(upcomingPay(s, cairo("2026-10-07T14:00")).due).toEqual([]);
+  });
+
+  it("gives work under review a floor named on the client's calendar too", () => {
+    // Monday 01:00 in Cairo is 03:30 in Kolkata: the week shut at midnight
+    // there, so the soonest is the Wednesday after next.
+    let s = accepted(kolkata, ist("2026-10-03T12:00"));
+    s = addTask(s, "p1", { id: "t2", label: "1235" }, cairo("2026-10-04T09:00"));
+    s = startSession(s, s.projects[0], { now: cairo("2026-10-04T09:00"), id: "s2", taskId: "t2" });
+    s = stopSession(s, "s2", cairo("2026-10-04T10:00"));
+    s = submitTasks(s, s.projects[0], ["t2"], cairo("2026-10-05T01:00"), () => "e2");
+    const { waiting } = upcomingPay(s, cairo("2026-10-05T01:00"));
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].date).toBe("2026-10-14");
+  });
+
+  it("knows which day it is on the client's clock", () => {
+    expect(dayOnClock(kolkata, cairo("2026-10-06T22:30"))).toBe("2026-10-07");
+    expect(dayOnClock(auckland, newYork("2026-10-06T09:00"))).toBe("2026-10-07");
+    // No zone means this device's own clock, as it always has.
+    expect(dayOnClock({ ...kolkata, zone: null }, cairo("2026-10-06T22:30"))).toBe("2026-10-06");
   });
 });
 

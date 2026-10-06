@@ -4,7 +4,7 @@ import { companiesIn, companyOf, isOffClock, statusOf } from "../domain/projects
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
 import {
-  PERIOD, WEEKDAYS, describePeriod, nextClose, nextPayout,
+  PERIOD, WEEKDAYS, describePeriod, nextClose, paydayFor,
 } from "../domain/payPeriod.js";
 
 /**
@@ -198,7 +198,9 @@ export default function Settings({
   const payee = companyOf(project);
   const rule = periodOf(period);
   const example = describePeriod(rule);
-  const nextOne = rule ? nextPayout(rule, now) : null;
+  // A date on the rule's own clock, printed as that date. Converted through
+  // this device's clock, a payday in a zone east of here read a day early.
+  const nextOne = rule ? paydayFor(rule, now) : null;
   /**
    * The cutoff instant on this device's clock, where that is worth saying.
    *
@@ -527,8 +529,8 @@ export default function Settings({
                     <strong>{example}</strong>{" "}
                     {nextOne !== null && (
                       <>Money for work handed in right now would arrive{" "}
-                        <strong>{new Date(nextOne).toLocaleDateString(undefined, {
-                          weekday: "long", day: "numeric", month: "long",
+                        <strong>{new Date(`${nextOne.date}T00:00:00Z`).toLocaleDateString(undefined, {
+                          timeZone: "UTC", weekday: "long", day: "numeric", month: "long",
                         })}</strong>.{" "}</>
                     )}
                     A task is paid in the run for the period its ANSWER fell in, hours and

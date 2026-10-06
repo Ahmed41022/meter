@@ -46,12 +46,7 @@ import { isOffClock } from "./projects.js";
 import { rateFor, tasksFor } from "./tasks.js";
 import { TASK, taskState } from "./taskState.js";
 import { isCancelled, tasksOf } from "./earnings.js";
-import { nextPayout, payPeriodFor } from "./payPeriod.js";
-
-const startOfDay = (t) => {
-  const d = new Date(t);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-};
+import { dayOnClock, payPeriodFor, paydayFor } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
  *  valued at. Idle time is left out, as it is from every earnings figure, and
@@ -96,13 +91,14 @@ const rows = (map, kind) => [...map.values()]
  * Money with a date, and money still waiting on somebody.
  *
  * Both are sorted soonest first and carry one row per company, day and
- * currency. A `waiting` row's `at` is the earliest the money could arrive,
- * never a date it is expected on.
+ * currency. A row's `date` is its payday as the client's own clock names it
+ * ("2026-10-07"), which is what to print; `at` is that day's midnight on the
+ * same clock, for ordering only. A `waiting` row's date is the earliest the
+ * money could arrive, never a date it is expected on.
  */
 export const upcomingPay = (state, now) => {
   const due = new Map();
   const waiting = new Map();
-  const today = startOfDay(now);
   const sessions = state.sessions ?? [];
   const earnings = (state.earnings ?? []).filter((e) => !e.deletedAt && !isCancelled(e));
 
@@ -112,6 +108,9 @@ export const upcomingPay = (state, now) => {
     if (!rule) continue;
     const company = (project.company ?? "").trim();
     const currency = project.currency;
+    // Today on the client's clock, which is the one its paydays are named on.
+    // This device's clock disagrees for hours either side of midnight.
+    const today = dayOnClock(rule, now);
 
     for (const task of tasksFor(project)) {
       const status = taskState(task);
@@ -133,10 +132,8 @@ export const upcomingPay = (state, now) => {
        * which makes its payday a floor — the soonest the money could land,
        * never a date it is expected on.
        */
-      const at = pendingReview
-        ? nextPayout(rule, now)
-        : nextPayout(rule, task.stateAt);
-      if (at === null || at < today) continue;
+      const pay = paydayFor(rule, pendingReview ? now : task.stateAt);
+      if (pay === null || pay.date < today) continue;
 
       /*
        * What this task is owed, by currency, because a reward recorded in one
@@ -158,8 +155,8 @@ export const upcomingPay = (state, now) => {
       }
 
       for (const [cur, cents] of owed) {
-        const row = into(pendingReview ? waiting : due, `${company}|${at}|${cur}`,
-                         { company, at, currency: cur });
+        const row = into(pendingReview ? waiting : due, `${company}|${pay.date}|${cur}`,
+                         { company, at: pay.at, date: pay.date, currency: cur });
         row.cents += cents;
         row.tasks.push({
           taskId: task.id, label: task.label, project: project.name, cents, status,

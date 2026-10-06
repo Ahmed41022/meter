@@ -6422,4 +6422,41 @@ describe("fixes: paydays and settling", () => {
     expect(stored(dom).projects[0].tasks.find((t) => t.id === "t2").stateAt)
       .toBeGreaterThanOrEqual(before);
   }, 30_000);
+
+  /** A ledger whose companies carry the given schedules, with `tasks` on one
+   *  project under `company` and an hour of work on each task. */
+  const scheduled = ({ company = "Ganges", rules = {}, tasks, projects = null }) => {
+    const now = Date.now();
+    const list = projects ?? [{
+      id: "a", name: "Gateway", company, currentRate: 40, currency: "USD",
+      createdAt: now - 80 * HOUR, sessionGoal: null, overallGoal: null, tasks,
+    }];
+    return {
+      projects: list,
+      sessions: list.flatMap((p) => (p.tasks ?? []).map((t, i) => ({
+        id: `s-${p.id}-${t.id}`, projectId: p.id, kind: "billed", taskId: t.id, rate: 40,
+        currency: "USD", createdAt: now - (i + 3) * HOUR, closedAt: now - (i + 2) * HOUR,
+        deletedAt: null,
+        segments: [{ startedAt: now - (i + 3) * HOUR, endedAt: now - (i + 2) * HOUR }],
+      }))),
+      earnings: [],
+      companies: Object.entries(rules).map(([name, payPeriod]) => ({
+        id: `co:${name.toLowerCase()}`, name, payPeriod, createdAt: now - 80 * HOUR, deletedAt: null,
+      })),
+    };
+  };
+  const payLabels = (d) => [...d.querySelectorAll(".payrow .trow-label")].map((e) => e.textContent);
+
+  it("prints a client's payday on the client's calendar, not the day before", async () => {
+    // Kolkata's Wednesday begins on Cairo's Tuesday evening, and printing that
+    // midnight on this clock read "Tue". Every payday here is a Wednesday.
+    const now = Date.now();
+    const d = (await bootDash(scheduled({
+      rules: { Ganges: { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "Asia/Kolkata" } },
+      tasks: [{ id: "t1", label: "1234", createdAt: now - 80 * HOUR,
+                state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR }],
+    }))).window.document;
+    expect(payLabels(d)).toHaveLength(1);
+    expect(payLabels(d)[0]).toMatch(/^Wed/);
+  }, 30_000);
 });

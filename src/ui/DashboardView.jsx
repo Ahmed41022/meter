@@ -160,8 +160,12 @@ export default function DashboardView({
   const payTotal = currenciesByValue(
     pay.due.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
   ).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
-  const payDay = (at) => new Date(at).toLocaleDateString(undefined, {
-    weekday: "short", day: "numeric", month: "long",
+  /** A payday is a date on the client's clock, "2026-10-07", and is printed
+   *  as exactly that date. Read through UTC, which no device is ever off by:
+   *  read through this device's clock, a Wednesday in Kolkata came out as
+   *  Tuesday in Cairo. */
+  const payDay = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
+    timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
   });
   // Which payday is open, by its own key. One at a time: these are read one
   // at a time, and all of them open at once is a wall of task names.
@@ -515,7 +519,7 @@ export default function DashboardView({
                        onClick={() => togglePay(row.key)}>
                     <div>
                       <div className="trow-label">
-                        {soft ? `Not before ${payDay(row.at)}` : payDay(row.at)}
+                        {soft ? `Not before ${payDay(row.date)}` : payDay(row.date)}
                       </div>
                       <div className={"trow-sub" + (soft ? " owed" : "")}>
                         {row.company || "No company"} · {row.items}{" "}

@@ -35,7 +35,10 @@
  * they meant before either field existed.
  *
  * The PAYDAY stays a date. Money arriving at nine or at five arrived the same
- * day, and the platforms say as much — processing runs through the day.
+ * day, and the platforms say as much — processing runs through the day. It is
+ * carried as a date on the rule's own clock, from the arithmetic to the
+ * screen, because an instant read back on another clock can land on the day
+ * before.
  *
  * Every date here is built from calendar fields and never by adding
  * milliseconds, for the same reason the rest of the app is: a week containing
@@ -199,16 +202,6 @@ const nextWeekly = ({ cutoff, closesAt, zone }, at) => {
   return candidate > at ? candidate : stamp(plusDays(today, ahead + 7), closesAt, zone);
 };
 
-/** The first `day` weekday on or after the day `from` falls on. On, because a
- *  period that closes on Monday and pays on Monday pays that same day. */
-const weekdayOnOrAfter = (day, from, zone) => {
-  const d = dayOf(from, zone);
-  return stamp(plusDays(d, (day - d.iso + 7) % 7), 0, zone);
-};
-
-const addWeeks = (t, n, zone) =>
-  (n === 0 ? t : stamp(plusDays(dayOf(t, zone), n * 7), 0, zone));
-
 const nextMonthly = ({ cutoff, closesAt, zone }, at) => {
   const d = dayOf(at, zone);
   const here = stamp({ ...d, d: clampDay(d.y, d.m, cutoff) }, closesAt, zone);
@@ -218,28 +211,52 @@ const nextMonthly = ({ cutoff, closesAt, zone }, at) => {
 };
 
 /**
- * The `day`th of the month on or after the day `from` falls on.
- *
- * Compared as day NUMBERS rather than as instants, so a period closing on the
- * 1st at seven in the evening and paying on the 1st still pays that same day
- * — which is what it says, and what it did before a cutoff could carry a time.
- */
-const monthDayOnOrAfter = (day, from, zone) => {
-  const d = dayOf(from, zone);
-  const target = clampDay(d.y, d.m, day);
-  if (target >= d.d) return stamp({ ...d, d: target }, 0, zone);
-  const n = nextMonth(d);
-  return stamp({ ...n, d: clampDay(n.y, n.m, day) }, 0, zone);
-};
-
-/**
- * When money for work recorded at `at` should arrive, or null without a rule.
+ * The payday for work recorded at `at`, as a calendar day on the rule's own
+ * clock.
  *
  * Two steps, and they are separate on purpose. First the period closes — the
  * next cutoff strictly after the work. Then the payday is found from that
  * close, not from the work: two tasks submitted on different days of the same
  * week are paid together, which is the whole reason a pay period exists.
+ *
+ * Everything after the close is done in DAYS, never instants. A weekly payday
+ * is the first payday weekday on or after the day the period closed — on, so
+ * a period that closes on Monday and pays on Monday pays that same day — plus
+ * whole weeks. A monthly one compares day NUMBERS, so a period closing on the
+ * 1st at seven in the evening and paying on the 1st still pays that same day,
+ * which is what it says.
  */
+const paydayOf = (r, at) => {
+  if (r.kind === PERIOD.WEEKLY) {
+    const closed = dayOf(nextWeekly(r, at), r.zone);
+    return plusDays(closed, ((r.payday - closed.iso + 7) % 7) + r.after * 7);
+  }
+  const closed = dayOf(nextMonthly(r, at), r.zone);
+  const first = clampDay(closed.y, closed.m, r.payday) >= closed.d ? closed : nextMonth(closed);
+  // Counted from the payday NUMBER rather than from the clamped date, so a
+  // rule paying on the 31st does not become the 28th for ever after it once
+  // passes through February.
+  const y = first.y + Math.floor((first.m + r.after) / 12);
+  const m = (first.m + r.after) % 12;
+  return { y, m, d: clampDay(y, m, r.payday) };
+};
+
+const two = (n) => String(n).padStart(2, "0");
+
+/**
+ * A calendar day written out, "2026-10-07".
+ *
+ * The form a payday travels in. Days written this way sort and compare as
+ * plain strings, and nothing can read one on the wrong clock — which is the
+ * whole trouble with an instant. Day numbers that have run past the end of
+ * their month are rolled forward by the calendar, through UTC, which has no
+ * daylight saving to get in the way.
+ */
+const isoDay = ({ y, m, d }) => {
+  const day = new Date(Date.UTC(y, m, d));
+  return `${day.getUTCFullYear()}-${two(day.getUTCMonth() + 1)}-${two(day.getUTCDate())}`;
+};
+
 /**
  * The instant the current period shuts, or null without a rule.
  *
@@ -253,23 +270,40 @@ export const nextClose = (rule, at) => {
   return r.kind === PERIOD.WEEKLY ? nextWeekly(r, at) : nextMonthly(r, at);
 };
 
-export const nextPayout = (rule, at) => {
+/**
+ * When money for work recorded at `at` should arrive, or null without a rule.
+ *
+ * `date` is the payday as the rule's own clock names it, and it is the
+ * answer: it is what gets printed and what "has it passed yet" is asked of.
+ * A payday stamped as an instant — midnight on the client's clock — and then
+ * printed on this device's clock read a day early wherever the client is east
+ * of here: a Wednesday payday in Kolkata is Tuesday evening in Cairo, so it
+ * showed Tuesday and dropped off a day before it came.
+ *
+ * `at` is that midnight as an instant, kept for putting paydays from
+ * different clocks in order and for nothing else.
+ */
+export const paydayFor = (rule, at) => {
   const r = normalisePeriod(rule);
   if (!r || !Number.isFinite(at)) return null;
-  if (r.kind === PERIOD.WEEKLY) {
-    const closes = nextWeekly(r, at);
-    return addWeeks(weekdayOnOrAfter(r.payday, closes, r.zone), r.after, r.zone);
-  }
-  const closes = nextMonthly(r, at);
-  const first = monthDayOnOrAfter(r.payday, closes, r.zone);
-  if (!r.after) return first;
-  // Counted from the payday NUMBER rather than from the clamped date, so a
-  // rule paying on the 31st does not become the 28th for ever after it once
-  // passes through February.
-  const d = dayOf(first, r.zone);
-  const y = d.y + Math.floor((d.m + r.after) / 12);
-  const m = (d.m + r.after) % 12;
-  return stamp({ y, m, d: clampDay(y, m, r.payday) }, 0, r.zone);
+  const day = paydayOf(r, at);
+  return { date: isoDay(day), at: stamp(day, 0, r.zone) };
+};
+
+/** The payday as an instant alone: midnight on the rule's clock. */
+export const nextPayout = (rule, at) => paydayFor(rule, at)?.at ?? null;
+
+/**
+ * Which calendar day it is at `at` on the rule's own clock, written the way
+ * a payday's `date` is, so the two can be compared directly.
+ *
+ * A payday has passed once this clock has moved past its day. Asking this
+ * device's clock instead dropped an eastern client's payday on the morning
+ * it was due.
+ */
+export const dayOnClock = (rule, at) => {
+  if (!Number.isFinite(at)) return null;
+  return isoDay(dayOf(at, normalisePeriod(rule)?.zone ?? null));
 };
 
 const ordinal = (n) => {
