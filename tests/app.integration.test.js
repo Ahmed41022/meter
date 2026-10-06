@@ -6688,4 +6688,26 @@ describe("fixes: paydays and settling", () => {
     expect(page()).toMatch(/a meter already running keeps going until you stop it/);
     expect(page()).not.toMatch(/stop the meter/);
   }, 30_000);
+
+  it("keeps a kept draft's payday when a company is typed after the panel reopens", async () => {
+    // Settings keeps an unsaved draft while the panel is closed. Reopened, its
+    // changed payday boxes counted as untouched, so naming a company put the
+    // saved schedule back over them.
+    const { dom, d } = await openSettings(scheduled({
+      company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY }, tasks: [acceptedTask()],
+    }));
+    setValue(dom.window, control(d, "Is paid on"), "4");
+    await wait(150);
+    btn(d, /^Close$/).click();
+    await wait(200);
+    btn(d, /^Open$/).click();
+    await wait(200);
+    expect(control(d, "Is paid on").value).toBe("4");
+
+    setValue(dom.window, control(d, "Company"), "Outlier");
+    await wait(150);
+    expect(control(d, "Is paid on").value).toBe("4");
+    await save(d);
+    expect(ruleOf(dom, "Outlier")).toMatchObject({ kind: "weekly", payday: 4 });
+  }, 30_000);
 });

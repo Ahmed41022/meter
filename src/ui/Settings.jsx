@@ -182,8 +182,12 @@ export default function Settings({
    * Whether the payday boxes have been changed since the last save. Until
    * they have, they follow the company named above; once they have, what was
    * set in them stands. Saving or discarding puts them back to following.
+   * A draft kept from before the panel closed comes back as it was left, so
+   * payday boxes changed then are still changed, and naming a company must
+   * not put the saved schedule back over them.
    */
-  const [periodTouched, setPeriodTouched] = useState(false);
+  const [periodTouched, setPeriodTouched] = useState(
+    () => JSON.stringify(form.period) !== JSON.stringify(saved.period));
   useEffect(() => {
     if (form === saved) setPeriodTouched(false);
   }, [form, saved]);
