@@ -613,8 +613,10 @@ export default function Settings({
                 {example ? (
                   <>
                     <strong>{example}</strong>{" "}
+                    {/* Dated by the ANSWER, as Upcoming payments is: handing
+                        work in decides nothing about when it is paid. */}
                     {nextOne !== null && (
-                      <>Money for work handed in right now would arrive{" "}
+                      <>A task accepted right now would be paid on{" "}
                         <strong>{new Date(`${nextOne.date}T00:00:00Z`).toLocaleDateString(undefined, {
                           timeZone: "UTC", weekday: "long", day: "numeric", month: "long",
                         })}</strong>.{" "}</>
@@ -761,7 +763,8 @@ export default function Settings({
             ? "On hold. It stays where it is but has left the Targets panel and won't take new "
               + "time — set it running again when you come back to it."
             : "Paused keeps it in place for work that has gone quiet. Done files it away with a "
-              + "closing summary. Both leave Targets and stop the meter; neither hides any history."}
+              + "closing summary. Both leave Targets and take no new time, though a meter already "
+              + "running keeps going until you stop it; neither hides any history."}
       </div>
 
       <div className="sec-head" style={{ marginTop: 22 }}>

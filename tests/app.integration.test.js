@@ -6665,4 +6665,27 @@ describe("fixes: paydays and settling", () => {
     await save(d);
     expect(ruleOf(dom, "Northwind").zone).toBe("UTC");
   }, 30_000);
+
+  it("no longer says handing work in settles it, that money follows the hand-in, or that pausing stops the meter", async () => {
+    // Paid as worked: the hours count once handed in, but a rejection still
+    // takes them back, and the payday follows the answer.
+    const { d } = await openFirst(scheduled({
+      company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY },
+      tasks: [{ id: "t1", label: "1234", createdAt: Date.now() - 80 * HOUR }],
+    }));
+    const page = () => d.querySelector(".wrap").textContent;
+    await tick(d, "1234");
+    expect(page()).not.toMatch(/settles the hourly money/);
+    expect(page()).toMatch(/unless the answer is a rejection, which cancels them/);
+    await press(d, /^Submit 1$/);
+    expect(d.querySelector(".toast").textContent).not.toMatch(/settled/);
+    expect(d.querySelector(".toast").textContent).toMatch(/count as earned, unless it is rejected/);
+
+    btn(d, /^Open$/).click();
+    await wait(200);
+    expect(page()).toMatch(/A task accepted right now would be paid on/);
+    expect(page()).not.toMatch(/handed in right now/);
+    expect(page()).toMatch(/a meter already running keeps going until you stop it/);
+    expect(page()).not.toMatch(/stop the meter/);
+  }, 30_000);
 });
