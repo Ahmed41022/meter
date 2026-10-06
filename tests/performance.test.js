@@ -3,8 +3,8 @@ import {
   PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
-  byCompany, concentration, effectiveRate, firstRecord, revenueShare, soleCurrency,
-  streaks, worthPerHour,
+  byCompany, comparisonRanges, concentration, effectiveRate, firstRecord, revenueShare,
+  samePointBefore, soleCurrency, streaks, worthPerHour,
 } from "../src/domain/performance.js";
 import { isOffClock, offClockProjects, workProjects } from "../src/domain/projects.js";
 import { periodStart } from "../src/domain/goals.js";
@@ -296,6 +296,73 @@ describe("comparison against the previous period", () => {
     // the first as +0% invents a baseline that never existed.
     expect(deltaRatio(5, 0)).toBeNull();
     expect(deltaRatio(0, 0)).toBeNull();
+  });
+});
+
+describe("what a period still going is compared with", () => {
+  const wed = at(2026, 9, 7, 15, 30); // Wednesday 7 Oct 2026, 15:30
+
+  it("finds the same point in each kind of period before", () => {
+    expect(samePointBefore("day", wed)).toBe(at(2026, 9, 6, 15, 30));
+    expect(samePointBefore("week", wed)).toBe(at(2026, 8, 30, 15, 30)); // last Wednesday
+    expect(samePointBefore("month", wed)).toBe(at(2026, 8, 7, 15, 30));
+    expect(samePointBefore("year", wed)).toBe(at(2025, 9, 7, 15, 30));
+    expect(samePointBefore("all", wed)).toBeNull();
+  });
+
+  it("clamps a day the earlier month does not have to its last day", () => {
+    expect(samePointBefore("month", at(2026, 2, 31, 10))).toBe(at(2026, 1, 28, 10));
+    expect(samePointBefore("year", at(2024, 1, 29, 10))).toBe(at(2023, 1, 28, 10));
+    // and January reaches back into December of the year before
+    expect(samePointBefore("month", at(2026, 0, 15, 8))).toBe(at(2025, 11, 15, 8));
+  });
+
+  it("keeps the weekday when the week between holds a DST change at midnight", () => {
+    // Africa/Cairo sprang forward at 00:00 on Friday 24 Apr 2026. A week back
+    // from Friday 1 May 00:30 is that Friday, which has no 00:30 and is read
+    // as 01:30. Seven days of milliseconds lands on the Thursday instead.
+    const fri = at(2026, 4, 1, 0, 30);
+    const back = new Date(samePointBefore("week", fri));
+    expect([back.getDay(), back.getDate()]).toEqual([5, 24]);
+    expect(new Date(fri - 7 * 24 * HOUR).getDay()).toBe(4);
+  });
+
+  it("sets the period so far against the period before up to the same point", () => {
+    expect(comparisonRanges("week", wed)).toEqual({
+      current: { from: at(2026, 9, 5), to: wed },
+      previous: { from: at(2026, 8, 28), to: at(2026, 8, 30, 15, 30) },
+      toDate: true,
+    });
+  });
+
+  it("compares a period that is over whole, with the whole one before it", () => {
+    expect(comparisonRanges("week", wed, -1)).toEqual({
+      current: periodRange("week", wed, -1),
+      previous: periodRange("week", wed, -2),
+      toDate: false,
+    });
+  });
+
+  it("has nothing to compare all time with", () => {
+    expect(comparisonRanges("all", wed)).toBeNull();
+  });
+
+  it("reads a Wednesday as level with last Wednesday, not as most of a week down", () => {
+    // Two hours by Monday evening this week; last week had an hour on Monday
+    // and eight on Thursday, which this week has not reached yet.
+    const sessions = [
+      session(at(2026, 9, 5, 9), at(2026, 9, 5, 11)),
+      session(at(2026, 8, 28, 9), at(2026, 8, 28, 10)),
+      session(at(2026, 9, 1, 9), at(2026, 9, 1, 17)),
+    ];
+    const { current, previous } = comparisonRanges("week", wed);
+    const sofar = performanceIn(sessions, current.from, current.to, wed);
+    const before = performanceIn(sessions, previous.from, previous.to, wed);
+    expect(deltaRatio(sofar.billedMs, before.billedMs)).toBe(1);
+    // against all of last week the same two hours read as a collapse
+    const whole = periodRange("week", wed, -1);
+    expect(deltaRatio(sofar.billedMs, performanceIn(sessions, whole.from, whole.to, wed).billedMs))
+      .toBeCloseTo(-7 / 9, 6);
   });
 });
 

@@ -1400,20 +1400,26 @@ describe("the overall view", () => {
   }, 20_000);
 
   it("compares against the period before and names it", async () => {
+    // Yesterday against the day before it. Both are over, so they are set
+    // whole against whole, which no hour of the day this runs at can change.
+    // Today, still going, is set against the same point yesterday; that has
+    // its own tests, on a clock they pin.
     const dom = await bootDash({
       projects: [project("p1", "Acme")],
       sessions: [
-        block("s1", "p1", dayStart() + HOUR, dayStart() + 3 * HOUR),     // 2h today
-        block("s2", "p1", dayStart(1) + HOUR, dayStart(1) + 2 * HOUR),   // 1h yesterday
+        block("s1", "p1", dayStart(1) + HOUR, dayStart(1) + 3 * HOUR),   // 2h yesterday
+        block("s2", "p1", dayStart(2) + HOUR, dayStart(2) + 2 * HOUR),   // 1h the day before
       ],
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
     await wait(220);
+    d.querySelectorAll(".step")[0].click();
+    await wait(240);
 
     const deltas = [...d.querySelectorAll(".delta")].map((x) => x.textContent);
     expect(deltas.some((t) => /\+100%/.test(t))).toBe(true);
-    expect(deltas.some((t) => /yesterday/.test(t))).toBe(true);
+    expect(deltas.some((t) => /the day before/.test(t))).toBe(true);
   }, 20_000);
 
   it("draws one trend bar per hour of the day and marks the worked one", async () => {
@@ -5407,6 +5413,44 @@ describe("fixes: clock, Today and Overview", () => {
       const d = dom.window.document;
       expect(d.querySelector(".day .day-sum").textContent).toBe("$60.00 · 3h 00m · $60.00 pending");
       expect(todayHead(d)).toBe("$60.00 · 3h 00m · $60.00 pending");
+    }, 20_000);
+  });
+
+  describe("comparing with the period before", () => {
+    // Read on Wednesday at noon. This week: two hours on Monday. Last week:
+    // an hour on Monday, then eight on Thursday, which this week has not
+    // reached yet. The week before that: three hours.
+    const seed = () => ({
+      projects: [project("a", "Acme", { currentRate: 100 })],
+      sessions: [
+        sitting("s1", "a", at(10, 5, 9), at(10, 5, 11), { rate: 100 }),
+        sitting("s2", "a", at(9, 28, 9), at(9, 28, 10), { rate: 100 }),
+        sitting("s3", "a", at(10, 1, 9), at(10, 1, 17), { rate: 100 }),
+        sitting("s4", "a", at(9, 21, 9), at(9, 21, 12), { rate: 100 }),
+      ],
+    });
+    const deltas = (d) => [...d.querySelectorAll(".delta")].map((x) => x.textContent);
+
+    it("sets the week so far against last week up to the same point", async () => {
+      // $200 by Wednesday noon against $100 by last Wednesday noon. Against
+      // all of last week, $900, the same week read as 78% down.
+      const dom = await bootAt(seed(), at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
+      expect(d.querySelector(".dash-sub .delta").textContent).toBe("+100% vs this point last week");
+      expect(deltas(d)).toContain("+100% vs this point last week"); // the Billed tile, in hours
+      expect(deltas(d).some((t) => /78%/.test(t))).toBe(false);
+    }, 20_000);
+
+    it("sets a week that is over against the whole week before it, and says so", async () => {
+      const dom = await bootAt(seed(), at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      d.querySelectorAll(".step")[0].click();
+      await wait(250);
+      expect(d.querySelector(".grand-amt").textContent).toBe("$900.00");
+      expect(d.querySelector(".dash-sub .delta").textContent).toBe("+200% vs the week before");
     }, 20_000);
   });
 });

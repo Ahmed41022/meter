@@ -35,8 +35,8 @@ export const sessionMsInWindow = (session, from, to, now) =>
   (session.segments || []).reduce((total, s) => total + segmentMsInWindow(s, from, to, now), 0);
 
 /** The window for a period, as a half-open [from, to). `offset` steps whole
- *  periods: -1 is "the period before this one", which is what every comparison
- *  figure is measured against. */
+ *  periods: -1 is "the period before this one". What a comparison figure is
+ *  measured against is `comparisonRanges`, which is not always a whole one. */
 export const periodRange = (period, now, offset = 0, earliest = Infinity) => {
   // All time is not a period. It does not repeat, so it cannot be stepped and
   // has no predecessor to measure against; it runs from the first thing ever
@@ -51,6 +51,62 @@ export const periodRange = (period, now, offset = 0, earliest = Infinity) => {
   return {
     from: periodBoundary(period, now, offset),
     to: periodBoundary(period, now, offset + 1),
+  };
+};
+
+/** How many days a calendar month has. The month may be out of range: Date
+ *  reads -1 as December of the year before. */
+const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+
+/**
+ * The same point in the period before the one `now` is in: this time
+ * yesterday, this weekday and time last week, this day of the month and time
+ * last month, this date and time last year.
+ *
+ * Built from calendar fields, never by subtracting milliseconds. A week that
+ * spans a DST change is 167 or 169 hours long, and "a week ago" counted in
+ * hours lands an hour off the wall-clock time it is meant to match — on the
+ * wrong weekday, when the change falls at midnight. A day of the month the
+ * earlier month does not have is clamped to its last day, so the 31st of
+ * March is set against the 28th of February rather than spilling into
+ * March. Null for all time, which has no period before it.
+ */
+export const samePointBefore = (period, now) => {
+  const d = new Date(now);
+  const [y, m, day] = [d.getFullYear(), d.getMonth(), d.getDate()];
+  const time = [d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()];
+  if (period === "day") return new Date(y, m, day - 1, ...time).getTime();
+  if (period === "week") return new Date(y, m, day - 7, ...time).getTime();
+  if (period === "month") return new Date(y, m - 1, Math.min(day, daysInMonth(y, m - 1)), ...time).getTime();
+  if (period === "year") return new Date(y - 1, m, Math.min(day, daysInMonth(y - 1, m)), ...time).getTime();
+  return null;
+};
+
+/**
+ * The two windows a comparison figure sets against each other, or null for
+ * all time, which has nothing before it.
+ *
+ * A period that is over is compared whole with the whole one before it. The
+ * one still going is not: on a Wednesday this week holds three days and last
+ * week seven, so "−57% vs last week" would say only that the week is not
+ * over yet. It is compared up to now against the period before up to the
+ * same point — Monday 00:00 to now against last Monday 00:00 to this weekday
+ * and time last week — which is a question the figure can actually answer.
+ * `toDate` says which of the two it is, for the words beside the figure.
+ */
+export const comparisonRanges = (period, now, offset = 0) => {
+  if (period === "all") return null;
+  if (offset < 0) {
+    return {
+      current: periodRange(period, now, offset),
+      previous: periodRange(period, now, offset - 1),
+      toDate: false,
+    };
+  }
+  return {
+    current: { from: periodBoundary(period, now, 0), to: now },
+    previous: { from: periodBoundary(period, now, -1), to: samePointBefore(period, now) },
+    toDate: true,
   };
 };
 

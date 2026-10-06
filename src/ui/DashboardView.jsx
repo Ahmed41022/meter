@@ -6,8 +6,8 @@ import { rateFor } from "../domain/tasks.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, concentration, effectiveRate, firstRecord, heatDepth, revenueShare, streaks,
-  untimedShare, worthPerHour,
+  byCompany, comparisonRanges, concentration, effectiveRate, firstRecord, heatDepth,
+  revenueShare, streaks, untimedShare, worthPerHour,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
@@ -22,9 +22,17 @@ import { upcomingPay } from "../domain/payout.js";
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
 // and the heading directly under it says "All time" in full.
 const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year", all: "All" };
-// All time has no predecessor, and its absence from this table is what
-// suppresses every comparison figure on screen.
-const PREVIOUS = { day: "yesterday", week: "last week", month: "last month", year: "last year" };
+// What each comparison figure is measured against, in the words beside it.
+// The period still going is set against the same point in the one before it,
+// and one that is over against the whole one before it — see
+// `comparisonRanges`. All time has neither, and draws no comparison at all.
+const SO_FAR = {
+  day: "this time yesterday", week: "this point last week",
+  month: "this point last month", year: "this point last year",
+};
+const BEFORE = {
+  day: "the day before", week: "the week before", month: "the month before", year: "the year before",
+};
 
 const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
 
@@ -182,7 +190,7 @@ export default function DashboardView({
     const { from, to } = periodRange(period, now, offset, earliest);
     // Nothing sits behind all time, so there is no comparison to draw. Held as
     // null rather than an empty window, which would read as a truthful 0%.
-    const before = period === "all" ? null : periodRange(period, now, offset - 1);
+    const compare = comparisonRanges(period, now, offset);
     // Every work figure below is derived from `work` alone. Sleep and play are
     // measured on the same clock but must never reach an earnings total, a
     // billable share, or the project breakdown.
@@ -193,7 +201,14 @@ export default function DashboardView({
     return {
       from, to,
       current: performanceIn(work, from, to, now, rateOf, workEarnings),
-      previous: before ? performanceIn(work, before.from, before.to, now, rateOf, workEarnings) : null,
+      previous: compare
+        ? performanceIn(work, compare.previous.from, compare.previous.to, now, rateOf, workEarnings)
+        : null,
+      // This period's side of the comparison while it is still going: up to
+      // now and no further. Once it is over, its side is `current` itself.
+      sofar: compare?.toDate
+        ? performanceIn(work, compare.current.from, compare.current.to, now, rateOf, workEarnings)
+        : null,
       trend: trendFor(period, work, now, offset, rateOf, earliest),
       rows: byProject(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
@@ -223,6 +238,8 @@ export default function DashboardView({
   }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack]);
 
   const { from, to, current, previous, trend, rows, offRows, targets, companies } = view;
+  /** The side of every comparison figure that is this period's. */
+  const base = view.sofar ?? current;
   /** Worth showing once it groups anything: either several clients, or one
    *  client carrying more than a single project. A lone company on a lone
    *  project is just the project's name again, and that is the only case this
@@ -262,7 +279,7 @@ export default function DashboardView({
   const untimed = untimedShare(current, lead);
   const blendedRate = effectiveRate(current.billedCents[lead] ?? 0, current.billedMs);
   const timedRate = effectiveRate(current.timedCents[lead] ?? 0, current.billedMs);
-  const vs = PREVIOUS[period];
+  const vs = offset < 0 ? BEFORE[period] : SO_FAR[period];
   /** Bars are scaled to the longest desk time on screen. Scaling to the first
    *  row instead would break the moment a row below it had more idle time than
    *  the leader had billed — the rows are ordered by billed time, not total. */
@@ -323,7 +340,7 @@ export default function DashboardView({
         <div className="dash-sub">
           {rangeNote(period, from, to)}
           {previous && earned.length > 0 && (
-            <> · <Delta ratio={deltaRatio(current.billedCents[lead] ?? 0, previous.billedCents[lead] ?? 0)}
+            <> · <Delta ratio={deltaRatio(base.billedCents[lead] ?? 0, previous.billedCents[lead] ?? 0)}
                         label={vs} /></>
           )}
         </div>
@@ -374,11 +391,11 @@ export default function DashboardView({
       <div className="tiles">
         <StatTile label="Billed" value={formatShortDuration(current.billedMs)}
                   sub={previous
-                    ? <Delta ratio={deltaRatio(current.billedMs, previous.billedMs)} label={vs} />
+                    ? <Delta ratio={deltaRatio(base.billedMs, previous.billedMs)} label={vs} />
                     : null} />
         <StatTile label="Idle" value={formatShortDuration(current.idleMs)}
                   sub={previous
-                    ? <Delta ratio={deltaRatio(current.idleMs, previous.idleMs)}
+                    ? <Delta ratio={deltaRatio(base.idleMs, previous.idleMs)}
                              goodWhenUp={false} label={vs} />
                     : null} />
         <StatTile label="Billed share"

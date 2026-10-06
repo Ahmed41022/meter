@@ -32,7 +32,7 @@ const pct = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0);
 export function Delta({ ratio, goodWhenUp = true, label }) {
   if (ratio === null || ratio === undefined) {
     return (
-      <span className="delta none" title={`No ${label} to compare with`}>
+      <span className="delta none" title={`Nothing from ${label} to compare with`}>
         —<span className="delta-vs"> vs {label}</span>
       </span>
     );
