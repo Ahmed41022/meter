@@ -3189,18 +3189,23 @@ describe("all time on the overview", () => {
     id, name: id, currentRate: 100, currency: "USD", createdAt: dayAt(thisYear - 3, 0, 1),
     sessionGoal: null, overallGoal: null, tasks: [], ...extra,
   });
-  const block = (id, pid, hours, y, m, d) => ({
+  const block = (id, pid, hours, start) => ({
     id, projectId: pid, kind: "billed", taskId: null, rate: 100, currency: "USD",
-    createdAt: dayAt(y, m, d), closedAt: dayAt(y, m, d) + hours * HOUR, deletedAt: null,
-    segments: [{ startedAt: dayAt(y, m, d), endedAt: dayAt(y, m, d) + hours * HOUR }],
+    createdAt: start, closedAt: start + hours * HOUR, deletedAt: null,
+    segments: [{ startedAt: start, endedAt: start + hours * HOUR }],
   });
-  /** Three years of history, so all time really has to reach across years. */
+  /**
+   * History reaching back across two new years, so all time really has to
+   * span years. Every session is in the past whatever the date: the newest
+   * used to be 20 January of the current year, which from the 1st to the
+   * 19th had not happened yet, and the total read $500 and 5h, not $900 and 9h.
+   */
   const history = {
     projects: [project("a")],
     sessions: [
-      block("s1", "a", 2, thisYear - 2, 0, 15), // Jan, two years ago
-      block("s2", "a", 3, thisYear - 1, 5, 10), // Jun, last year
-      block("s3", "a", 4, thisYear, 0, 20), // Jan, this year
+      block("s1", "a", 2, dayAt(thisYear - 2, 0, 15)), // Jan, two years ago
+      block("s2", "a", 3, dayAt(thisYear - 1, 5, 10)), // Jun, last year
+      block("s3", "a", 4, Date.now() - 2 * 86_400_000), // two days ago
     ],
   };
   const open = async (seed) => {
