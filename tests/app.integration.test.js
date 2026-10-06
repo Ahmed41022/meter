@@ -6545,4 +6545,19 @@ describe("fixes: paydays and settling", () => {
     const lines = [...d.querySelectorAll(".payline")].map((e) => e.textContent);
     expect(lines).toContain("Two-task bonus · 2 tasks · Gateway$60.00");
   }, 30_000);
+
+  it("puts one client on one payday row however its name was typed", async () => {
+    const now = Date.now();
+    const project = (id, name, company) => ({
+      id, name, company, currentRate: 40, currency: "USD", createdAt: now - 80 * HOUR,
+      sessionGoal: null, overallGoal: null,
+      tasks: [{ id: `${id}-t`, label: `${name} task`, createdAt: now - 80 * HOUR,
+                state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR }],
+    });
+    const d = (await bootDash(scheduled({
+      rules: { Northwind: WEEKLY },
+      projects: [project("a", "Gateway", "Northwind"), project("b", "Atlas", "northwind")],
+    }))).window.document;
+    expect(payRows(d)).toEqual(["Northwind · 2 tasks"]);
+  }, 30_000);
 });

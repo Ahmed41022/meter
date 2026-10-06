@@ -665,6 +665,25 @@ describe("what is coming in", () => {
     expect(day(waiting[1].at)).toBe(day(on(2026, 10, 9)));
   });
 
+  it("keeps one client on one row however its name was typed", () => {
+    // The schedule is found by the folded name, so these two share a payday;
+    // keyed by spelling, they were two rows for one payment on the same day.
+    let s = seeded();
+    s.projects = [...s.projects, {
+      ...project, id: "p2", name: "Tasks", company: "outlier ", tasks: [],
+    }];
+    s = addTask(s, "p2", { id: "u1", label: "9000" }, T);
+    s = startSession(s, s.projects[1], { now: T - 3 * HOUR, id: "s3", taskId: "u1" });
+    s = stopSession(s, "s3", T - 2 * HOUR);
+    s = submitTasks(s, s.projects[0], ["t1"], T, () => "e1");
+    s = submitTasks(s, s.projects[1], ["u1"], T, () => "e2");
+
+    const { waiting } = upcomingPay(s, T);
+    expect(waiting).toHaveLength(1);
+    // Shown as it was first written.
+    expect(waiting[0]).toMatchObject({ company: "Outlier", items: 2 });
+  });
+
   it("never mixes currencies into one figure", () => {
     let s = seeded();
     s.projects = [...s.projects, {

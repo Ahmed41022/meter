@@ -42,7 +42,7 @@
 import { elapsedMs } from "./time.js";
 import { earningsCents } from "./money.js";
 import { isBilled } from "./sessions.js";
-import { isOffClock } from "./projects.js";
+import { fold, isOffClock } from "./projects.js";
 import { rateFor, tasksFor } from "./tasks.js";
 import { TASK, taskState } from "./taskState.js";
 import { isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
@@ -137,11 +137,22 @@ export const upcomingPay = (state, now) => {
     }
   }
 
+  /*
+   * One client however its name was typed. The schedule is already found by
+   * the folded name — "Northwind" and "northwind " share one payday — so rows
+   * keyed by the spelling split one payment into two lines on the same day.
+   * Rows are keyed by the folded name and show the first spelling met.
+   */
+  const spelling = new Map();
+
   for (const project of state.projects ?? []) {
     if (project.deletedAt || isOffClock(project)) continue;
     const rule = payPeriodFor(state, project);
     if (!rule) continue;
-    const company = (project.company ?? "").trim();
+    const named = (project.company ?? "").trim();
+    const client = fold(named);
+    if (!spelling.has(client)) spelling.set(client, named);
+    const company = spelling.get(client);
     const currency = project.currency;
     // Today on the client's clock, which is the one its paydays are named on.
     // This device's clock disagrees for hours either side of midnight.
@@ -187,7 +198,7 @@ export const upcomingPay = (state, now) => {
       for (const earning of sole.get(task.id) ?? []) add(earning.currency, earning.cents);
 
       for (const [cur, cents] of owed) {
-        const row = into(pendingReview ? waiting : due, `${company}|${pay.date}|${cur}`,
+        const row = into(pendingReview ? waiting : due, `${client}|${pay.date}|${cur}`,
                          { company, at: pay.at, date: pay.date, currency: cur });
         row.cents += cents;
         row.tasks.push({
@@ -221,7 +232,7 @@ export const upcomingPay = (state, now) => {
       const pay = paydayFor(rule, earned ? Math.max(...times) : now);
       if (pay === null || pay.date < today) continue;
 
-      const row = into(earned ? due : waiting, `${company}|${pay.date}|${earning.currency}`,
+      const row = into(earned ? due : waiting, `${client}|${pay.date}|${earning.currency}`,
                        { company, at: pay.at, date: pay.date, currency: earning.currency });
       row.cents += earning.cents;
       row.tasks.push({
