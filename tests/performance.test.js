@@ -723,6 +723,35 @@ describe("grouping by who the work was for", () => {
     expect(rows[0]).toMatchObject({ billedMs: 2 * HOUR, idleMs: HOUR });
     expect(rows[0].billedCents.USD).toBe(200_00);
   });
+
+  it("treats one client typed two ways as one company, under the spelling met first", () => {
+    // The payday rule already folds these to one key; two rows here made one
+    // client read as two, each with half of its money.
+    const projects = [
+      project("a", "Northwind"), project("b", "northwind"), project("c", " NORTHWIND "),
+      project("d", "Lumen", 50),
+    ];
+    const rows = byCompany(projects, [
+      sess("s1", "a", 2), sess("s2", "b", 3), sess("s3", "c", 1), sess("s4", "d", 4, 50),
+    ], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["Northwind", "Lumen"]);
+    expect(rows[0].projects.map((p) => p.id)).toEqual(["a", "b", "c"]);
+    expect(rows[0].billedMs).toBe(6 * HOUR);
+    expect(rows[0].billedCents.USD).toBe(600_00);
+  });
+
+  it("folds spaces, hyphens and underscores the way the payday rule does", () => {
+    const rows = byCompany(
+      [project("a", "North Wind"), project("b", "north-wind"), project("c", "north_wind")],
+      [sess("s1", "a", 1), sess("s2", "b", 1), sess("s3", "c", 1)], from, to, now);
+    expect(rows.map((r) => [r.company, r.projects.length])).toEqual([["North Wind", 3]]);
+  });
+
+  it("keeps a name that folds to nothing apart from work with no company", () => {
+    const rows = byCompany([project("a", "-"), project("b", null)],
+      [sess("s1", "a", 2), sess("s2", "b", 1)], from, to, now);
+    expect(rows.map((r) => r.company)).toEqual(["-", null]);
+  });
 });
 
 describe("what an hour actually came to", () => {

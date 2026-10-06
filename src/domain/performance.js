@@ -1,6 +1,6 @@
 import { overlapMs } from "./time.js";
 import { isIdle } from "./sessions.js";
-import { companyOf, isOffClock } from "./projects.js";
+import { companyOf, fold, isOffClock } from "./projects.js";
 import { earningsIn, isCancelled, isPending } from "./earnings.js";
 import { earningsCents } from "./money.js";
 import { periodBoundary } from "./goals.js";
@@ -521,22 +521,39 @@ export const hourlyRates = (totals) => {
  *
  * Off-clock projects have no client and must not be passed in — sleep is not
  * unassigned revenue.
+ *
+ * One client is one row however its name was typed. Rows are keyed by the
+ * folded name, the same key the payday rule is filed under, so "Northwind"
+ * and "northwind" are one company here exactly as they share one payday; the
+ * row carries the spelling met first. Unassigned has a key of its own, so a
+ * name that folds to nothing still names somebody.
  */
 export const byCompany = (projects, sessions, from, to, now, rateOf, earnings = []) => {
-  const companyById = new Map(projects.map((p) => [p.id, companyOf(p) ?? ""]));
+  const keyOf = (project) => {
+    const name = companyOf(project);
+    return name === null ? null : fold(name);
+  };
+  const keyById = new Map(projects.map((p) => [p.id, keyOf(p)]));
+  const named = new Map();
   const grouped = new Map();
   // Seeded from the projects, not from the sessions: a project whose whole
   // income was paid per accepted item has money and no session at all, and
   // grouping off the sessions alone would drop it from the breakdown.
-  for (const [, key] of companyById) if (!grouped.has(key)) grouped.set(key, []);
+  for (const project of projects) {
+    const key = keyOf(project);
+    if (grouped.has(key)) continue;
+    grouped.set(key, []);
+    named.set(key, companyOf(project));
+  }
   for (const session of sessions) {
-    if (!companyById.has(session.projectId)) continue;
-    grouped.get(companyById.get(session.projectId)).push(session);
+    if (!keyById.has(session.projectId)) continue;
+    grouped.get(keyById.get(session.projectId)).push(session);
   }
 
   return [...grouped.entries()]
     .map(([key, group]) => {
-      const mine = new Set(projects.filter((p) => (companyOf(p) ?? "") === key).map((p) => p.id));
+      const members = projects.filter((p) => keyOf(p) === key);
+      const mine = new Set(members.map((p) => p.id));
       const totals = performanceIn(group, from, to, now, rateOf,
         earnings.filter((e) => mine.has(e.projectId)));
       const currency = soleCurrency(totals.billedCents);
@@ -544,8 +561,8 @@ export const byCompany = (projects, sessions, from, to, now, rateOf, earnings = 
       // earned none of this money, even when none of theirs was settled.
       const hours = currency ? totals.billedMsByCurrency[currency] ?? 0 : 0;
       return {
-        company: key || null,
-        projects: projects.filter((p) => (companyOf(p) ?? "") === key),
+        company: named.get(key),
+        projects: members,
         ...totals,
         currency,
         // Null rather than a figure when the row spans currencies: there is no

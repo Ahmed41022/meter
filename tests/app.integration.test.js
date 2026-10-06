@@ -5517,4 +5517,30 @@ describe("fixes: clock, Today and Overview", () => {
       expect(deltas).toEqual(["USD —", "EGP — vs this point last week"]);
     }, 20_000);
   });
+
+  describe("one client typed two ways", () => {
+    it("is one company in By company, under the spelling met first", async () => {
+      // The payday rule already reads these as one client. By company listed
+      // them as two, each with half of the money.
+      const dom = await bootAt({
+        projects: [
+          project("a", "Pref", { currentRate: 100, company: "Northwind" }),
+          project("b", "Reviews", { currentRate: 100, company: "northwind" }),
+        ],
+        sessions: [
+          sitting("s1", "a", at(10, 5, 9), at(10, 5, 11), { rate: 100 }),
+          sitting("s2", "b", at(10, 6, 9), at(10, 6, 12), { rate: 100 }),
+        ],
+      }, at(10, 7, 12));
+      const d = dom.window.document;
+      await toProjects(d, "Overview");
+      const rows = [...d.querySelectorAll(".crow")];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].querySelector(".crow-name").textContent).toBe("Northwind");
+      expect(rows[0].querySelector(".crow-amt").textContent).toBe("$500.00");
+      expect(rows[0].textContent).toMatch(/2 projects/);
+      expect([...d.querySelectorAll(".sec-head")].some((h) => /By company1 company$/.test(h.textContent)))
+        .toBe(true);
+    }, 20_000);
+  });
 });
