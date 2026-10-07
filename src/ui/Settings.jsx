@@ -617,18 +617,23 @@ export default function Settings({
                 {example ? (
                   <>
                     <strong>{example}</strong>{" "}
-                    {/* Dated by the ANSWER, as Upcoming payments is: handing
-                        work in decides nothing about when it is paid. */}
+                    {/* Dated as Upcoming payments dates it: by the ANSWER where
+                        this project pays once accepted, by the hand-in where it
+                        pays as worked and nothing waits on an answer. */}
                     {nextOne !== null && (
-                      <>A task accepted right now would be paid on{" "}
+                      <>{paysOnAcceptance(project) ? "A task accepted" : "Work handed in"} right
+                        now would be paid on{" "}
                         <strong>{new Date(`${nextOne.date}T00:00:00Z`).toLocaleDateString(undefined, {
                           timeZone: "UTC", weekday: "long", day: "numeric", month: "long",
                         })}</strong>.{" "}</>
                     )}
-                    A task is paid in the run for the period its ANSWER fell in, hours and
-                    acceptance reward together — so one accepted after its own period shut
-                    rides the next run. Work nobody has reviewed yet has no date at all,
-                    only the soonest it could arrive.
+                    {paysOnAcceptance(project)
+                      ? "This project pays once accepted, so a task is paid in the run for the "
+                        + "period its answer fell in, hours and acceptance reward together — one "
+                        + "accepted after its own period shut rides the next run. Work nobody has "
+                        + "reviewed yet has no date at all, only the soonest it could arrive."
+                      : "This project pays as worked, so a task is paid in the run for the "
+                        + "period it was handed in, answered or not. A rejection takes it back."}
                     {closesHere !== null && (
                       <>
                         {" "}The cutoff is read in {period.zone}, so the period you are in

@@ -85,7 +85,8 @@ export default function TaskSettle({
    * typed it is what every button records, because then it is a fact you
    * have stated rather than a guess about which one you meant.
    *
-   * The answer's time is the one that decides a payday, so getting its
+   * One of these times decides a payday — the answer's where the project pays
+   * once accepted, the hand-in's where it pays as worked — so getting its
    * default wrong is a whole pay period, not a cosmetic nicety.
    */
   const [typed, setTyped] = useState(null);
@@ -255,9 +256,13 @@ export default function TaskSettle({
               {". Type a time in the box and every button records that instead. "}
             </>
           )}
-          The time is when this happened, not when you tick the box. On an answer it
-          decides which pay period the money falls in, to the minute of the cutoff, so an
-          acceptance recorded late slips a whole payday.
+          The time is when this happened, not when you tick the box.{" "}
+          {paysOnAcceptance(project)
+            ? "On an answer it decides which pay period the money falls in, to the minute "
+              + "of the cutoff, so an acceptance recorded late slips a whole payday."
+            : "This project pays as worked, so the hand-in decides which pay period the "
+              + "money falls in, to the minute of the cutoff, and work recorded as handed "
+              + "in late slips a whole payday."}
         </p>
       )}
 

@@ -6572,8 +6572,9 @@ describe("fixes: paydays and settling", () => {
     });
     const seed = {
       projects: [
+        // Paid once accepted, so work under review waits with a floor.
         { id: "a", name: "Gateway", company: "Clockwork", currentRate: 40, currency: "USD",
-          createdAt: at - 80 * HOUR, sessionGoal: null, overallGoal: null,
+          paysOnAcceptance: true, createdAt: at - 80 * HOUR, sessionGoal: null, overallGoal: null,
           tasks: [{ id: "t1", label: "1234", createdAt: at - 80 * HOUR,
                     state: "submitted", stateAt: at - HOUR, submittedAt: at - HOUR }] },
         // A meter going elsewhere, so the page's clock ticks every second.
@@ -6744,8 +6745,8 @@ describe("fixes: paydays and settling", () => {
   }, 30_000);
 
   it("no longer says handing work in settles it, that money follows the hand-in, or that pausing stops the meter", async () => {
-    // Paid as worked: the hours count once handed in, but a rejection still
-    // takes them back, and the payday follows the answer.
+    // Paid as worked: the hours count once handed in, a rejection still takes
+    // them back, and the payday follows the hand-in, with no answer to wait for.
     const { d } = await openFirst(scheduled({
       company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY },
       tasks: [{ id: "t1", label: "1234", createdAt: Date.now() - 80 * HOUR }],
@@ -6760,8 +6761,9 @@ describe("fixes: paydays and settling", () => {
 
     btn(d, /^Open$/).click();
     await wait(200);
-    expect(page()).toMatch(/A task accepted right now would be paid on/);
-    expect(page()).not.toMatch(/handed in right now/);
+    expect(page()).toMatch(/Work handed in right now would be paid on/);
+    expect(page()).toMatch(/paid in the run for the period it was handed in, answered or not/);
+    expect(page()).not.toMatch(/accepted right now/);
     expect(page()).toMatch(/a meter already running keeps going until you stop it/);
     expect(page()).not.toMatch(/stop the meter/);
   }, 30_000);
@@ -6786,5 +6788,33 @@ describe("fixes: paydays and settling", () => {
     expect(control(d, "Is paid on").value).toBe("4");
     await save(d);
     expect(ruleOf(dom, "Outlier")).toMatchObject({ kind: "weekly", payday: 4 });
+  }, 30_000);
+
+  it("dates handed-in work on a project paid as worked, with nothing waiting", async () => {
+    // Paid as worked, there is no answer to wait for: the week it went in pays it.
+    const now = Date.now();
+    const d = (await bootDash(scheduled({
+      company: "Northwind", rules: { Northwind: WEEKLY },
+      tasks: [{ id: "t1", label: "1234", createdAt: now - 80 * HOUR,
+                state: "submitted", stateAt: now - HOUR, submittedAt: now - HOUR }],
+    }))).window.document;
+    expect(payLabels(d)).toHaveLength(1);
+    expect(payLabels(d)[0]).not.toMatch(/Not before/);
+    expect(payRows(d)).toEqual(["Northwind · 1 task"]);
+  }, 30_000);
+
+  it("says a task accepted now would be paid then, on a project paid once accepted", async () => {
+    const now = Date.now();
+    const { d } = await openFirst(scheduled({
+      company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY },
+      projects: [{ id: "a", name: "Gateway", company: "Northwind", currentRate: 40, currency: "USD",
+        paysOnAcceptance: true, createdAt: now - 80 * HOUR, sessionGoal: null, overallGoal: null,
+        tasks: [] }],
+    }));
+    btn(d, /^Open$/).click();
+    await wait(200);
+    const page = d.querySelector(".wrap").textContent;
+    expect(page).toMatch(/A task accepted right now would be paid on/);
+    expect(page).toMatch(/paid in the run for the period its answer fell in/);
   }, 30_000);
 });

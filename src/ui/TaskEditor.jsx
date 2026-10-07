@@ -57,7 +57,7 @@ const fromInput = (value) => {
  * default and the honest one until you know what you're actually being paid.
  */
 export default function TaskEditor({
-  task, currency, projectRate, projectPrice = null, sessionCount,
+  task, currency, projectRate, projectPrice = null, sessionCount, byAnswer = true,
   nameTakenBy = () => null, onSave, onDelete, onCancel, words = wordsFor(false),
 }) {
   const [label, setLabel] = useState(task.label);
@@ -194,7 +194,26 @@ export default function TaskEditor({
       )}
       {taskState(task) && (
         <div className="hint">
-          {answered !== null ? (
+          {/* Which of the two times moves money depends on how the project
+              pays: the answer where it pays once accepted, the hand-in where
+              it pays as worked. The hint says which, since only one does. */}
+          {!byAnswer ? (
+            answered !== null ? (
+              <>
+                This project pays as worked, so the first time is the one that matters to
+                your money: a task lands in the pay run for the period it was handed in, to
+                the minute of the cutoff, answered or not. Correcting it moves the forecast
+                and never an amount. The second records when the answer came back.
+              </>
+            ) : (
+              <>
+                The day the work actually went in, which is not the day you ticked Submit.
+                This project pays as worked, so it is the time that matters to your money: a
+                task lands in the pay run for the period it was handed in, to the minute of
+                the cutoff. Correcting it moves the forecast and never an amount.
+              </>
+            )
+          ) : answered !== null ? (
             <>
               The second time is the one that matters to your money: the pay run a task
               lands in is the one for the period its answer fell in, to the minute of the

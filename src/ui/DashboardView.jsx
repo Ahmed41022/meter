@@ -560,12 +560,13 @@ export default function DashboardView({
                 </div>
               ))}
             <div className="hint" style={{ marginBottom: 0 }}>
-              Dates come from each client&apos;s payday, set in a project&apos;s settings,
-              and run from the period a task was ANSWERED in — a task accepted after its
-              own period shut rides the next run. Work nobody has reviewed yet has no
-              date, only the soonest it could arrive. A reward shared by several tasks is
-              paid with the last of them to be accepted (handed in, where the project pays
-              as worked), and waits like unreviewed work until then. Open a row to see
+              Dates come from each client&apos;s payday, set in a project&apos;s settings.
+              Where a project pays as worked, a task is paid in the run for the period it
+              was handed in. Where it pays once accepted, it is paid in the run for the
+              period its answer fell in — accepted after its own period shut, it rides the
+              next run — and work nobody has reviewed yet has no date, only the soonest it
+              could arrive. A reward shared by several tasks is paid with the last of them
+              to get there, and waits like unreviewed work until then. Open a row to see
               what makes it up. Anything whose payday has passed has dropped off.
             </div>
           </div>

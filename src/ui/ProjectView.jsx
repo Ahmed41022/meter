@@ -661,6 +661,7 @@ export default function ProjectView({
                 currency={project.currency}
                 projectRate={project.currentRate}
                 projectPrice={perTask(project)}
+                byAnswer={paysOnAcceptance(project)}
                 sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
                 nameTakenBy={(label) => nameTakenBy(project, label, editingTask)}
                 onCancel={() => setEditingTask(null)}
