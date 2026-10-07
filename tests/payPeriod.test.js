@@ -357,11 +357,13 @@ describe("a payday on a clock east of this one", () => {
   const weekday = (date) => new Date(`${date}T00:00:00Z`)
     .toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
 
-  /** One task on a client with `rule`, accepted at `answered`. */
+  /** One task on a client with `rule`, accepted at `answered`. Paid once
+   *  accepted, so the answer dates it and unanswered work waits with a floor. */
   const accepted = (rule, answered) => {
     const T0 = answered - 30 * HOUR;
     let s = {
-      projects: [{ id: "p1", name: "Ganges", company: "Client", currentRate: 20, currency: "USD", tasks: [] }],
+      projects: [{ id: "p1", name: "Ganges", company: "Client", currentRate: 20, currency: "USD",
+        paysOnAcceptance: true, tasks: [] }],
       sessions: [], earnings: [], companies: [],
     };
     s = setPayPeriod(s, "Client", rule, T0);
@@ -743,6 +745,52 @@ describe("what is coming in", () => {
     const reward = waiting[0].tasks.find((line) => line.kind === "reward");
     expect(task.cents).toBe(24_000); // 3h at 80, and nothing of the milestone
     expect(reward).toMatchObject({ cents: 3_000, covers: 2 });
+  });
+});
+
+describe("a project paid as worked", () => {
+  /*
+   * Nothing on it waits for an answer. What is handed in is paid in the run
+   * for the period it went in, answered or not, and a rejection takes it off
+   * the list along with its money.
+   */
+  const T = on(2026, 10, 3); // Saturday; Outlier's week shuts on Monday the 5th
+  const project = {
+    id: "p1", name: "Orion", company: "Outlier", currentRate: 80, currency: "USD", tasks: [],
+  };
+  const seeded = () => {
+    let s = { projects: [project], sessions: [], earnings: [], companies: [] };
+    s = setPayPeriod(s, "Outlier", outlier, T);
+    s = addTask(s, "p1", { id: "t1", label: "1234" }, T);
+    s = startSession(s, s.projects[0], { now: T - 4 * HOUR, id: "s1", taskId: "t1", kind: KIND.BILLED });
+    return stopSession(s, "s1", T - 1 * HOUR);
+  };
+
+  it("dates work from the day it was handed in, with nothing waiting", () => {
+    const s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    const { due, waiting } = upcomingPay(s, T);
+    expect(waiting).toEqual([]);
+    expect(due).toHaveLength(1);
+    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
+    expect(due[0].cents).toBe(24_000); // 3h at 80
+  });
+
+  it("keeps an accepted task on its hand-in's payday, not its answer's", () => {
+    // Accepted on the Tuesday, after the week it went in had shut. Paid once
+    // accepted, that would ride the run of the 14th; paid as worked, the 7th
+    // still pays it.
+    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 6, 16));
+    const { due, waiting } = upcomingPay(s, on(2026, 10, 6, 16));
+    expect(waiting).toEqual([]);
+    expect(due).toHaveLength(1);
+    expect(day(due[0].at)).toBe(day(on(2026, 10, 7)));
+  });
+
+  it("takes a rejected task off the list", () => {
+    let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
+    s = answerTasks(s, project, ["t1"], TASK.CANCELLED, on(2026, 10, 4));
+    expect(upcomingPay(s, on(2026, 10, 4))).toEqual({ due: [], waiting: [] });
   });
 });
 

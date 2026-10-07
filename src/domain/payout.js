@@ -1,30 +1,35 @@
 /**
  * What is coming in, and when.
  *
- * Built from two facts the ledger already holds: when a task was answered,
- * and the company's schedule. Nothing here is stored — a forecast that was
- * written down would be wrong the moment a schedule changed, and it would be
- * wrong silently.
+ * Built from two facts the ledger already holds: when a task was handed in or
+ * answered, and the company's schedule. Nothing here is stored — a forecast
+ * that was written down would be wrong the moment a schedule changed, and it
+ * would be wrong silently.
  *
- * A task's money belongs to the period its ANSWER fell in, hours and reward
- * together. A payout run covers the tasks accepted during a period, so the
- * acceptance is the event that puts money in a particular run: a task handed
- * in on the Sunday and accepted on the Wednesday missed the period that shut
- * on the Monday, and rides the next run. The day it was handed in decides
- * nothing about its own payday.
+ * Which moment puts a task's money in a run depends on how its project pays,
+ * and it carries the hours and the task's own reward together.
  *
- * Which means an ANSWERED task has a date and an unanswered one does not, and
- * the panel reports two different things:
+ *   Paid once accepted: the ANSWER. A payout run covers the tasks accepted
+ *   during a period, so a task handed in on the Sunday and accepted on the
+ *   Wednesday missed the period that shut on the Monday, and rides the next
+ *   run. The day it was handed in decides nothing about its own payday.
  *
- *   DUE      answered work, dated from the period its answer fell in, and as
- *            close to a promise as this app is willing to make.
- *   WAITING  submitted work, hours and reward together, because both turn on
- *            the same decision and splitting them put half a task's money
- *            under a confident date and half under none. It carries the
- *            EARLIEST day it could arrive rather than no date at all: an
- *            answer cannot come before now, so the period we are in is the
- *            soonest it could make, and "not before Friday" is worth more
- *            than silence.
+ *   Paid as worked: the HAND-IN. There is no answer to wait for: the work is
+ *   paid in the run for the period it was handed in, answered or not, and a
+ *   rejection later takes it off the list along with the money.
+ *
+ * So the panel reports two different things:
+ *
+ *   DUE      work with a date: answered, where the project pays once
+ *            accepted; handed in, where it pays as worked. As close to a
+ *            promise as this app is willing to make.
+ *   WAITING  work handed in on a project paid once accepted, hours and reward
+ *            together, because both turn on the same decision and splitting
+ *            them put half a task's money under a confident date and half
+ *            under none. It carries the EARLIEST day it could arrive rather
+ *            than no date at all: an answer cannot come before now, so the
+ *            period we are in is the soonest it could make, and "not before
+ *            Friday" is worth more than silence.
  *
  * A reward shared across several tasks is one payment, and is paid in the run
  * for the period its LAST task got there: the latest acceptance where the
@@ -166,16 +171,18 @@ export const upcomingPay = (state, now) => {
     // This device's clock disagrees for hours either side of midnight.
     const today = dayOnClock(rule, now);
 
+    const byAnswer = paysOnAcceptance(project);
     for (const task of tasksFor(project)) {
       const status = taskState(task);
       if (status === null || status === TASK.CANCELLED) continue;
-      const pendingReview = status === TASK.SUBMITTED;
+      const pendingReview = byAnswer && status === TASK.SUBMITTED;
 
       /*
-       * The payday is the one for the period the ANSWER fell in.
+       * Where the project pays once accepted, the payday is the one for the
+       * period the ANSWER fell in.
        *
        * Not the period the work was handed in during, which is the mistake
-       * this replaces. A task submitted on the Sunday and accepted on the
+       * that rule replaced. A task submitted on the Sunday and accepted on the
        * Wednesday missed its own period: that period shut on the Monday, and
        * the run it pays belongs to the batch that was already closed. Dating
        * it from submission put the money on a payday that had been and gone,
@@ -185,8 +192,14 @@ export const upcomingPay = (state, now) => {
        * to find. The earliest one there could be is the period we are in now,
        * which makes its payday a floor — the soonest the money could land,
        * never a date it is expected on.
+       *
+       * Where it pays as worked, nothing waits on an answer: the period the
+       * work was HANDED IN pays it, accepted or not yet answered alike. An
+       * answer to a task never marked submitted stamps the hand-in, so the
+       * answer itself only stands in where a ledger somehow lacks one.
        */
-      const pay = paydayFor(rule, pendingReview ? now : task.stateAt);
+      const handedIn = Number.isFinite(task.submittedAt) ? task.submittedAt : task.stateAt;
+      const pay = paydayFor(rule, pendingReview ? now : byAnswer ? task.stateAt : handedIn);
       if (pay === null || pay.date < today) continue;
 
       /*
