@@ -5,6 +5,7 @@ const { hasRunningSession, STORE_KEY } = require("./running.js");
 const { start, PORT, ORIGIN } = require("./server.js");
 const { migrationPlan, readScript, writeScript } = require("./migrate.js");
 const { isSignIn } = require("./popup.js");
+const { guardUnsavedSettings } = require("./unsaved.js");
 
 /** A desktop app that exits without a window and without a word is impossible to
  *  report, so anything fatal during startup is written down before it goes. */
@@ -185,6 +186,11 @@ function createWindow() {
     shell.openExternal(url);
     return { action: "deny" };
   });
+
+  // Settings typed and not saved make the page object to closing; ask, as a
+  // browser would. Keeping them open undoes the go-ahead the close guard below
+  // gave, so the next close asks about a running meter again.
+  guardUnsavedSettings(win, dialog, () => { quitting = false; });
 
   // Closing with the meter running is how a session ends up billing overnight.
   win.on("close", (event) => {

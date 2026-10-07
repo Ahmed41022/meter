@@ -126,22 +126,19 @@ export const unsavedSettings = (projectId) => drafts.has(projectId);
 
 /**
  * The window is about to go, and every draft with it, so the browser is asked
- * to check with the user first.
- *
- * Not inside the desktop app. Electron answers a page that objects to being
- * closed by not closing, and shows nothing, so the window would simply refuse
- * to shut; there a draft lives for as long as the app is open.
+ * to check with the user first. Inside the desktop app the shell hears the
+ * same objection and asks in a dialog of its own (desktop/unsaved.js), since
+ * Electron on its own would just refuse to close and say nothing.
  */
 const askBeforeLeaving = (e) => {
   e.preventDefault();
   e.returnValue = true; // how older browsers were asked the same thing
 };
-const inShell = () => /Electron\//.test(globalThis.navigator?.userAgent ?? "");
 let asking = false;
 const keepDraft = (projectId, draft) => {
   if (draft) drafts.set(projectId, draft);
   else drafts.delete(projectId);
-  const ask = drafts.size > 0 && !inShell();
+  const ask = drafts.size > 0;
   if (ask === asking) return;
   window[ask ? "addEventListener" : "removeEventListener"]("beforeunload", askBeforeLeaving);
   asking = ask;

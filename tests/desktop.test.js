@@ -14,6 +14,7 @@ const { hasRunningSession, STORE_KEY } = req("../desktop/running.js");
 const { migrationPlan, readScript, writeScript } = req("../desktop/migrate.js");
 const { start, createServer, PORT, MARKER } = req("../desktop/server.js");
 const { isSignIn } = req("../desktop/popup.js");
+const { guardUnsavedSettings } = req("../desktop/unsaved.js");
 
 const session = (over = {}) => ({
   id: "s1", projectId: "p1", deletedAt: null,
@@ -312,5 +313,40 @@ describe("which pop-ups stay inside the app", () => {
     for (const bad of ["", "not a url", "javascript:alert(1)", null, undefined]) {
       expect(isSignIn(bad)).toBe(false);
     }
+  });
+});
+
+describe("closing with settings not saved", () => {
+  /** A window whose page objects to unloading, and a dialog answering `pick`. */
+  const window = (pick) => {
+    const seen = { asked: 0, stayed: 0, handler: null };
+    const win = { webContents: { on: (name, fn) => { if (name === "will-prevent-unload") seen.handler = fn; } } };
+    const dialog = { showMessageBoxSync: (w, options) => { seen.asked += 1; seen.options = options; return pick; } };
+    guardUnsavedSettings(win, dialog, () => { seen.stayed += 1; });
+    return seen;
+  };
+  const objection = () => {
+    const event = { prevented: false, preventDefault() { this.prevented = true; } };
+    return event;
+  };
+
+  it("asks, and closes when told to close anyway", () => {
+    // Electron answers a page's objection by not closing and saying nothing,
+    // so the shell asks instead. Ignoring the objection is what lets it go.
+    const seen = window(1);
+    const event = objection();
+    seen.handler(event);
+    expect(seen.asked).toBe(1);
+    expect(seen.options.message).toMatch(/not saved/);
+    expect(event.prevented).toBe(true);
+    expect(seen.stayed).toBe(0);
+  });
+
+  it("stays open when told to keep editing, and says so to the close guard", () => {
+    const seen = window(0);
+    const event = objection();
+    seen.handler(event);
+    expect(event.prevented).toBe(false);
+    expect(seen.stayed).toBe(1);
   });
 });
