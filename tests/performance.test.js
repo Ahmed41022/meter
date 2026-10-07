@@ -1067,15 +1067,16 @@ describe("where a project's goal stands", () => {
   });
   const work = [session(at(2026, 9, 5, 9), at(2026, 9, 5, 11), { rate: 60 })]; // $120
 
-  it("counts the settled money no clock measured, as the headline does", () => {
-    // Alpha's week read $120 of $500 with a $60 bonus left out.
+  it("counts the money no clock measured, settled or waiting, but never cancelled", () => {
+    // Alpha's week read $120 of $500 with a $60 bonus left out. A goal is for
+    // keeping the work going, so money waiting on an answer counts too.
     const earnings = [
       earning(6_000, at(2026, 9, 6, 12)),                          // counts
-      earning(10_000, at(2026, 9, 6, 13), { status: "pending" }),  // waiting: not yet
+      earning(10_000, at(2026, 9, 6, 13), { status: "pending" }),  // counts: the work is done
       earning(3_000, at(2026, 9, 6, 14), { status: "cancelled" }), // never
       earning(4_000, at(2026, 8, 30, 12)),                         // last week
     ];
-    expect(goalValue(money, alpha, work, earnings, from, to, now)).toBe(180);
+    expect(goalValue(money, alpha, work, earnings, from, to, now)).toBe(280);
   });
 
   it("lets a project paid per accepted item move its money goal", () => {
@@ -1088,10 +1089,13 @@ describe("where a project's goal stands", () => {
     expect(goalValue(money, alpha, work, [pounds], from, to, now)).toBe(120);
   });
 
-  it("leaves clock money still waiting on an answer out, and its hours in", () => {
+  it("counts clock money still waiting on an answer, and leaves rejected money out", () => {
     const waiting = [session(at(2026, 9, 5, 9), at(2026, 9, 5, 11), { rate: 60, status: "pending" })];
-    expect(goalValue(money, alpha, waiting, [], from, to, now)).toBe(0);
+    expect(goalValue(money, alpha, waiting, [], from, to, now)).toBe(120);
     expect(goalValue(time, alpha, waiting, [], from, to, now)).toBe(120);
+    const rejected = [session(at(2026, 9, 5, 9), at(2026, 9, 5, 11), { rate: 60, status: "cancelled" })];
+    expect(goalValue(money, alpha, rejected, [], from, to, now)).toBe(0);
+    expect(goalValue(time, alpha, rejected, [], from, to, now)).toBe(120);
   });
 
   it("reads a time goal in minutes, which money with no hours cannot move", () => {

@@ -325,18 +325,23 @@ export const byProject = (projects, sessions, from, to, now, rateOf, earnings = 
  * goal, whole currency units for a money goal. `sessions` and `earnings` are
  * the project's own.
  *
- * Money is counted the way the Overview's headline counts it: the settled
- * money the clock measured and the settled money it did not — a bonus, an
- * accepted item's price — in the project's currency, with pending and
- * cancelled money in neither. Counting the clock alone left a $60 bonus out
- * of a weekly target, and gave a project paid per accepted item, whose money
- * never comes from a clock, a target that could never move. The Overview's
- * Targets and the project page both ask here, so the same goal cannot read
- * two ways on two screens.
+ * Money counts the work done, not the answers back: what the clock measured
+ * and what it did not — a bonus, an accepted item's price — settled or still
+ * waiting on an answer, in the project's currency. A goal is there to keep
+ * the work going, and one that sat still until somebody else reviewed the
+ * week stopped doing that. Only cancelled money is left out: rejected work
+ * earned nothing, so it moves no goal. The headline still keeps pending money
+ * apart, because it reports what has landed; a goal reports what was done.
+ *
+ * Counting the clock alone left a $60 bonus out of a weekly target, and gave
+ * a project paid per accepted item, whose money never comes from a clock, a
+ * target that could never move. The Overview's Targets and the project page
+ * both ask here, so the same goal cannot read two ways on two screens.
  */
 export const goalValue = (goal, project, sessions, earnings, from, to, now, rateOf) => {
-  const { billedMs, billedCents } = performanceIn(sessions, from, to, now, rateOf, earnings);
-  return goal?.type === "money" ? (billedCents[project.currency] ?? 0) / 100 : billedMs / 60_000;
+  const { billedMs, billedCents, pendingCents } = performanceIn(sessions, from, to, now, rateOf, earnings);
+  if (goal?.type !== "money") return billedMs / 60_000;
+  return ((billedCents[project.currency] ?? 0) + (pendingCents[project.currency] ?? 0)) / 100;
 };
 
 /** Each bucket of a period with its totals attached, for the trend chart. The

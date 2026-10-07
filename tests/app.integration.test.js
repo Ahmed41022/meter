@@ -5574,8 +5574,9 @@ describe("fixes: clock, Today and Overview", () => {
       id, projectId, kind: "bonus", cents, currency: "USD", at: when, note: "",
       createdAt: when, deletedAt: null, ...extra,
     });
-    // Alpha: two hours at $60 and a $60 bonus this week, and $100 more still
-    // waiting on an answer. Beta is paid per accepted item, never by the clock.
+    // Alpha: two hours at $60 and a $60 bonus this week, $100 more still
+    // waiting on an answer, which a goal counts, and $30 rejected, which it
+    // does not. Beta is paid per accepted item, never by the clock.
     const seed = () => ({
       projects: [
         project("a", "Alpha", weekly(500)),
@@ -5585,6 +5586,7 @@ describe("fixes: clock, Today and Overview", () => {
       earnings: [
         earning("e1", "a", 6_000, at(10, 6, 12)),
         earning("e2", "a", 10_000, at(10, 6, 13), { status: "pending" }),
+        earning("e4", "a", 3_000, at(10, 6, 14), { status: "cancelled" }),
         earning("e3", "b", 15_000, at(10, 6, 12), { kind: "piece", units: 3 }),
       ],
     });
@@ -5592,11 +5594,11 @@ describe("fixes: clock, Today and Overview", () => {
       .find((t) => t.querySelector(".trg-name").textContent === name)
       .querySelector(".goal-val").textContent;
 
-    it("counts a settled bonus toward the week's target on the Overview", async () => {
+    it("counts a bonus, settled or waiting, toward the week's target on the Overview", async () => {
       const dom = await bootAt(seed(), at(10, 7, 12));
       const d = dom.window.document;
       await toProjects(d, "Overview");
-      expect(target(d, "Alpha")).toBe("$180.00 / $500.00");
+      expect(target(d, "Alpha")).toBe("$280.00 / $500.00");
     }, 20_000);
 
     it("lets a target move on a project paid per accepted item", async () => {
@@ -5612,7 +5614,7 @@ describe("fixes: clock, Today and Overview", () => {
       await toProjects(d, "Work");
       [...d.querySelectorAll(".card")].find((c) => /Alpha/.test(c.textContent)).click();
       await wait(250);
-      expect(d.querySelector(".goal .goal-val").textContent).toBe("$180.00 / $500.00");
+      expect(d.querySelector(".goal .goal-val").textContent).toBe("$280.00 / $500.00");
     }, 20_000);
   });
 });
