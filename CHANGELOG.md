@@ -27,12 +27,13 @@ ledger changed such that an older build can no longer read it.
     the boundary with it. A zone this browser does not know is kept as it was
     saved, and Settings says paydays are worked out on this device's clock
     until it is.
-  - A task is paid in the run for the period its **answer** fell in, hours and
-    reward together. A payout run covers the tasks accepted during a period, so
-    a task handed in on Sunday and accepted on Wednesday missed the period that
-    shut on Monday and rides the next one. Work nobody has answered yet has no
-    payday, only the earliest it could arrive — “Not before Wed 7 Oct” — and
-    only answered work is totalled.
+  - Where a project pays as worked, a task is paid in the run for the period
+    it was **handed in**, hours and reward together, with nothing waiting on an
+    answer. Where it pays once accepted, the **answer** decides: a payout run
+    covers the tasks accepted during a period, so a task handed in on Sunday
+    and accepted on Wednesday missed the period that shut on Monday and rides
+    the next one, and work nobody has answered yet has no payday, only the
+    earliest it could arrive — “Not before Wed 7 Oct”.
   - A reward shared across several tasks is paid with the last of them to get
     there — accepted, where the project pays once accepted; handed in, where it
     pays as worked — and waits like unreviewed work until then.
@@ -79,8 +80,10 @@ ledger changed such that an older build can no longer read it.
   records when the last sitting on the tasks ended, because work is nearly
   always handed in as it is finished; Accepted and Rejected record the minute
   you press them; a time typed in the box is what every button records instead.
-  Both times can be corrected in the task editor afterwards. The answer's is the
-  one that decides a pay period, so it is kept to the minute of the cutoff.
+  Both times can be corrected in the task editor afterwards. One of them decides
+  a pay period — the answer's where the project pays once accepted, the
+  hand-in's where it pays as worked — so both are kept to the minute of the
+  cutoff, and every hint says which one counts on that project.
   Answers recorded before this were stored at noon, and the editor's hint says
   those are the ones worth checking.
 - **One reward across many tasks.** "Finish fifty and we pay you X" is a single
@@ -127,7 +130,7 @@ ledger changed such that an older build can no longer read it.
   now. The three toggles below it stay immediate: each is one decisive click,
   and Status already has an Undo. What is typed and not saved is kept while the
   panel is closed or the project is left, the closed panel says **Unsaved**,
-  and in a browser closing the window asks first.
+  and closing the window asks first, in the desktop app as in a browser.
 - **The overlap warning names the sessions it is about**, and opens either
   one. Counting two records and leaving the reader to find them by matching
   timestamps by eye was throwing away work the app had already done. The
@@ -188,9 +191,12 @@ ledger changed such that an older build can no longer read it.
   change against the period before, and charts each amount on its own line. How much rides on one project and
   which paid best by the hour appear only when the period's money is in one
   currency.
-- **Money targets count settled money no clock measured** — a bonus, an
-  accepted item's price — the way the headline does, on the Overview and on the
-  project page. The project page's goal no longer counts money still pending.
+- **Money targets count the work done**: money no clock measured — a bonus, an
+  accepted item's price — as well as the clock's, settled or still waiting on
+  an answer, on the Overview and on the project page alike. A goal is there to
+  keep the work going, so it does not sit still until somebody reviews it;
+  only rejected money is left out. The headline still keeps pending money on a
+  line of its own.
 
 ### Fixed
 

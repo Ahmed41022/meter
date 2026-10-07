@@ -57,8 +57,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
   per task.
 - **Says when the money lands.** Each client gets a payday — weekly or
   monthly, cut off at the minute and on the clock the client states it in —
-  and Upcoming payments lists what arrives on which day, task by task, with
-  work still under review shown only as the earliest it could arrive.
+  and Upcoming payments lists what arrives on which day, task by task: work
+  paid as worked from the day it was handed in, work paid once accepted from
+  its answer, and work still under review only as the earliest it could arrive.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.

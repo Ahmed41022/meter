@@ -103,7 +103,7 @@ That is generous early in a period, which is why the **required daily rate** is 
 
 Goals appear on the **Overview** under *Targets*, sorted by how many days' worth off the line each one is, so whatever needs attention is at the top. That panel deliberately ignores the period control above it: "am I on for this week?" is a question about now, and the answer must not change because you stepped the report back to look at last month.
 
-A money target counts what the headline counts: settled money, the clock's and the money no clock measured — a bonus, an accepted item's price — alike, so a project paid per accepted item has a target that can move. Money still waiting on an answer is left out until it lands, on the Overview and on the project's own page, which ask the same function so the same week cannot read two ways.
+A money target counts the work done: the clock's money and the money no clock measured — a bonus, an accepted item's price — alike, settled or still waiting on an answer, so a project paid per accepted item has a target that can move and a week of work under review does not read as a week of nothing. A goal is for keeping going, not for reporting what has landed; that is the headline's job. Only rejected money is left out. The Overview and the project's own page ask the same function, so the same week cannot read two ways.
 
 A **lifetime** goal has no pacing — a target with no end cannot be late. Nor do session goals: a session has no deadline. Off-clock goals are paced on their own page rather than among work targets, because sleep is not a work target.
 
@@ -236,7 +236,7 @@ A task has a life, in the words the platforms use: open, **submitted**, then **a
 
 Any task can be handed in, turned down or reopened, whatever the project pays and however. A task never has more than one acceptance reward: handing one in again after a reopen re-prices the reward it already had rather than writing a second beside it.
 
-The time beside the buttons is when it happened, not when you tick the box. Until you type one, **Submit** records when the last sitting on the tasks ended — work is nearly always handed in as it is finished — and **Accepted** and **Rejected** record the minute you press them; type a time and every button records that instead. Both times can be corrected in the task editor afterwards. The answer's time is the one that decides a pay period, to the minute of the cutoff.
+The time beside the buttons is when it happened, not when you tick the box. Until you type one, **Submit** records when the last sitting on the tasks ended — work is nearly always handed in as it is finished — and **Accepted** and **Rejected** record the minute you press them; type a time and every button records that instead. Both times can be corrected in the task editor afterwards. Which one decides a pay period, to the minute of the cutoff, depends on how the project pays: the answer's where it pays once accepted, the hand-in's where it pays as worked. The hints beside both say which.
 
 ---
 
@@ -244,7 +244,7 @@ The time beside the buttons is when it happened, not when you tick the box. Unti
 
 ## Getting paid
 
-A payday belongs to the client, not to one project, so it is set in the **Payday** part of any of its projects' settings and shared by every project under that company: weekly — *work answered before Monday is paid the following Wednesday* — or monthly — *before the 1st, paid on the 15th* — or none. A period shuts at a minute on the client's own clock (*Sunday 19:00, America/New_York*), and Settings says what that is on yours. The offset is read off the zone at each instant, so a daylight-saving change on either side moves the boundary with it. A zone this browser does not know is kept as saved, with a note that paydays are worked out on this device's clock until it is.
+A payday belongs to the client, not to one project, so it is set in the **Payday** part of any of its projects' settings and shared by every project under that company: weekly — *work in before Monday is paid the following Wednesday* — or monthly — *before the 1st, paid on the 15th* — or none. A period shuts at a minute on the client's own clock (*Sunday 19:00, America/New_York*), and Settings says what that is on yours. The offset is read off the zone at each instant, so a daylight-saving change on either side moves the boundary with it. A zone this browser does not know is kept as saved, with a note that paydays are worked out on this device's clock until it is.
 
 Renaming a project's company takes the payday with it. Naming a company that already has a schedule brings that schedule in, since joining a client means joining its paydays; if you have changed the payday boxes and the company named has a different one, Settings says so before saving, because saving would change it for every project under that company.
 
@@ -258,8 +258,8 @@ Not before Wed, October 14                               $600.00
 Northwind · 2 waiting on a review
 ```
 
-- A task is paid in the run for the period its **answer** fell in, its hours and its reward together. A run covers the tasks accepted during a period, so a task handed in on Sunday and accepted on Wednesday missed the period that shut on Monday and rides the next one.
-- Work nobody has answered yet has no payday, only the earliest it could arrive — *Not before* — and only answered work is totalled.
+- Where a project pays **as worked**, a task is paid in the run for the period it was **handed in**, its hours and its reward together. There is no answer to wait for: it is listed with its date as soon as it goes in, and a rejection later takes it off.
+- Where a project pays **once accepted**, the **answer** decides instead. A run covers the tasks accepted during a period, so a task handed in on Sunday and accepted on Wednesday missed the period that shut on Monday and rides the next one. Work nobody has answered yet has no payday, only the earliest it could arrive — *Not before* — and is not totalled.
 - A reward shared across several tasks is one payment, paid with the last of them to get there: accepted where the project pays once accepted, handed in where it pays as worked. Until then it waits like unreviewed work.
 - One client is one row per day and currency however its name was typed. Every row opens to list what makes it up. Rejected work appears nowhere, and anything whose payday has passed drops off.
 - A payday is a date on the client's calendar all the way to the screen, so a client east of you is never shown a day early.
@@ -339,4 +339,4 @@ The ledger lives in this browser's storage, which a cleared cache takes with it,
 - **Export a backup** writes the whole ledger as plain JSON. **Restore** reads one back — after showing the ledger here beside the one in the file, in projects, sessions and payments and the dates they span, and saying that it replaces rather than merges. The Undo after it stays.
 - **Export CSV** writes every line item for a spreadsheet. It starts with a byte-order mark, so Excel reads names in Arabic or with emoji as they were typed, and a text cell that starts with `=`, `+`, `-` or `@` is written so Excel shows it rather than runs it as a formula. Time off the clock keeps its hours and carries no money, and says what it is.
 - Stored data that cannot be read is **kept, not saved over**. It is copied to a key of its own before anything is written, and a banner offers it as a download, or a backup to restore. If no copy can be made, nothing is saved until the original has been downloaded.
-- Settings typed and not saved are kept while the panel is closed or the project is left, and the closed panel says **Unsaved**. In a browser, closing the window asks first; the desktop app keeps the draft for as long as it is open.
+- Settings typed and not saved are kept while the panel is closed or the project is left, and the closed panel says **Unsaved**. Closing the window asks first, in the desktop app as in a browser.
