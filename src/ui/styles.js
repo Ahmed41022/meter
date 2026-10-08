@@ -606,6 +606,10 @@ export const CSS = `
 .tile-val{font-size:25px;font-weight:600;letter-spacing:-.03em;margin-top:9px;
   line-height:1.1;color:var(--ink);}
 .tile-sub{margin-top:7px;font-size:12px;color:var(--muted);}
+/* A tile is a quarter of the row, and "vs this point last year" is longer
+   than one. Kept on one line, as the headline keeps it, it ran out past the
+   tile's edge; here it wraps under the figure instead. */
+.tile-sub .delta{white-space:normal;}
 
 /* ── trend columns ───────────────────────────────────────────────────── */
 .trend-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;

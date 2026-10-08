@@ -6820,3 +6820,13 @@ describe("fixes: paydays and settling", () => {
     expect(page).toMatch(/paid in the run for the period its answer fell in/);
   }, 30_000);
 });
+
+describe("the Overview's tiles", () => {
+  it("lets a comparison wrap inside its tile rather than run past the edge", () => {
+    // "vs this point last year" is longer than a quarter of the row, and kept
+    // on one line it ran up to 63px out of the Billed and Idle tiles. Only a
+    // real browser can measure that, and one did; pinned here is the rule.
+    const css = readFileSync(DIST, "utf8");
+    expect(css).toMatch(/\.tile-sub \.delta\{white-space:normal;\}/);
+  });
+});
