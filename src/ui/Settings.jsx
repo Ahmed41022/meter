@@ -3,6 +3,7 @@ import { normaliseGoal } from "../domain/goals.js";
 import { companiesIn, companyOf, fold, isOffClock, statusOf } from "../domain/projects.js";
 import { REWARD, bonusPerHour, paysOnAcceptance, perTask, rewardModel } from "../domain/earnings.js";
 import { formatMoney } from "../domain/money.js";
+import { SCOPE, currentLimit } from "../domain/terms.js";
 import {
   PERIOD, WEEKDAYS, describePeriod, findCompany, knownZone, nextClose, paydayFor,
   samePeriod, storedPeriod,
@@ -91,11 +92,22 @@ const periodOf = (f) => {
   return null;
 };
 
+const HOUR = 3_600_000;
+
+/** A project's time limit in the shape its boxes want: hours, and a percentage. */
+const limitForm = (project) => {
+  const limit = currentLimit(project);
+  return limit
+    ? { limit: String(+(limit.ms / HOUR).toFixed(4)), over: String(+(limit.factor * 100).toFixed(2)) }
+    : { limit: "", over: "" };
+};
+
 const formOf = (project, payPeriod) => ({
   name: project.name,
   company: companyOf(project) ?? "",
   period: periodForm(payPeriod),
   rate: String(project.currentRate),
+  ...limitForm(project),
   /**
    * Which reward system acceptance pays under, with the amount for each kind
    * kept side by side. Two boxes rather than one, so flipping between them to
@@ -163,7 +175,7 @@ const restored = (project, payPeriod) => {
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
-  payPeriod = null, companies = [], onSetPayPeriod, now = Date.now(),
+  payPeriod = null, companies = [], onSetPayPeriod, now = Date.now(), onSetTerms,
 }) {
   const [form, setForm] = useState(() => restored(project, payPeriod));
   /**
@@ -200,8 +212,37 @@ export default function Settings({
   useEffect(() => {
     keepDraft(project.id, dirty ? { form, saved } : null);
   }, [project.id, dirty, form, saved]);
+  /**
+   * The project changed underneath an untouched panel — an Undo of a change
+   * that reached the past, or another device's edit arriving by sync — and
+   * the panel follows it. Kept as it was it would show terms the project no
+   * longer has as "Saved". A panel being edited keeps the edit.
+   */
+  const ledger = JSON.stringify(formOf(project, payPeriod));
+  useEffect(() => {
+    if (dirty) return;
+    const held = JSON.parse(ledger);
+    setSaved(held);
+    setForm(held);
+  }, [ledger]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the ledger, never the draft
 
   const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
+  const { limit, over } = form;
+
+  /**
+   * How far a change to the rate or the time limit reaches. Asked only when
+   * one of them has changed, and not part of the form: it is a question
+   * about the change, not a setting, and nothing is unsaved because of it.
+   */
+  const [scope, setScope] = useState(SCOPE.FORWARD);
+  const limitHours = Number(limit);
+  const overPct = over.trim() === "" ? 0 : Number(over);
+  // A limit that is not a number above zero, or a share that is not a number
+  // from zero up, would read as "no limit" and quietly lift the one there is.
+  const limitRefused = limit.trim() !== "" && (!(limitHours > 0) || !(overPct >= 0));
+  const rateChanged = !isOffClock(project) && rate !== saved.rate && Number(rate) > 0;
+  const limitChanged = !isOffClock(project) && !limitRefused
+    && (limit !== saved.limit || (limit.trim() !== "" && over !== saved.over));
 
   /**
    * The schedule belongs to the company, not to this project, so Save files
@@ -292,7 +333,10 @@ export default function Settings({
     onPatch({
       name: name.trim() || project.name,
       company: company.trim(),
-      ...(Number.isFinite(parsed) && parsed > 0 ? { currentRate: parsed } : {}),
+      // A changed rate goes through `onSetTerms` below, because how far back
+      // it reaches is part of the change.
+      ...(Number.isFinite(parsed) && parsed > 0 && !(rateChanged && onSetTerms)
+        ? { currentRate: parsed } : {}),
       // Cleared on purpose means cleared, and the model NOT chosen is always
       // cleared: null rather than skipped, so a project can stop being paid
       // per item, and can never hold two answers to what acceptance pays.
@@ -307,6 +351,15 @@ export default function Settings({
     // is new. "No schedule" for a company that has none has nothing to say,
     // and writes nothing rather than an empty record.
     if (target && (rule !== null || scheduleOf(target) !== null)) onSetPayPeriod?.(target, rule);
+    if ((rateChanged || limitChanged) && onSetTerms) {
+      onSetTerms({
+        rate: rateChanged ? parsed : null,
+        limit: limitChanged
+          ? { ms: limit.trim() === "" ? null : Math.round(limitHours * HOUR), factor: overPct / 100 }
+          : null,
+      }, scope);
+    }
+    setScope(SCOPE.FORWARD);
     setSaved(form);
   };
 
@@ -375,6 +428,35 @@ export default function Settings({
             <input className="inp" type="number" min="0" step="any" value={rate}
                    onKeyDown={onKey} onChange={(e) => set({ rate: e.target.value })} />
           </label>
+          {/* A platform that pays a task's time in full only up to a limit,
+              and the time over it at a share of the rate, or not at all. */}
+          <div className="pair">
+            <label className="field">
+              <span className="eyebrow">Time limit per task (hours)</span>
+              <input className="inp" type="number" min="0" step="any" value={limit}
+                     placeholder="none" onKeyDown={onKey}
+                     onChange={(e) => set({ limit: e.target.value })} />
+            </label>
+            <label className="field">
+              <span className="eyebrow">Time over it pays (% of rate)</span>
+              <input className="inp" type="number" min="0" step="any" value={over}
+                     placeholder="0 = unpaid" disabled={limit.trim() === ""} onKeyDown={onKey}
+                     onChange={(e) => set({ over: e.target.value })} />
+            </label>
+          </div>
+          {limit.trim() !== "" && !limitRefused && (
+            <div className="hint">
+              A task&apos;s first {+limitHours.toFixed(2)}h of billed time pay the full rate; time
+              over it pays {overPct === 0 ? "nothing" : `${+overPct.toFixed(2)}% of it`}. Idle time
+              does not count toward the limit. A task can carry a limit of its own.
+            </div>
+          )}
+          {limitRefused && (
+            <div className="hint warn">
+              A limit has to be a number of hours above zero, and what time over it pays a
+              percentage from 0 up, so this one will be left as it is.
+            </div>
+          )}
           <div className="sec-head" style={{ marginTop: 18 }}>
             <span className="eyebrow">Acceptance reward</span>
           </div>
@@ -436,10 +518,44 @@ export default function Settings({
               </>
             )}
           </div>
-          <div className="hint">
-            A new rate applies to sessions you start from now on. Everything already in the ledger keeps
-            the rate it was recorded at{hasRunningSession ? ", including the one running right now" : ""}.
-          </div>
+          {rateChanged || limitChanged ? (
+            <>
+              <div className="sec-head" style={{ marginTop: 18 }}>
+                <span className="eyebrow">
+                  Apply the new {rateChanged && limitChanged ? "rate and limit" : rateChanged ? "rate" : "limit"}
+                </span>
+              </div>
+              <div className="modes" role="tablist" aria-label="How far the change reaches">
+                {[[SCOPE.FORWARD, "From now on"], [SCOPE.ALL, "Past included"]].map(([key, label]) => (
+                  <button key={key} role="tab" aria-selected={scope === key}
+                          className={"seg-btn" + (scope === key ? " on" : "")}
+                          onClick={() => setScope(key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="hint" style={{ marginTop: 10 }}>
+                {scope === SCOPE.FORWARD ? (
+                  <>
+                    Tasks already handed in keep the terms they were handed in under. Tasks
+                    still open take the new ones, and so does everything recorded from now on.
+                    {rateChanged && " Work filed under no task keeps the rate it was recorded at."}
+                  </>
+                ) : (
+                  <>
+                    Every task on this project is worked out again under the new terms, the
+                    ones already handed in and paid included, so past figures will move. A task
+                    with a rate or a limit of its own keeps it.
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="hint">
+              Changing the rate or the time limit asks whether it reaches work already handed
+              in{hasRunningSession ? " or the sitting running now" : ""}.
+            </div>
+          )}
           {rateRefused && (
             <div className="hint warn">
               An hourly rate has to be a number above zero, so this one will be left as it is.

@@ -18,6 +18,7 @@ src/
     tasks.js       task records, label matching, per-task totals, rates and prices
     taskState.js   a task's life: open, submitted, accepted, rejected
     settle.js      what submitting, answering and reopening do to the money
+    terms.js       a project's rate and time limit, and how far a change reaches
     earnings.js    money with no duration, pay states, how a project pays
     payPeriod.js   a client's payday: cutoff, zone, the run a time falls in
     payout.js      Upcoming payments: what lands on which day
@@ -201,6 +202,24 @@ $18.97/hr on timed work · 67% earned no tracked time
 The first divides everything by the hours recorded. The second divides only the money a clock actually measured. Where nothing untimed was earned they are the same number and the second line is dropped rather than repeated.
 
 ---
+
+---
+
+## A time limit per task
+
+Some platforms pay a task's time in full only up to a limit — two hours, say — and the time over it at a share of the rate, or not at all. Settings takes both: **Time limit per task** in hours, and **Time over it pays** as a percentage of the rate, where 0% means unpaid. A task can carry a limit of its own in its editor, which replaces the project's and keeps its share.
+
+The line is drawn across a task's billed time in the order it happened: its sittings are laid end to end, and the minute their total reaches the limit is where full pay stops. A sitting that crosses it is split there, so a day's figure carries only that day's share of each side. Idle time does not count toward the limit, and work filed under no task has none. Nothing is stored as money: correct a sitting, or delete one, and the line moves with it.
+
+Every money figure follows — Today, the Overview, the project page, Upcoming payments, goals and the CSV, whose note says why a row comes to less than its hours times its rate. The task's row says **2h 00m in full + 40m over the limit at 30%**, and so does the sitting that crossed it. An hourly bonus on acceptance pays the same share of its rate for the time over.
+
+While the meter runs on a task with a limit, the strip above every screen counts down **1h 12m left at full pay**, and from the minute it is crossed reads **over the limit · 30%**. As it crosses it says so once, on screen and as a notification where the device allows one — asked for when the limit is saved, since a browser only asks while someone is clicking.
+
+### How far a change reaches
+
+Changing the rate or the limit asks one question before Save. **From now on**: tasks already handed in keep the terms they were handed in under, since that is when the platform judged them, and tasks still open take the new ones along with everything recorded from here. Work filed under no task keeps the rate it was recorded at. **Past included**: every task on the project is worked out again under the new terms, the ones already paid included, and a task with a rate or a limit of its own keeps it. That one moves figures already reported, so it can be undone in one step.
+
+The limit is kept as a history of the terms in force and when each began, which is what lets a task handed in last month still find the limit it went in under after the limit changes.
 
 ---
 

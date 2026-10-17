@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { elapsedMs, isRunning, startedAt } from "../domain/time.js";
-import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   byProject, currenciesByValue, performanceIn, periodRange, sessionMsInWindow, splitByClock,
 } from "../domain/performance.js";
 import { daysOfWork, recentPicks, spillsPast } from "../domain/recent.js";
-import { isIdle } from "../domain/sessions.js";
+import { isIdle, sessionCents } from "../domain/sessions.js";
 import { isCancelled, isPending } from "../domain/earnings.js";
 import { isOffClock, offClockProjects, workProjects } from "../domain/projects.js";
-import { rateFor, taskLabel } from "../domain/tasks.js";
+import { taskLabel } from "../domain/tasks.js";
+import { pricer } from "../domain/terms.js";
 import Todos from "./Todos.jsx";
 
 /** One more week each time. Seven is the span you actually think in, and the
@@ -71,10 +72,9 @@ export default function TodayView({
 }) {
   const [shown, setShown] = useState(STEP);
 
-  const rateOf = (s) => {
-    const owner = projects.find((p) => p.id === s.projectId);
-    return owner ? rateFor(owner, s) : s.rate;
-  };
+  // The rate each session is valued at, and a share of it for time over its
+  // task's limit — the same answer the Overview gets.
+  const rateOf = pricer(projects, sessions);
   const nameOf = (id) => projects.find((p) => p.id === id) ?? null;
 
   const picks = recentPicks(sessions, projects);
@@ -241,7 +241,7 @@ export default function TodayView({
                       </div>
                       <span className="row-amt">
                         {priced
-                          ? formatMoney(earningsCents(rateOf(s), here), s.currency)
+                          ? formatMoney(sessionCents(s, day.dayStart, day.dayEnd, now, rateOf), s.currency)
                           : formatShortDuration(here)}
                       </span>
                     </div>

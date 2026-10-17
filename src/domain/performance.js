@@ -1,8 +1,7 @@
 import { overlapMs } from "./time.js";
-import { isIdle } from "./sessions.js";
+import { isIdle, sessionCents } from "./sessions.js";
 import { companyOf, fold, isOffClock } from "./projects.js";
 import { earningsIn, isCancelled, isPending } from "./earnings.js";
-import { earningsCents } from "./money.js";
 import { periodBoundary } from "./goals.js";
 
 /**
@@ -34,6 +33,7 @@ export const segmentMsInWindow = overlapMs;
  *  Paused gaps fall between segments, so they are never counted here either. */
 export const sessionMsInWindow = (session, from, to, now) =>
   (session.segments || []).reduce((total, s) => total + segmentMsInWindow(s, from, to, now), 0);
+
 
 /** The window for a period, as a half-open [from, to). `offset` steps whole
  *  periods: -1 is "the period before this one". What a comparison figure is
@@ -231,7 +231,7 @@ export const performanceIn = (sessions, from, to, now, rateOf = (s) => s.rate, e
       billedMs += ms;
       billedMsByCurrency[session.currency] = (billedMsByCurrency[session.currency] || 0) + ms;
     }
-    const cents = earningsCents(rateOf(session), ms);
+    const cents = sessionCents(session, from, to, now, rateOf);
     if (idle) {
       idleCents[session.currency] = (idleCents[session.currency] || 0) + cents;
     } else if (isCancelled(session)) {

@@ -299,6 +299,11 @@ export const CSS = `
 .runbar-time{font-family:var(--mono);font-size:13px;white-space:nowrap;}
 .runbar-amt{font-family:var(--mono);font-size:13px;font-weight:500;white-space:nowrap;}
 .runbar-tag{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;}
+/* How much of a task's time limit is left, then what the time over it pays.
+   Muted until the line is crossed, then the colour that flags a cost. */
+.runbar-limit{font-size:11.5px;color:var(--muted);white-space:nowrap;}
+.runbar-limit.over{color:var(--flag);font-weight:600;}
+.trow-sub.over{color:var(--flag);}
 .runbar-stop{font-family:inherit;font-weight:600;font-size:12px;padding:5px 12px;
   border:1px solid var(--jade);border-radius:7px;background:var(--card);color:var(--jade);
   cursor:pointer;white-space:nowrap;}
@@ -308,6 +313,7 @@ export const CSS = `
 @media (max-width:420px){
   .runbar{gap:8px;padding:8px 10px;}
   .runbar-task{display:none;}
+  .runbar-limit-more{display:none;}
 }
 
 .foot{margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:9px;}

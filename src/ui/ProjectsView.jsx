@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
-import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   companyOf, isDone as projectDone, isPaused, searchProjects, validateProject,
 } from "../domain/projects.js";
 import { isCancelled, isPending, isPieceOnly, perTask } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
-import { rateFor } from "../domain/tasks.js";
+import { sessionCents } from "../domain/sessions.js";
+import { pricer } from "../domain/terms.js";
 import { countWord, daysWord, wordsFor } from "./words.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
@@ -40,6 +41,11 @@ export default function ProjectsView({
   const [query, setQuery] = useState("");
   const fileRef = useRef(null);
 
+  // What a sitting came to: its rate, and a share of it for time over its
+  // task's limit, as every other screen values it.
+  const price = useMemo(() => pricer(projects, sessions), [projects, sessions]);
+  const whole = (s) => sessionCents(s, -Infinity, Infinity, now, price);
+
   // Money is summed per currency — adding EGP to USD would be a lie. There is
   // no money on the Life tab at all, so its headline counts time instead.
   const totals = useMemo(() => {
@@ -50,7 +56,7 @@ export default function ProjectsView({
       const project = byId[s.projectId];
       if (!project || isPending(s) || isCancelled(s)) return;
       acc[s.currency] = (acc[s.currency] || 0)
-        + earningsCents(rateFor(project, s), elapsedMs(s, now));
+        + sessionCents(s, -Infinity, Infinity, now, price);
     });
     // Money that never came from an hour still belongs in what you have
     // earned. Leaving it out understated the headline by more than half on a
@@ -60,7 +66,7 @@ export default function ProjectsView({
       acc[e.currency] = (acc[e.currency] || 0) + e.cents;
     });
     return Object.entries(acc);
-  }, [life, projects, sessions, earnings, now]);
+  }, [life, projects, sessions, earnings, now, price]);
 
   const trackedMs = useMemo(() => {
     if (!life) return 0;
@@ -105,10 +111,10 @@ export default function ProjectsView({
     const settled = (s) => !isPending(s) && !isCancelled(s);
     const cents = life
       ? 0
-      : mine.filter(settled).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+      : mine.filter(settled).reduce((a, s) => a + whole(s), 0)
         + earnings.filter((e) => e.projectId === p.id && settled(e)).reduce((a, e) => a + e.cents, 0);
     const waiting = life ? 0
-      : mine.filter(isPending).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+      : mine.filter(isPending).reduce((a, s) => a + whole(s), 0)
         + earnings.filter((e) => e.projectId === p.id && isPending(e)).reduce((a, e) => a + e.cents, 0);
     /**
      * What was earned here and then taken back.
@@ -119,7 +125,7 @@ export default function ProjectsView({
      * amount is the missing half of that sentence.
      */
     const voided = life ? 0
-      : mine.filter(isCancelled).reduce((a, s) => a + earningsCents(rateFor(p, s), elapsedMs(s, now)), 0)
+      : mine.filter(isCancelled).reduce((a, s) => a + whole(s), 0)
         + earnings.filter((e) => e.projectId === p.id && isCancelled(e)).reduce((a, e) => a + e.cents, 0);
     const open = openCount(p.id);
     const company = life ? null : companyOf(p);

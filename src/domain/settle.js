@@ -45,6 +45,7 @@ import { elapsedMs, isOpen } from "./time.js";
 import { formatShortDuration } from "./money.js";
 import { isBilled, stopSession } from "./sessions.js";
 import { findTask, taskLabel } from "./tasks.js";
+import { overLimitFor } from "./terms.js";
 import {
   TASK, isAccepted, isOpenTask, isRejected, setTaskStateMany,
 } from "./taskState.js";
@@ -104,11 +105,14 @@ const writtenHere = (earning) => String(earning?.note ?? "").startsWith(WRITTEN)
 
 /** What the reward line should say it was for, so the ledger reads without
  *  having to be cross-referenced against the task list. */
-const rewardNote = (project, taskId, billedMs) => {
+const rewardNote = (project, taskId, billedMs, over = null) => {
   const label = taskLabel(project, taskId);
   if (rewardModel(project) !== REWARD.PER_HOUR) return `${WRITTEN}${label}`;
   const rate = bonusPerHour(project);
-  return `${WRITTEN}${label} · ${formatShortDuration(billedMs)} at ${rate}/hr`;
+  const beyond = over
+    ? `, ${formatShortDuration(over.ms)} of it over the limit at ${Math.round(over.factor * 100)}%`
+    : "";
+  return `${WRITTEN}${label} · ${formatShortDuration(billedMs)} at ${rate}/hr${beyond}`;
 };
 
 /**
@@ -116,8 +120,10 @@ const rewardNote = (project, taskId, billedMs) => {
  * reward line, or null where there is nothing to record — no reward model, no
  * price, or no billed time under an hourly bonus.
  */
-const rewardLine = (project, taskId, billedMs) => {
-  const cents = acceptanceCents(project, findTask(project, taskId), billedMs);
+const rewardLine = (project, taskId, billedMs, over = null) => {
+  // Time over a limit pays its share of an hourly bonus, as of the rate.
+  const paidMs = over ? billedMs - over.ms + over.ms * over.factor : billedMs;
+  const cents = acceptanceCents(project, findTask(project, taskId), paidMs);
   // Zero as well as null: a line worth nothing is not written, here or by
   // `addEarning`, which refuses one.
   if (!cents) return null;
@@ -128,7 +134,7 @@ const rewardLine = (project, taskId, billedMs) => {
     // Hours, not items: a count of one would read as one accepted item and
     // print a per-item price the platform never quoted.
     units: hourly ? null : 1,
-    note: rewardNote(project, taskId, billedMs),
+    note: rewardNote(project, taskId, billedMs, over),
   };
 };
 
@@ -145,10 +151,10 @@ const rewardLine = (project, taskId, billedMs) => {
  * would pay the task twice; the others are deleted the ordinary way, with a
  * tombstone. Lines somebody typed are left exactly as they are.
  */
-const repriceReward = (state, project, taskId, billedMs, own, now, at) => {
+const repriceReward = (state, project, taskId, billedMs, own, now, at, over = null) => {
   const [keep, ...extra] = own.filter(writtenHere);
   if (!keep) return state;
-  const line = rewardLine(project, taskId, billedMs);
+  const line = rewardLine(project, taskId, billedMs, over);
   const gone = new Set(extra.map((e) => e.id));
   if (!line) gone.add(keep.id);
   return {
@@ -213,6 +219,7 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
       if (isOpen(s)) next = stopSession(next, s.id, now);
     }
     const billedMs = billedMsForTask(next, owner.id, taskId, now);
+    const over = overLimitFor(owner, sessionsUnder(next, owner.id, taskId), now);
     // Every session under the task, whatever state it is in. The task's state
     // decides what its money is worth, so moving them all leaves no row behind
     // disagreeing with the rest of the batch.
@@ -221,10 +228,10 @@ export const submitTasks = (state, project, taskIds, now, nextId, at = now) => {
     const own = soleRewardsFor(next.earnings, taskId).filter(isReward);
     if (own.length > 0) {
       for (const e of own) rewards.push(e.id);
-      next = repriceReward(next, owner, taskId, billedMs, own, now, at);
+      next = repriceReward(next, owner, taskId, billedMs, own, now, at, over);
       continue;
     }
-    const line = rewardLine(owner, taskId, billedMs);
+    const line = rewardLine(owner, taskId, billedMs, over);
     if (line) {
       next = addEarning(next, owner, {
         ...line, taskIds: [taskId], status: PAY.PENDING,
@@ -305,4 +312,29 @@ export const reopenTasks = (state, project, taskIds, now) => {
   }
   const next = withdrawn.length === 0 ? state : setPayStateMany(state, withdrawn, PAY.PENDING);
   return setTaskStateMany(next, owner.id, ids, null, now);
+};
+
+/**
+ * Brings the hourly bonuses already written for a project's handed-in tasks
+ * up to date with its time limit.
+ *
+ * A bonus is written once, at the hand-in, from the time over the limit then
+ * in force. A limit changed for the whole project, the past included, reaches
+ * those tasks too, and their bonuses are priced again from it, each keeping
+ * its date. Only lines this app wrote: one typed in keeps what it was given.
+ */
+export const repriceHourlyRewards = (state, projectId, now) => {
+  const project = (state.projects ?? []).find((p) => p.id === projectId);
+  if (!project || rewardModel(project) !== REWARD.PER_HOUR) return state;
+  let next = state;
+  for (const task of project.tasks ?? []) {
+    if (isOpenTask(task)) continue;
+    const own = soleRewardsFor(next.earnings, task.id).filter(isReward);
+    const keep = own.find(writtenHere);
+    if (!keep) continue;
+    const billedMs = billedMsForTask(next, projectId, task.id, now);
+    const over = overLimitFor(project, sessionsUnder(next, projectId, task.id), now);
+    next = repriceReward(next, project, task.id, billedMs, own, now, keep.at, over);
+  }
+  return next;
 };

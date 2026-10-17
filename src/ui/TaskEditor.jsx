@@ -59,6 +59,7 @@ const fromInput = (value) => {
 export default function TaskEditor({
   task, currency, projectRate, projectPrice = null, sessionCount, byAnswer = true,
   nameTakenBy = () => null, onSave, onDelete, onCancel, words = wordsFor(false),
+  projectLimit = null,
 }) {
   const [label, setLabel] = useState(task.label);
   // Shown back as it was meant, so "30%" does not reappear as 4.92 and turn a
@@ -66,6 +67,8 @@ export default function TaskEditor({
   const [rate, setRate] = useState(taskRateInput(task));
   const [price, setPrice] = useState(task.price == null ? "" : String(task.price));
   const [note, setNote] = useState(task.note ?? "");
+  // A limit of the task's own, in hours, where the project has one to replace.
+  const [ownLimit, setOwnLimit] = useState(task.limitMs > 0 ? String(+(task.limitMs / 3_600_000).toFixed(4)) : "");
   /**
    * The day the work went in, correctable because the app used to stamp the
    * moment you ticked the box. A task handed in on Saturday and ticked off on
@@ -95,7 +98,9 @@ export default function TaskEditor({
   // Another task already called this. A name is how a typed task is found,
   // so two sharing one would leave the second unreachable by it.
   const clash = label.trim() ? nameTakenBy(label) : null;
-  const blocked = Boolean(rateIssue || priceIssue || clash);
+  // Read as "none" it would quietly put the task back on the project's limit.
+  const limitIssue = projectLimit !== null && ownLimit.trim() !== "" && !(Number(ownLimit) > 0);
+  const blocked = Boolean(rateIssue || priceIssue || clash || limitIssue);
 
   const save = () => !blocked && onSave({
     label: label.trim() || task.label,
@@ -104,6 +109,9 @@ export default function TaskEditor({
     note,
     submittedAt: went ? fromInput(went) : null,
     answeredAt: back ? fromInput(back) : null,
+    ...(projectLimit !== null
+      ? { limitMs: ownLimit.trim() === "" ? null : Math.round(Number(ownLimit) * 3_600_000) }
+      : {}),
   });
 
   if (confirming) {
@@ -165,6 +173,22 @@ export default function TaskEditor({
           </span>
         )}
       </label>
+      {/* Only where the project has a limit: on its own a task's limit has
+          no share of the rate to pay the time over it. */}
+      {projectLimit !== null && (
+        <label className="field">
+          <span className="eyebrow">Time limit (hours)</span>
+          <input className="inp" inputMode="decimal" value={ownLimit}
+                 placeholder={`empty = ${+(projectLimit.ms / 3_600_000).toFixed(2)}h, the project's`}
+                 onChange={(e) => setOwnLimit(e.target.value)}
+                 onKeyDown={(e) => e.key === "Enter" && save()} />
+          {limitIssue && (
+            <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+              A limit has to be a number of hours above zero. Leave it empty for the project&apos;s.
+            </span>
+          )}
+        </label>
+      )}
       <label className="field">
         <span className="eyebrow">Note</span>
         {/* Enter makes a line here rather than saving: a task that ran across

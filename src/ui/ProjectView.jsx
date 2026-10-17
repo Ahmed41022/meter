@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { elapsedMs, isOpen, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
 import {
-  earningsCents, formatDuration, formatMoney, formatShortDuration, moneyParts,
+  formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
 import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
@@ -11,7 +11,10 @@ import {
   PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
   paysOnAcceptance, perTask, priceFor, taskPay, tasksOf,
 } from "../domain/earnings.js";
-import { isIdle, KIND, utilisation, wasCorrected, wasManual } from "../domain/sessions.js";
+import {
+  isIdle, KIND, overLimitMs, sessionCents, utilisation, wasCorrected, wasManual,
+} from "../domain/sessions.js";
+import { limitFor, pricer } from "../domain/terms.js";
 import { TASK, taskState } from "../domain/taskState.js";
 import {
   ORDER, ORDERS, findTask, nameTakenBy, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
@@ -61,6 +64,7 @@ const contradiction = (status, { rejected, accepted }) => {
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
+  onSetTerms, onSetOwnLimit,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
@@ -132,7 +136,12 @@ export default function ProjectView({
   const piece = isPieceOnly(project);
   const settles = isPerTask(project);
   const w = wordsFor(offClock);
-  const { head, tail } = moneyParts(current ? earningsCents(rateFor(project, current), shownMs) : 0, currency);
+  // The rate each sitting is valued at, and a share of it for time over its
+  // task's limit. Every money figure on the page asks this, so none of them
+  // can disagree with the Overview about what a sitting came to.
+  const price = pricer([project], [...sessions, ...idleSessions]);
+  const whole = (s) => sessionCents(s, -Infinity, Infinity, now, price);
+  const { head, tail } = moneyParts(current ? whole(current) : 0, currency);
 
   const minuteInHour = Math.floor((shownMs % MS_PER_HOUR) / 60_000);
   const hoursBilled = Math.floor(shownMs / MS_PER_HOUR);
@@ -145,13 +154,13 @@ export default function ProjectView({
    * same line, so a rejected batch reduces what you earned without pretending
    * you were not at the desk.
    */
-  const moneyOf = (s, ms) => (isCancelled(s) ? 0 : earningsCents(rateFor(project, s), ms));
+  const moneyOf = (s) => (isCancelled(s) ? 0 : whole(s));
 
-  const totalCents = sessions.reduce((a, s) => a + moneyOf(s, elapsedMs(s, now)), 0);
+  const totalCents = sessions.reduce((a, s) => a + moneyOf(s), 0);
   const totalMs = sessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
   const idleMs = idleSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
-  const idleCents = idleSessions.reduce((a, s) => a + moneyOf(s, elapsedMs(s, now)), 0);
+  const idleCents = idleSessions.reduce((a, s) => a + moneyOf(s), 0);
   const share = utilisation(totalMs, idleMs);
 
   // A goal saved as money before the project moved off the clock would render
@@ -175,8 +184,7 @@ export default function ProjectView({
     ? { from: periodBoundary(overallGoal.period, now, 0), to: periodBoundary(overallGoal.period, now, 1) }
     : { from: 0, to: Infinity };
   const overallValue = overallGoal
-    ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now,
-                (s) => rateFor(project, s))
+    ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now, price)
     : 0;
 
   // The ledger shows both kinds; the totals above keep them apart.
@@ -231,7 +239,7 @@ export default function ProjectView({
   const objection = askedAbout ? against(askedAbout) : null;
   const askedNow = objection && objection.rejected + objection.accepted > 0 ? askedAbout : null;
 
-  const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now);
+  const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now, price);
   const hasTasks = rawTaskRows.some((r) => r.taskId);
 
   /**
@@ -568,7 +576,7 @@ export default function ProjectView({
               <GoalBar label="This session" type={sessionGoal.type} target={sessionGoal.target}
                        currency={currency}
                        value={sessionGoal.type === "money"
-                         ? (current ? earningsCents(rateFor(project, current), shownMs) : 0) / 100
+                         ? (current ? whole(current) : 0) / 100
                          : shownMs / 60000} />
             )}
             {overallGoal && (
@@ -662,10 +670,15 @@ export default function ProjectView({
                 projectRate={project.currentRate}
                 projectPrice={perTask(project)}
                 byAnswer={paysOnAcceptance(project)}
+                projectLimit={limitFor(project, { ...findTask(project, editingTask), limitMs: null })}
                 sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
                 nameTakenBy={(label) => nameTakenBy(project, label, editingTask)}
                 onCancel={() => setEditingTask(null)}
-                onSave={(patch) => { onSaveTask(editingTask, patch); setEditingTask(null); }}
+                onSave={({ limitMs, ...patch }) => {
+                  onSaveTask(editingTask, patch);
+                  if (limitMs !== undefined) onSetOwnLimit?.(editingTask, limitMs);
+                  setEditingTask(null);
+                }}
                 onDelete={() => {
                   onDeleteTask(editingTask);
                   if (filterTask === editingTask) setFilterTask(null);
@@ -742,6 +755,7 @@ export default function ProjectView({
           <div style={{ marginBottom: 14 }}>
             <ManualSession
               project={project} offClock={offClock} now={now} findOverlaps={findOverlaps}
+              sessions={[...sessions, ...idleSessions]}
               onCancel={() => setAddingTime(false)}
               // Closed only once the time is in. A refused block keeps what
               // was typed, so the reason can be read and the entry fixed.
@@ -827,6 +841,7 @@ export default function ProjectView({
               key={editedSession.id}
               session={editedSession}
               project={project} findOverlaps={findOverlaps}
+              sessions={[...sessions, ...idleSessions]}
               onCancel={() => setEditingSession(null)}
               onSave={(window_) => { onCorrect(editingSession, window_); setEditingSession(null); }}
               onRevert={() => { onRevertCorrection(editingSession); setEditingSession(null); }}
@@ -893,6 +908,10 @@ export default function ProjectView({
                       {" at "}
                       {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
                       {rateFor(project, s) !== s.rate && " (task rate)"}
+                      {/* Said, because the figure on the right is less than
+                          the hours at this rate, and would read as a slip. */}
+                      {overLimitMs(s, -Infinity, Infinity, now, price) > 0
+                        && ` · ${formatShortDuration(overLimitMs(s, -Infinity, Infinity, now, price))} over the limit at ${Math.round(price.limit(s).factor * 100)}%`}
                     </>
                   ))}
                   {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
@@ -903,7 +922,7 @@ export default function ProjectView({
                   ? formatShortDuration(elapsedMs(s, now))
                   : piece
                     ? formatMoney(earnedFrom(earnings, s.id), currency)
-                    : formatMoney(earningsCents(rateFor(project, s), elapsedMs(s, now)), s.currency)}
+                    : formatMoney(whole(s), s.currency)}
               </span>
               <button className="x" aria-label="Remove session" onClick={() => onDeleteSession(s.id)}>×</button>
             </div>
@@ -925,7 +944,7 @@ export default function ProjectView({
           </button>
         </div>
         {settingsOpen && (
-          <Settings project={project} projects={projects} onPatch={onPatch}
+          <Settings project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
                     onDeleteProject={onDeleteProject} onSetStatus={onSetStatus}
                     payPeriod={payPeriod} companies={companies}
                     onSetPayPeriod={onSetPayPeriod} now={now}

@@ -106,6 +106,14 @@ export default function TaskBreakdown({
               )}
             </div>
             {r.note && <div className="trow-note">{r.note}</div>}
+            {/* Why the figure on the right is less than the hours at the
+                rate: some of them were over the task's time limit. */}
+            {!offClock && r.overMs > 0 && (
+              <div className="trow-sub over">
+                {formatShortDuration(r.billedMs - r.overMs)} in full
+                {" + "}{formatShortDuration(r.overMs)} over the limit at {Math.round(r.overFactor * 100)}%
+              </div>
+            )}
             {earnings && r.taskId && (
               <PayLine pay={taskPay(earnings, r.taskId)} currency={currency} />
             )}

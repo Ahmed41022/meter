@@ -6978,3 +6978,142 @@ describe("the to-do list on Today", () => {
     expect(saved().todos.find((t) => t.id === "d1").deletedAt).toBeNull();
   }, 20_000);
 });
+
+describe("a time limit per task", () => {
+  const H = 3_600_000;
+  const M = 60_000;
+  // Two days back at nine, so nothing here is today and nothing crosses midnight.
+  const base = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 2);
+    d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  };
+  const seed = ({ handedIn = false } = {}) => {
+    const t0 = base();
+    const sit = (id, taskId, from, ms) => ({
+      id, projectId: "g", kind: "billed", taskId, rate: 20, currency: "USD",
+      createdAt: from, closedAt: from + ms, deletedAt: null, segments: [{ startedAt: from, endedAt: from + ms }],
+    });
+    return {
+      projects: [{
+        id: "g", name: "Gateway", currentRate: 20, currency: "USD", createdAt: t0 - 100 * H,
+        sessionGoal: null, overallGoal: null,
+        taskLimits: [{ from: null, ms: 2 * H, factor: 0.3 }],
+        tasks: [
+          { id: "t1", label: "T-1", createdAt: t0,
+            ...(handedIn ? { state: "submitted", submittedAt: t0 + 5 * H, stateAt: t0 + 5 * H } : {}) },
+          { id: "t2", label: "T-2", createdAt: t0 },
+        ],
+      }],
+      // T-1: 1h 30m, then 1h 10m: 2h 40m, of which 40m is over the 2h limit.
+      sessions: [sit("a", "t1", t0, 90 * M), sit("b", "t1", t0 + 2 * H, 70 * M), sit("c", "t2", t0 + 6 * H, 60 * M)],
+      earnings: [],
+    };
+  };
+  const open = async (opts) => {
+    const dom = await boot(seed(opts));
+    await wait(250);
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    d.querySelector(".card").click();
+    await wait(250);
+    return { dom, d, saved: () => JSON.parse(dom.window.localStorage.getItem("meter:v1")) };
+  };
+  const row = (d, name) => [...d.querySelectorAll(".trow")].find((r) => r.textContent.startsWith(name));
+  const input = (d, label) => [...d.querySelectorAll(".field")]
+    .find((f) => new RegExp(label).test(f.querySelector(".eyebrow")?.textContent ?? ""))?.querySelector("input");
+
+  it("pays the time over the limit at its share, and says so on the task", async () => {
+    // $40 for two hours, and forty minutes at 30% of $20 an hour: $44, not $53.33.
+    const { d } = await open();
+    expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$44.00");
+    expect(row(d, "T-1").textContent).toMatch(/2h 00m in full \+ 40m over the limit at 30%/);
+    expect(row(d, "T-2").querySelector(".trow-amt").textContent).toBe("$20.00");
+    // The sitting that crossed the line says what part of it was over.
+    expect([...d.querySelectorAll(".row")].some((r) => /40m over the limit at 30%/.test(r.textContent))).toBe(true);
+  }, 20_000);
+
+  it("agrees with the Overview about what the time came to", async () => {
+    const { d } = await open();
+    btn(d, /All projects/).click();
+    await wait(150);
+    await toProjects(d, "Overview");
+    [...d.querySelectorAll(".dash-head .segmented .seg")].find((b) => b.textContent === "All").click();
+    await wait(250);
+    expect(d.querySelector(".grand-amt").textContent).toBe("$64.00");
+  }, 20_000);
+
+  it("shows the limit in Settings and asks how far a change reaches", async () => {
+    const { dom, d } = await open();
+    btn(d, /^Open$/).click();
+    await wait(200);
+    expect(input(d, "^Time limit per task").value).toBe("2");
+    expect(input(d, "^Time over it pays").value).toBe("30");
+    expect(d.querySelector("[aria-label='How far the change reaches']")).toBeNull();
+    setValue(dom.window, input(d, "^Time limit per task"), "3");
+    await wait(150);
+    const tabs = [...d.querySelectorAll("[aria-label='How far the change reaches'] button")];
+    expect(tabs.map((b) => b.textContent)).toEqual(["From now on", "Past included"]);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+  }, 20_000);
+
+  it("from now on, leaves a task already handed in on its old limit", async () => {
+    const { dom, d, saved } = await open({ handedIn: true });
+    btn(d, /^Open$/).click();
+    await wait(200);
+    setValue(dom.window, input(d, "^Time limit per task"), "3");
+    await wait(150);
+    btn(d, /^Save changes$/).click();
+    await wait(250);
+    expect(saved().projects[0].taskLimits).toHaveLength(2);
+    expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$44.00");
+  }, 20_000);
+
+  it("with the past included, reprices a task already handed in, and Undo puts it back", async () => {
+    const { dom, d, saved } = await open({ handedIn: true });
+    btn(d, /^Open$/).click();
+    await wait(200);
+    setValue(dom.window, input(d, "^Time limit per task"), "3");
+    await wait(150);
+    btn(d, /^Past included$/).click();
+    await wait(100);
+    btn(d, /^Save changes$/).click();
+    await wait(250);
+    expect(saved().projects[0].taskLimits).toEqual([{ from: null, ms: 3 * H, factor: 0.3 }]);
+    expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$53.33");
+    btn(d, /^Undo$/).click();
+    await wait(250);
+    expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$44.00");
+    // The panel follows the ledger back rather than calling the undone limit saved.
+    expect(input(d, "^Time limit per task").value).toBe("2");
+  }, 20_000);
+
+  it("from now on, moves an open task to a new rate and keeps a handed-in one on its old", async () => {
+    const { dom, d, saved } = await open({ handedIn: true });
+    btn(d, /^Open$/).click();
+    await wait(200);
+    setValue(dom.window, input(d, "^Hourly rate"), "25");
+    await wait(150);
+    btn(d, /^Save changes$/).click();
+    await wait(250);
+    const rates = Object.fromEntries(saved().sessions.map((s) => [s.id, s.rate]));
+    expect(rates).toEqual({ a: 20, b: 20, c: 25 });
+    expect(saved().projects[0].currentRate).toBe(25);
+  }, 20_000);
+
+  it("lets one task carry its own limit", async () => {
+    const { dom, d, saved } = await open();
+    [...row(d, "T-2").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
+    await wait(200);
+    const own = input(d, "^Time limit [(]hours[)]$");
+    expect(own.placeholder).toBe("empty = 2h, the project's");
+    setValue(dom.window, own, "0.5");
+    await wait(100);
+    btn(d, /^Save$/).click();
+    await wait(250);
+    expect(saved().projects[0].tasks.find((t) => t.id === "t2").limitMs).toBe(30 * M);
+    // Half an hour in full, half an hour at $6: $13.
+    expect(row(d, "T-2").querySelector(".trow-amt").textContent).toBe("$13.00");
+  }, 20_000);
+});

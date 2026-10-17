@@ -64,7 +64,10 @@ describe("what gets published", () => {
     // It is still what you double-click and what Electron packages.
     const single = readFileSync(join(root, "dist/meter.html"), "utf8");
     expect(single).toMatch(/rel="manifest" href="data:application\/manifest\+json/);
-    expect(single).not.toContain("serviceWorker");
+    // Never registers one. It may still ask whether one is there — the
+    // notification helper does, to show a notification on a phone — which is
+    // why the check is on registering, not on the word.
+    expect(single).not.toMatch(/serviceWorker\.register/);
   });
 });
 

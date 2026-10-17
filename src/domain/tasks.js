@@ -1,6 +1,5 @@
 import { elapsedMs } from "./time.js";
-import { earningsCents } from "./money.js";
-import { isBilled, isIdle } from "./sessions.js";
+import { isBilled, isIdle, overLimitMs, sessionCents } from "./sessions.js";
 import { isCancelled } from "./earnings.js";
 import { TASK, taskState } from "./taskState.js";
 
@@ -303,7 +302,7 @@ export const resolveTaskId = (project, label, freshId) =>
  * columns for the same reason they are everywhere else — idle time must never
  * be summed into an earnings figure.
  */
-export const taskTotals = (project, sessions, now) => {
+export const taskTotals = (project, sessions, now, rateOf = (s) => rateFor(project, s)) => {
   const buckets = new Map();
   const bucket = (taskId) => {
     const id = taskId ?? UNASSIGNED;
@@ -324,6 +323,8 @@ export const taskTotals = (project, sessions, now) => {
           ? null
           : (taskId ? findTask(project, taskId)?.stateAt ?? null : null),
         billedMs: 0, billedCents: 0, idleMs: 0, idleCents: 0, sessions: 0,
+        // Billed time past the task's limit, paid at a share of the rate.
+        overMs: 0, overFactor: null,
       });
     }
     return buckets.get(id);
@@ -335,10 +336,15 @@ export const taskTotals = (project, sessions, now) => {
     // Work a rejection cancelled keeps its hours and loses its money. The
     // time happened and still counts; the money never arrived and belongs in
     // no figure, here or anywhere else.
-    const cents = isCancelled(s) ? 0 : earningsCents(rateFor(project, s), ms);
+    const cents = isCancelled(s) ? 0 : sessionCents(s, -Infinity, Infinity, now, rateOf);
     b.sessions += 1;
     if (isBilled(s)) {
       b.billedMs += ms;
+      const over = overLimitMs(s, -Infinity, Infinity, now, rateOf);
+      if (over > 0) {
+        b.overMs += over;
+        b.overFactor = rateOf.limit(s).factor;
+      }
       b.billedCents += cents;
     } else if (isIdle(s)) {
       b.idleMs += ms;

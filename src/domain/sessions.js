@@ -2,6 +2,7 @@ import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
 import { acceptsTime } from "./projects.js";
 import { PAY, paysOnAcceptance } from "./earnings.js";
 import { takesTimeIn } from "./taskState.js";
+import { earningsCents } from "./money.js";
 
 /**
  * A session is either billable work or time at the desk that wasn't worked.
@@ -15,6 +16,33 @@ export const KIND = { BILLED: "billed", IDLE: "idle" };
 export const kindOf = (session) => session.kind ?? KIND.BILLED;
 export const isBilled = (session) => kindOf(session) === KIND.BILLED;
 export const isIdle = (session) => kindOf(session) === KIND.IDLE;
+
+/** A session's milliseconds inside [from, to). */
+const msIn = (session, from, to, now) =>
+  (session.segments || []).reduce((total, s) => total + overlapMs(s, from, to, now), 0);
+
+/**
+ * What a session's time inside [from, to) came to, in cents.
+ *
+ * The rate is `rateOf(session)`, as everywhere. Where the session's task has
+ * run past a time limit, `rateOf.limit` says from when (see `pricer` in
+ * terms.js), and the time after that moment pays its share of the rate
+ * instead. A plain `rateOf` has no `.limit`, and then this is rate × time.
+ */
+export const sessionCents = (session, from, to, now, rateOf = (s) => s.rate) => {
+  const rate = rateOf(session);
+  const limit = rateOf.limit?.(session);
+  if (!limit) return earningsCents(rate, msIn(session, from, to, now));
+  const full = msIn(session, from, Math.min(to, limit.at), now);
+  const over = msIn(session, Math.max(from, limit.at), to, now);
+  return earningsCents(rate, full) + earningsCents(rate * limit.factor, over);
+};
+
+/** How much of a session's time inside [from, to) was over its task's limit. */
+export const overLimitMs = (session, from, to, now, rateOf) => {
+  const limit = rateOf?.limit?.(session);
+  return limit ? msIn(session, Math.max(from, limit.at), to, now) : 0;
+};
 
 /**
  * Whether this copy of the app is the one running the meter.

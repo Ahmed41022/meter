@@ -52,23 +52,25 @@
  * Anything whose payday has already passed is left out. It arrived, or it is a
  * conversation with the client rather than a forecast.
  */
-import { elapsedMs } from "./time.js";
-import { earningsCents } from "./money.js";
-import { isBilled } from "./sessions.js";
+import { isBilled, sessionCents } from "./sessions.js";
 import { fold, isOffClock } from "./projects.js";
-import { rateFor, tasksFor } from "./tasks.js";
+import { tasksFor } from "./tasks.js";
+import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
 import { isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
 import { dayOnClock, payPeriodFor, paydayFor } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
- *  valued at. Idle time is left out, as it is from every earnings figure, and
- *  so is work a rejection cancelled — there is no payday for money that is
- *  never coming. */
-const hourlyCents = (sessions, project, taskId, now) => sessions
-  .filter((s) => !s.deletedAt && s.projectId === project.id && s.taskId === taskId
-    && isBilled(s) && !isCancelled(s))
-  .reduce((total, s) => total + earningsCents(rateFor(project, s), elapsedMs(s, now)), 0);
+ *  valued at, time over a limit at its share. Idle time is left out, as it
+ *  is from every earnings figure, and so is work a rejection cancelled —
+ *  there is no payday for money that is never coming. */
+const hourlyCents = (sessions, project, taskId, now) => {
+  const mine = sessions.filter((s) => !s.deletedAt && s.projectId === project.id && s.taskId === taskId);
+  const price = pricer([project], mine);
+  return mine
+    .filter((s) => isBilled(s) && !isCancelled(s))
+    .reduce((total, s) => total + sessionCents(s, -Infinity, Infinity, now, price), 0);
+};
 
 /**
  * Sums into a keyed bucket, so several tasks landing on one payday read as

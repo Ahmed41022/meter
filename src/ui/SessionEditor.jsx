@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { elapsedMs, startedAt } from "../domain/time.js";
-import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { wasCorrected } from "../domain/sessions.js";
-import { rateFor } from "../domain/tasks.js";
+import { centsAsIf } from "../domain/terms.js";
 import { Clashes } from "./ManualSession.jsx";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -24,7 +24,7 @@ const fromInput = (value) => {
  * able to see the number you're about to commit before you commit it.
  */
 export default function SessionEditor({
-  session, project, findOverlaps = () => [], onSave, onRevert, onCancel,
+  session, project, findOverlaps = () => [], onSave, onRevert, onCancel, sessions = [],
 }) {
   const recordedEnd = session.closedAt ?? startedAt(session);
   const [from, setFrom] = useState(toInput(startedAt(session)));
@@ -73,9 +73,12 @@ export default function SessionEditor({
   }
   const blocked = clashes.length > 0 && !confirmed;
 
-  const rate = rateFor(project, session);
   const nowMs = preview ? elapsedMs(preview, 0) : 0;
   const wasMs = elapsedMs(session, recordedEnd);
+  // Asked as the ledger would answer it, so time a correction pushes past
+  // the task's limit is priced at its share here as it will be once saved.
+  const nowCents = preview ? centsAsIf(project, sessions, { ...session, ...preview }, 0) : 0;
+  const wasCents = centsAsIf(project, sessions, session, recordedEnd);
 
   return (
     <div className="prompt">
@@ -99,11 +102,11 @@ export default function SessionEditor({
         <div className="preview-line">
           <span className="preview-now">
             {valid
-              ? `${formatShortDuration(nowMs)} · ${formatMoney(earningsCents(rate, nowMs), session.currency)}`
+              ? `${formatShortDuration(nowMs)} · ${formatMoney(nowCents, session.currency)}`
               : "—"}
           </span>
           <span className="preview-was">
-            was {formatShortDuration(wasMs)} · {formatMoney(earningsCents(rate, wasMs), session.currency)}
+            was {formatShortDuration(wasMs)} · {formatMoney(wasCents, session.currency)}
           </span>
         </div>
         {session.segments.length > 1 && (

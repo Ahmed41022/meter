@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { utilisation } from "../domain/sessions.js";
 import { activeProjects, offClockProjects, workProjects } from "../domain/projects.js";
-import { rateFor } from "../domain/tasks.js";
+import { pricer } from "../domain/terms.js";
 import {
   PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
   heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
@@ -198,11 +198,9 @@ export default function DashboardView({
   const [projectSort, setProjectSort] = useState("time");
 
   /** Which rate values a session is the caller's question, and the answer is a
-   *  task override when there is one. Rebuilt only when the projects change. */
-  const rateOf = useMemo(() => {
-    const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
-    return (s) => rateFor(byId[s.projectId], s);
-  }, [projects]);
+   *  task override when there is one, and a share of it for time over a task's
+   *  limit. Rebuilt only when the projects or the sessions change. */
+  const rateOf = useMemo(() => pricer(projects, sessions), [projects, sessions]);
 
   const view = useMemo(() => {
     const earliest = firstRecord(sessions, earnings);

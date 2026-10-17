@@ -36,8 +36,12 @@ rates. `npm run shots` regenerates every one of them.</sub>
   was work, and a one-click restart of the last few things you ran.
 - **Times a session against a project** and shows the money as it accrues —
   from wherever you are in the app, not just the project you started on.
-- **Snapshots the rate onto the session**, so changing a project's rate can
-  never reach back into work you already recorded.
+- **Snapshots the rate onto the session**, so changing a project's rate
+  reaches back only as far as you say: from now on, which leaves work already
+  handed in alone, or the whole project, past included.
+- **Knows a task's time limit** where a platform sets one: past it, the time
+  pays the share the platform pays — 30%, or nothing — and the meter counts
+  down the full-rate time that is left.
 - **Prices work four ways**: by the hour, per accepted item, a task at its own
   rate, or a task at a fraction of the project's. A task can also be priced at
   nothing, which is not the same as having no price set.

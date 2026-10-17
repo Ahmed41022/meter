@@ -14,9 +14,10 @@
  * as what it has run so far rather than as an error.
  */
 import { elapsedMs } from "./time.js";
-import { rateFor, taskLabel } from "./tasks.js";
-import { earningsCents } from "./money.js";
-import { isBilled } from "./sessions.js";
+import { taskLabel } from "./tasks.js";
+import { formatShortDuration } from "./money.js";
+import { isBilled, overLimitMs, sessionCents } from "./sessions.js";
+import { pricer } from "./terms.js";
 import { isCancelled, payStateOf, tasksOf } from "./earnings.js";
 import { companyOf, isOffClock } from "./projects.js";
 
@@ -97,12 +98,17 @@ export const toCsv = (state, now) => {
   const projects = state?.projects ?? [];
   const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
   const rows = [];
+  const price = pricer(projects, (state?.sessions ?? []).filter((s) => !s.deletedAt));
 
   for (const s of state?.sessions ?? []) {
     if (s.deletedAt) continue;
     const project = byId[s.projectId];
     const ms = elapsedMs(s, now);
-    const rate = project ? rateFor(project, s) : s.rate;
+    const rate = price(s);
+    // Time over a task's limit is paid at a share of the rate, so this row's
+    // amount is less than its hours times its rate, and the note says why.
+    const over = overLimitMs(s, -Infinity, Infinity, now, price);
+    const share = over > 0 ? price.limit(s).factor : null;
     const segments = s.segments ?? [];
     const startedAt = segments.length ? segments[0].startedAt : s.createdAt;
     const endedAt = s.closedAt ?? (segments.length ? segments[segments.length - 1].endedAt : null);
@@ -130,9 +136,11 @@ export const toCsv = (state, now) => {
         // it had one: no screen counts that money, so neither may this file.
         // The Kind column says which of the first two a row is; the Status
         // column marks the third.
-        !off && isBilled(s) && !isCancelled(s) ? amount(earningsCents(rate, ms)) : "0.00",
+        !off && isBilled(s) && !isCancelled(s)
+          ? amount(sessionCents(s, -Infinity, Infinity, now, price))
+          : "0.00",
         s.manual ? "typed in" : "timed",
-        "",
+        over > 0 ? `${formatShortDuration(over)} over the task's limit, at ${Math.round(share * 100)}%` : "",
       ],
     });
   }

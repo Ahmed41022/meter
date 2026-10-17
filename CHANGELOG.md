@@ -9,6 +9,18 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **A time limit per task, and what the time over it pays.** Some platforms
+  pay a task's time in full only up to a limit and the rest at a share of the
+  rate — 30%, or nothing. A project can say so in Settings: the first two hours
+  of a task's billed time pay the full rate and the time over them its share,
+  across all of the task's sittings in the order they happened, split to the
+  minute inside the sitting that crossed the line. Idle time does not count. A
+  task can carry a limit of its own. Every money figure follows — Today, the
+  Overview, the project page, Upcoming payments, goals, the CSV, whose note
+  says why a row is less than its hours times its rate — and an hourly bonus
+  on acceptance pays the same share of its rate for the time over. While the
+  meter runs, the strip counts down the time left at full pay, and as it
+  crosses says so once, with a notification where the device allows one.
 - **A to-do list at the top of Today**, for anything you mean to do, not only
   work. A to-do is a line and a tick box; it may also name a project, and then
   it offers a one-click start on that project's meter — not while a meter is
@@ -168,6 +180,18 @@ ledger changed such that an older build can no longer read it.
 
 ### Changed
 
+- **Changing a project's rate, or its time limit, asks how far back the change
+  reaches.** *From now on*: tasks already handed in keep the terms they were
+  handed in under, and tasks still open take the new ones along with
+  everything recorded from here. *Past included*: every task on the project is
+  worked out again, the ones already paid included, except a task with a rate
+  or a limit of its own; it can be undone in one step. Until now a new rate
+  reached only sessions started after it, so a rate settled halfway through an
+  open task left that task's earlier hours on the old one.
+- **An open Settings panel follows the project when nobody is editing it.**
+  After that Undo, or a change arriving by sync from another device, it kept
+  showing what the project used to say, marked as saved. A panel with an
+  unsaved edit in it keeps the edit.
 - An earning's task is stored as `taskIds`, a list, because one payment can
   cover a batch. The singular `taskId` an earlier build wrote is still read and
   never written again, so no record holds two answers to one question.

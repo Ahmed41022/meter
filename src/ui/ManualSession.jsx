@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { centsAsIf } from "../domain/terms.js";
 import { KIND } from "../domain/sessions.js";
 import { findTask, tasksFor } from "../domain/tasks.js";
 import { takesTime } from "../domain/taskState.js";
@@ -69,7 +70,9 @@ export function Clashes({ clashes, confirmed, onConfirm, anyway }) {
  * same wall-clock hour could be counted twice, and it is worth saying out loud
  * rather than silently accepting.
  */
-export default function ManualSession({ project, offClock, now, findOverlaps, onSave, onCancel }) {
+export default function ManualSession({
+  project, offClock, now, findOverlaps, onSave, onCancel, sessions = [],
+}) {
   const hourAgo = now - 3_600_000;
   const [from, setFrom] = useState(toInput(hourAgo));
   const [to, setTo] = useState(toInput(now));
@@ -95,6 +98,14 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
 
   const rate = project.currentRate;
   const future = valid && hi > now;
+  // The block as it would be recorded, priced beside the task's other time,
+  // so hours that take it past the task's limit are priced at their share.
+  const cents = valid
+    ? centsAsIf(project, sessions, {
+      id: "adding", projectId: project.id, taskId: taskId || null, kind, rate, currency: project.currency,
+      segments: [{ startedAt: lo, endedAt: hi }],
+    }, now)
+    : 0;
 
   return (
     <div className="prompt">
@@ -148,7 +159,7 @@ export default function ManualSession({ project, offClock, now, findOverlaps, on
           <span className="preview-now">
             {valid ? formatShortDuration(ms) : "—"}
             {valid && !offClock && kind === KIND.BILLED
-              && ` · ${formatMoney(earningsCents(rate, ms), project.currency)}`}
+              && ` · ${formatMoney(cents, project.currency)}`}
           </span>
           {valid && !offClock && kind === KIND.BILLED && (
             <span className="preview-note">at {formatMoney(Math.round(rate * 100), project.currency)}/hr</span>

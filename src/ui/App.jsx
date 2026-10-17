@@ -22,7 +22,7 @@ import {
 import {
   TASK, isAccepted, isRejected, setAnsweredAt, setSubmittedAt,
 } from "../domain/taskState.js";
-import { answerTasks, reopenTasks, submitTasks } from "../domain/settle.js";
+import { answerTasks, reopenTasks, repriceHourlyRewards, submitTasks } from "../domain/settle.js";
 import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
@@ -31,6 +31,8 @@ import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync, { SyncPip } from "./Sync.jsx";
+import { askToNotify, notify } from "./notify.js";
+import { pricer, SCOPE, setOwnLimit, setProjectRate, setTaskLimit } from "../domain/terms.js";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
 import { acceptsTime, isDone, offClockProjects, workProjects } from "../domain/projects.js";
@@ -256,6 +258,32 @@ export default function App({ store: injectedStore }) {
     [state.sessions, device],
   );
   const backup = useMemo(() => backupState(state, now), [state, now]);
+
+  /**
+   * Where the running meter's task crosses its time limit, if it has one.
+   * Known before it happens — the sitting is going, so the moment the limit
+   * is reached is already fixed — which is what the strip counts down to.
+   */
+  const price = useMemo(
+    () => pricer(liveProjects(state.projects), liveSessions(state.sessions)),
+    [state.projects, state.sessions],
+  );
+  const runningHere = liveSessions(state.sessions).find((s) => isRunning(s) && ownedBy(s, device));
+  const limitAt = runningHere ? price.terms(runningHere)?.at ?? null : null;
+  // Said once, as the line is crossed, and only by the device running the
+  // meter. A window opened after it was crossed says so in the strip instead.
+  const lastTick = useRef(Date.now());
+  useEffect(() => {
+    const before = lastTick.current;
+    lastTick.current = now;
+    if (limitAt === null || !(before < limitAt && now >= limitAt)) return;
+    const owner = liveProjects(state.projects).find((p) => p.id === runningHere.projectId);
+    const terms = price.terms(runningHere);
+    const task = owner ? taskLabel(owner, runningHere.taskId) : "This task";
+    const message = `${task} is past its ${formatShortDuration(terms.ms)} limit. Time from now pays ${Math.round(terms.factor * 100)}%.`;
+    notify("Over the time limit", message, `limit-${runningHere.taskId}`);
+    flash(message);
+  }, [now, limitAt]); // eslint-disable-line react-hooks/exhaustive-deps -- fires on the tick that crosses the line
 
   // ------------------------------------------------------------------ syncing
   const [clientId, setClientId] = useState(() => loadSetting(SETTING.CLIENT_ID));
@@ -523,7 +551,7 @@ export default function App({ store: injectedStore }) {
             page is about what has already happened. */}
         {runningProject && (
           <RunningBar
-            project={runningProject} session={runningSession} now={now}
+            project={runningProject} session={runningSession} now={now} price={price}
             elsewhere={!ownedBy(runningSession, device)}
             onOpen={openProject}
             onStop={() => commit((s) => stopSession(s, runningSession.id, Date.now()))}
@@ -591,7 +619,7 @@ export default function App({ store: injectedStore }) {
 
         {recovering && (
           <RecoveryBanner
-            session={recovering} now={now}
+            session={recovering} now={now} sessions={liveSessions(state.sessions)}
             project={projects.find((p) => p.id === recovering.projectId)}
             onStopAtLastTick={() => { commit((s) => recoverSession(s, recovering.id)); setRecoveryId(null); }}
             onKeepRunning={() => setRecoveryId(null)}
@@ -879,6 +907,29 @@ export default function App({ store: injectedStore }) {
             onSetPayPeriod={(company, rule) =>
               commit((s) => setPayPeriod(s, company, rule, Date.now()))}
             onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
+            onSetTerms={({ rate, limit }, scope) => {
+              const snapshot = stateRef.current;
+              const at = Date.now();
+              commit((s) => {
+                let next = rate ? setProjectRate(s, project.id, rate, scope) : s;
+                if (limit) {
+                  next = setTaskLimit(next, project.id, limit, scope, at);
+                  // A bonus already written for a task handed in was priced
+                  // from the old limit; reaching the past, it follows the new.
+                  if (scope === SCOPE.ALL) next = repriceHourlyRewards(next, project.id, at);
+                }
+                return next;
+              });
+              // Asked here, while the person is clicking: the crossing itself
+              // happens with nobody at the keyboard, when a browser will not ask.
+              if (limit?.ms) askToNotify();
+              // Reaching the past moves figures already reported, so it can be
+              // taken back as one step.
+              if (scope === SCOPE.ALL) {
+                flash("Repriced the whole project.", "Undo", () => commit(() => snapshot));
+              }
+            }}
+            onSetOwnLimit={(taskId, ms) => commit((s) => setOwnLimit(s, project.id, taskId, ms))}
             onSetStatus={(status) => {
               commit((s) => setStatus(s, project.id, status, Date.now()));
               if (status !== "active") {

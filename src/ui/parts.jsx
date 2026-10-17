@@ -1,7 +1,7 @@
 import { elapsedMs, lastActivityAt, startedAt } from "../domain/time.js";
-import { earningsCents, formatMoney, formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { goalProgress, isGoalMet, paceState } from "../domain/goals.js";
-import { rateFor } from "../domain/tasks.js";
+import { centsAsIf } from "../domain/terms.js";
 
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -85,7 +85,9 @@ export function GoalBar({ label, type, target, value, currency, pace }) {
  * are spelled out because the whole point is letting the user see what the
  * phantom hours would have cost before choosing.
  */
-export function RecoveryBanner({ session, project, onStopAtLastTick, onKeepRunning, onDelete, now }) {
+export function RecoveryBanner({
+  session, project, onStopAtLastTick, onKeepRunning, onDelete, now, sessions = [],
+}) {
   const last = lastActivityAt(session);
   const trimmed = {
     ...session,
@@ -99,9 +101,9 @@ export function RecoveryBanner({ session, project, onStopAtLastTick, onKeepRunni
       <p>
         <strong>{project?.name || "A project"}</strong> started at {time(startedAt(session))} and
         last ticked at {time(last)} on {date(last)}. Counting the whole gap bills{" "}
-        {formatMoney(earningsCents(rateFor(project, session), gapMs), session.currency)} for {formatShortDuration(gapMs)};
+        {formatMoney(centsAsIf(project, sessions, session, now), session.currency)} for {formatShortDuration(gapMs)};
         stopping at the last tick bills{" "}
-        {formatMoney(earningsCents(rateFor(project, trimmed), keptMs), session.currency)} for {formatShortDuration(keptMs)}.
+        {formatMoney(centsAsIf(project, sessions, trimmed, last), session.currency)} for {formatShortDuration(keptMs)}.
       </p>
       <div className="controls">
         <button className="btn primary" onClick={onStopAtLastTick}>Stop at {time(last)}</button>
