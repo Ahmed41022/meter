@@ -299,6 +299,24 @@ export const currenciesByWork = ({ billedCents, billedMsByCurrency = {} }) =>
 export const deltaRatio = (current, previous) =>
   previous > 0 ? (current - previous) / previous : null;
 
+/**
+ * A change as it is read: a direction and the words for its size.
+ *
+ * A whole percentage, except at the two ends where one misleads. −100% says
+ * it came to nothing, so it is kept for exactly that, and $1.71 against
+ * $2,533 reads −99.9% rather than rounding down to a week that earned
+ * nothing. Past +999% a percentage is a number nobody can picture, so it is
+ * said as a multiple instead: twelve hours against a quarter of one is 46×.
+ * Null for no comparison, as `deltaRatio` gives it.
+ */
+export const changeWords = (ratio) => {
+  if (ratio === null || ratio === undefined) return null;
+  const rounded = Math.round(ratio * 100);
+  if (rounded > 999) return { sign: 1, text: `${Math.round(1 + ratio)}×` };
+  if (rounded <= -100 && ratio > -1) return { sign: -1, text: "99.9%" };
+  return { sign: Math.sign(rounded), text: `${Math.abs(rounded)}%` };
+};
+
 /** Any money at all against a row, including money that was cancelled — work
  *  that was rejected is a fact about how the week went, and a row dropped for
  *  having earned nothing takes the explanation with it. */

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
-import { heatLevel } from "../domain/performance.js";
+import { changeWords, heatLevel } from "../domain/performance.js";
 
 /**
  * The reporting figures: stat tiles and the trend column chart.
@@ -44,11 +44,13 @@ export function Delta({ ratio, goodWhenUp = true, label, unit = null, bare = fal
       </span>
     );
   }
-  const rounded = Math.round(ratio * 100);
-  const tone = rounded === 0 ? "flat" : (rounded > 0) === goodWhenUp ? "up" : "down";
+  const { sign, text } = changeWords(ratio);
+  const tone = sign === 0 ? "flat" : (sign > 0) === goodWhenUp ? "up" : "down";
+  // A multiple carries its own direction: "46×" is up, and "+46×" says it twice.
+  const mark = text.endsWith("×") ? "" : sign > 0 ? "+" : sign < 0 ? "−" : "";
   return (
     <span className={`delta ${tone}`}>
-      {named}{rounded > 0 ? "+" : rounded < 0 ? "−" : ""}{Math.abs(rounded)}%
+      {named}{mark}{text}
       {vs}
     </span>
   );

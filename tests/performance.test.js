@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  PERIODS, bucketsFor, byProject, currenciesByValue, deltaRatio, performanceIn,
+  PERIODS, bucketsFor, byProject, changeWords, currenciesByValue, deltaRatio, performanceIn,
   periodRange, segmentMsInWindow, sessionMsInWindow, splitByClock, trendFor,
   dailyTotals, heatDepth, heatGrid, heatLevel, heatRange, heatThresholds,
   byCompany, comparisonRanges, concentration, currenciesByWork, effectiveRate, firstRecord,
@@ -297,6 +297,27 @@ describe("comparison against the previous period", () => {
     // the first as +0% invents a baseline that never existed.
     expect(deltaRatio(5, 0)).toBeNull();
     expect(deltaRatio(0, 0)).toBeNull();
+  });
+
+  it("says a change as a whole percentage", () => {
+    expect(changeWords(deltaRatio(3.59, 24.56))).toEqual({ sign: -1, text: "85%" });
+    expect(changeWords(deltaRatio(6, 4))).toEqual({ sign: 1, text: "50%" });
+    expect(changeWords(deltaRatio(4, 4))).toEqual({ sign: 0, text: "0%" });
+    expect(changeWords(null)).toBeNull();
+  });
+
+  it("keeps −100% for a drop to nothing, and says a near-total drop as −99.9%", () => {
+    // $1.71 against $2,533.81 is −99.93%. Rounded to a whole percentage it
+    // read −100%, a week that earned nothing, beside a figure of $1.71.
+    expect(changeWords(deltaRatio(171, 253381))).toEqual({ sign: -1, text: "99.9%" });
+    expect(changeWords(deltaRatio(0, 171))).toEqual({ sign: -1, text: "100%" });
+  });
+
+  it("says a rise past +999% as a multiple", () => {
+    // 12.22h against 0.264h was "+4531%", a number nobody can picture.
+    expect(changeWords(deltaRatio(12.22, 0.264))).toEqual({ sign: 1, text: "46×" });
+    expect(changeWords(deltaRatio(10.99, 1))).toEqual({ sign: 1, text: "999%" });
+    expect(changeWords(deltaRatio(11, 1))).toEqual({ sign: 1, text: "11×" });
   });
 });
 

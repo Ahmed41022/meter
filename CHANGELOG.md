@@ -287,6 +287,11 @@ ledger changed such that an older build can no longer read it.
 - **A piece-rate project's task list quoted `$0.00` against every task**, in
   the column next to what the task had actually been paid. Hourly figures were
   already hidden everywhere else on that kind of project; this one was missed.
+- **A change against the period before misled at its two ends.** A week that
+  earned $1.71 against $2,533 read −100%, a week that earned nothing, because
+  −99.93% rounds there; it reads −99.9% now, and −100% is kept for a real drop
+  to nothing. And twelve hours against a quarter of one read +4531%, true and
+  impossible to picture; past +999% a change is said as a multiple, 47×.
 - **On a phone, the second of two date-and-time boxes ran off the screen** —
   a task's hand-in and answer, a session's start and end — and took the page
   with it, so it scrolled sideways. A box like that will not shrink below its
