@@ -38,6 +38,9 @@ import {
   addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
   removeObjective, restoreObjective, toggleObjective, unlinkTask,
 } from "../domain/objectives.js";
+import {
+  addTodo, clearDone, editTodo, liveTodos, removeTodo, restoreTodos, toggleTodo,
+} from "../domain/todos.js";
 import { CSS } from "./styles.js";
 import { countWord, daysWord, ledgerWords } from "./words.js";
 import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
@@ -896,6 +899,23 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             now={now} running={Boolean(runningSession)}
+            todos={liveTodos(state)}
+            onAddTodo={(fields) => commit((s) => addTodo(s, fields, Date.now(), uid()))}
+            onToggleTodo={(id) => commit((s) => toggleTodo(s, id, Date.now()))}
+            onEditTodo={(id, patch) => commit((s) => editTodo(s, id, patch))}
+            onRemoveTodo={(id) => {
+              commit((s) => removeTodo(s, id, Date.now()));
+              flash("Removed.", "Undo", () => commit((s) => restoreTodos(s, [id])));
+            }}
+            onClearDone={() => {
+              // The ids are taken from the state the clear is made on, so
+              // Undo puts back those and not one removed by hand earlier.
+              const at = Date.now();
+              const { ids } = clearDone(stateRef.current, at);
+              if (ids.length === 0) return;
+              commit((s) => clearDone(s, at).state);
+              flash("Cleared.", "Undo", () => commit((s) => restoreTodos(s, ids)));
+            }}
             onOpen={openProject}
             onShowSession={showSession}
             onStart={(projectId, taskId, kind) => {

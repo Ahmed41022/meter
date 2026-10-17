@@ -6842,3 +6842,139 @@ describe("a pair of date-and-time boxes on a phone", () => {
       /@media \(max-width:420px\)\{\s*\.pair:has\(input\[type="datetime-local"\]\)\{flex-direction:column;gap:0;\}/);
   });
 });
+
+describe("the to-do list on Today", () => {
+  const HOUR = 3_600_000;
+  const seed = () => {
+    const now = Date.now();
+    const todo = (id, text, at, extra = {}) => ({
+      id, text, projectId: null, done: false, doneAt: null, createdAt: now - at * HOUR, deletedAt: null, ...extra });
+    return {
+      projects: [
+        { id: "a", name: "Gateway", currentRate: 60, currency: "USD", createdAt: now - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [] },
+        { id: "z", name: "Shelved", currentRate: 60, currency: "USD", createdAt: now - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [], status: "paused", statusAt: now - HOUR },
+        { id: "gone", name: "Removed", currentRate: 60, currency: "USD", createdAt: now - 80 * HOUR,
+          sessionGoal: null, overallGoal: null, tasks: [], deletedAt: now - HOUR },
+      ],
+      sessions: [],
+      earnings: [],
+      todos: [
+        todo("d1", "Renew the domain", 5),
+        todo("d2", "Finish the review", 4, { projectId: "a" }),
+        todo("d3", "Plan the quarter", 3, { projectId: "z" }),
+        todo("d4", "Old client call", 2, { projectId: "gone" }),
+        todo("d5", "Call the bank", 6, { done: true, doneAt: now - HOUR }),
+      ],
+    };
+  };
+  const open = async () => {
+    const dom = await boot(seed());
+    await wait(300);
+    return { dom, d: dom.window.document, saved: () => JSON.parse(dom.window.localStorage.getItem("meter:v1")) };
+  };
+  const rowOf = (d, text) => [...d.querySelectorAll(".todo")].find((r) => r.textContent.includes(text));
+
+  it("comes first on Today, with what is left in the order it was written", async () => {
+    const { d } = await open();
+    const heads = [...d.querySelectorAll(".sec-head")].map((h) => h.textContent);
+    expect(heads[0]).toBe("To do4 left");
+    expect(heads.findIndex((h) => /^Today/.test(h))).toBeGreaterThan(0);
+    expect([...d.querySelectorAll(".todos > .todo .obj-text")].map((e) => e.textContent))
+      .toEqual(["Renew the domain", "Finish the review", "Plan the quarter", "Old client call"]);
+  }, 20_000);
+
+  it("adds a to-do and keeps the form open for the next one", async () => {
+    const { dom, d, saved } = await open();
+    btn(d, /^\+ Add a to-do$/).click();
+    await wait(150);
+    const box = d.querySelector(".todos .obj-form input");
+    setValue(dom.window, box, "  Pay the rent  ");
+    setValue(dom.window, d.querySelector(".todos .obj-form select"), "a");
+    btn(d, /^Add$/).click();
+    await wait(200);
+    const added = saved().todos.find((t) => t.text === "Pay the rent");
+    expect(added).toMatchObject({ projectId: "a", done: false, deletedAt: null });
+    expect(d.querySelector(".todos .obj-form input").value).toBe("");
+    expect(rowOf(d, "Pay the rent")).toBeTruthy();
+  }, 20_000);
+
+  it("folds a ticked to-do under Done, where it can be unticked", async () => {
+    const { d, saved } = await open();
+    rowOf(d, "Renew the domain").querySelector("input[type=checkbox]").click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d1").done).toBe(true);
+    expect(d.querySelector(".todos > .todo .obj-text")?.textContent).not.toBe("Renew the domain");
+    const fold = btn(d, /Done · 2/);
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    fold.click();
+    await wait(150);
+    // The latest finished first.
+    expect([...d.querySelectorAll(".todo-done .obj-text")].map((e) => e.textContent))
+      .toEqual(["Renew the domain", "Call the bank"]);
+    d.querySelector(".todo-done input[aria-label='Mark Renew the domain not done']").click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d1")).toMatchObject({ done: false, doneAt: null });
+  }, 20_000);
+
+  it("clears what is done, and Undo puts it back", async () => {
+    const { d, saved } = await open();
+    btn(d, /Done · 1/).click();
+    await wait(150);
+    btn(d, /^Clear done$/).click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d5").deletedAt).toBeTruthy();
+    expect(d.querySelector(".todo-done")).toBeNull();
+    btn(d, /^Undo$/).click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d5").deletedAt).toBeNull();
+  }, 20_000);
+
+  it("starts a linked project's meter, and offers no start a project cannot take", async () => {
+    const { d, saved } = await open();
+    // Not on a paused project, which takes no time; and a removed project
+    // leaves its to-do unlinked rather than taking it away.
+    expect(rowOf(d, "Plan the quarter").querySelector(".todo-go")).toBeNull();
+    expect(rowOf(d, "Plan the quarter").textContent).toMatch(/Shelved/);
+    expect(rowOf(d, "Old client call").querySelector(".obj-meta")).toBeNull();
+    expect(rowOf(d, "Old client call").querySelector(".todo-go")).toBeNull();
+    rowOf(d, "Finish the review").querySelector(".todo-go").click();
+    await wait(300);
+    const live = saved().sessions.find((s) => s.segments.some((g) => g.endedAt == null));
+    expect(live).toMatchObject({ projectId: "a", taskId: null, kind: "billed" });
+  }, 20_000);
+
+  it("puts its starts away while a meter is going", async () => {
+    // A start closes whatever is open, so beside a running meter it is a
+    // one-click way to end it.
+    const { d } = await open();
+    rowOf(d, "Finish the review").querySelector(".todo-go").click();
+    await wait(300);
+    // Starting opens the project; back out of it to Today.
+    btn(d, /All projects/).click();
+    await wait(150);
+    await toProjects(d, "Today");
+    expect(d.querySelectorAll(".todo").length).toBe(4);
+    expect(d.querySelector(".todo-go")).toBeNull();
+  }, 20_000);
+
+  it("edits from the to-do as it is, and removes with an Undo", async () => {
+    const { dom, d, saved } = await open();
+    [...rowOf(d, "Renew the domain").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
+    await wait(150);
+    const box = d.querySelector(".todos .obj-form input");
+    expect(box.value).toBe("Renew the domain");
+    setValue(dom.window, box, "Renew both domains");
+    btn(d, /^Save$/).click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d1").text).toBe("Renew both domains");
+
+    rowOf(d, "Renew both domains").querySelector("button[aria-label='Remove Renew both domains']").click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d1").deletedAt).toBeTruthy();
+    btn(d, /^Undo$/).click();
+    await wait(200);
+    expect(saved().todos.find((t) => t.id === "d1").deletedAt).toBeNull();
+  }, 20_000);
+});

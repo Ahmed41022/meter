@@ -9,6 +9,7 @@ import { isIdle } from "../domain/sessions.js";
 import { isCancelled, isPending } from "../domain/earnings.js";
 import { isOffClock, offClockProjects, workProjects } from "../domain/projects.js";
 import { rateFor, taskLabel } from "../domain/tasks.js";
+import Todos from "./Todos.jsx";
 
 /** One more week each time. Seven is the span you actually think in, and the
  *  ledger has hundreds of sessions in it — all of them at once is not a page. */
@@ -66,6 +67,7 @@ const daySum = (totals, nothing = "") => {
  */
 export default function TodayView({
   projects, sessions, earnings, now, running, onStart, onOpen, onShowSession,
+  todos = [], onAddTodo, onToggleTodo, onEditTodo, onRemoveTodo, onClearDone,
 }) {
   const [shown, setShown] = useState(STEP);
 
@@ -95,6 +97,13 @@ export default function TodayView({
 
   return (
     <>
+      {/* First, above the day's figures: what is left to do is what you open
+          the app to see in the morning, before there are any. */}
+      <Todos todos={todos} projects={projects} running={running}
+             onStart={(projectId) => onStart(projectId, null)} onOpen={onOpen}
+             onAdd={onAddTodo} onToggle={onToggleTodo} onEdit={onEditTodo}
+             onRemove={onRemoveTodo} onClearDone={onClearDone} />
+
       {/* Hidden while a meter is going. Starting one closes whatever else is
           open, so a row of one-click starts beside a running session is a row
           of one-click ways to end it by accident. The running bar above is

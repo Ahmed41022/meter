@@ -799,6 +799,14 @@ export const CSS = `
 .obj-actions .linkish[aria-pressed="true"]{color:var(--jade);font-weight:700;}
 .obj-form{padding-top:16px;border-top:1px solid var(--line-2);margin-top:4px;}
 .obj-add{margin-top:14px;font-size:13px;}
+/* to-dos: objective rows, with a fold for what is done */
+.obj-add.first{margin-top:0;}
+.todos > .obj-form:first-child{border-top:0;padding-top:0;margin-top:0;}
+.todo-go{font-weight:600;}
+.todo-clear{font-size:13px;color:var(--muted);padding-bottom:4px;}
+.todo-done{margin-top:16px;padding-top:12px;border-top:1px solid var(--line-2);}
+.todo-done-head{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;}
+.todo-done .obj:first-of-type{padding-top:12px;}
 
 /* A clash is a warning, not an error — it states what would be double-counted
    and lets you decide, rather than refusing and leaving you stuck. */

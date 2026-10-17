@@ -9,6 +9,15 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **A to-do list at the top of Today**, for anything you mean to do, not only
+  work. A to-do is a line and a tick box; it may also name a project, and then
+  it offers a one-click start on that project's meter — not while a meter is
+  already going, since starting one would stop it, and not on a paused or
+  finished project, which takes no time. Ticked ones fold away under
+  **Done · 3**, where they can be unticked or cleared together, with an Undo.
+  To-dos sync between devices like every other record, and a to-do whose
+  project is removed stays on the list, unlinked. A store written before them
+  has none, so nothing is migrated.
 - **A payday for each client, and an Upcoming payments panel that uses it.**
   You set the schedule yourself — weekly (“work in before Monday is paid the
   following Wednesday”) or monthly (“work in before the 1st is paid on the

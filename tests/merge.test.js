@@ -87,18 +87,20 @@ describe("merging whole ledgers", () => {
     // Pinned on purpose: a new collection has to be added here deliberately,
     // by somebody who has just checked that the merge handles it.
     expect(COLLECTIONS)
-      .toEqual(["projects", "sessions", "objectives", "earnings", "companies"]);
+      .toEqual(["projects", "sessions", "objectives", "earnings", "companies", "todos"]);
     const mine = ledger({ projects: [rec("p1", 1, { name: "old" })], sessions: [rec("s1", 1)] });
     const theirs = ledger({
       projects: [rec("p1", 9, { name: "new" })],
       earnings: [rec("e1", 1)],
       companies: [rec("co:acme", 1)],
+      todos: [rec("td1", 1)],
     });
     const out = mergeState(mine, theirs);
     expect(out.projects[0].name).toBe("new");
     expect(out.sessions.map((r) => r.id)).toEqual(["s1"]);
     expect(out.earnings.map((r) => r.id)).toEqual(["e1"]);
     expect(out.companies.map((r) => r.id)).toEqual(["co:acme"]);
+    expect(out.todos.map((r) => r.id)).toEqual(["td1"]);
   });
 
   it("settles two devices editing one client's payday on the later edit", () => {

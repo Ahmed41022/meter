@@ -25,6 +25,7 @@ src/
     recent.js      Today's lists: what to restart, every day there was work
     rhythm.js      when in the day and week the work happens
     objectives.js  what you mean to do, estimates, today's focus
+    todos.js       the general to-do list on Today
     csv.js         the line-item export
     merge.js       sync: last write wins, record by record
     backup.js      how long since the ledger was last copied out
@@ -33,7 +34,7 @@ src/
     settings.js    per-device choices that are not part of the ledger
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
-    TodayView      the Today tab: today so far, and the days before it
+    TodayView      the Today tab: to-dos, today so far, and the days before it
     DashboardView  the Overview tab: what a day, week or month was worth
     ProjectView    one project: the meter, its tasks, its ledger, its settings
     charts.jsx     stat tiles, the trend columns and the activity calendar
@@ -51,9 +52,11 @@ The dependency rule is one-directional: `ui` imports `domain`, `domain` imports 
 
 ## Today
 
-The app opens on **Today**, because what you are doing and what to start next is why it gets opened. It holds one-click restarts of the last few things you ran, what today has come to per project, and every day there was work, newest first, seven at a time. A day with nothing in it is absent rather than empty.
+The app opens on **Today**, because what you are doing and what to start next is why it gets opened. It holds a to-do list, one-click restarts of the last few things you ran, what today has come to per project, and every day there was work, newest first, seven at a time. A day with nothing in it is absent rather than empty.
 
 Every figure there is work, computed the way the Overview computes the same day. Time off the clock is listed with its hours and never counted as earnings; a rejected sitting is struck through and a pending one says so, and each day says what is still pending after its total.
+
+**The to-do list comes first**, above the day's figures, because what is left to do is what you open the app to see in the morning, before there are any. It is for anything, not only work: a to-do is a line and a tick box, and is no project's business unless you make it one. One that names a project offers **▶ start** on that project's meter — except while a meter is already going, since starting one would stop it, and on a paused or finished project, which takes no time. It measures nothing; that is what an objective is for. Ticked to-dos fold away under **Done · 3**, the latest first, where they can be unticked or cleared together with an Undo, so the list shows what is still left. A to-do whose project is removed stays on the list, unlinked.
 
 A sitting that crossed midnight is listed under **each** day it touched, and each row carries that day's share of its hours and its money — *2h 00m of 3h 00m* under Monday, *1h 00m of 3h 00m · ran past midnight* under Sunday — so the rows under a day add up to its heading.
 
