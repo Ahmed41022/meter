@@ -3398,5 +3398,52 @@
       "createdAt": 1788985368687,
       "deletedAt": null
     }
+  ],
+  "todos": [
+    {
+      "id": "d1",
+      "text": "Send the September invoice",
+      "projectId": null,
+      "done": false,
+      "doneAt": null,
+      "createdAt": 1790139044648,
+      "deletedAt": null
+    },
+    {
+      "id": "d2",
+      "text": "Finish the relevance batch",
+      "projectId": "p1",
+      "done": false,
+      "doneAt": null,
+      "createdAt": 1790225444648,
+      "deletedAt": null
+    },
+    {
+      "id": "d3",
+      "text": "Renew the domain",
+      "projectId": null,
+      "done": false,
+      "doneAt": null,
+      "createdAt": 1790229044648,
+      "deletedAt": null
+    },
+    {
+      "id": "d4",
+      "text": "Book the dentist",
+      "projectId": null,
+      "done": true,
+      "doneAt": 1790239844648,
+      "createdAt": 1790067044648,
+      "deletedAt": null
+    },
+    {
+      "id": "d5",
+      "text": "Reply to the docs-review lead",
+      "projectId": "p4",
+      "done": true,
+      "doneAt": 1790153444648,
+      "createdAt": 1790146244648,
+      "deletedAt": null
+    }
   ]
 }

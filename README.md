@@ -15,7 +15,7 @@ Drive, not to anyone else's machine.
 
 ![A session running: the elapsed time and the money both climbing in real time, in the meter face and in the bar that sits above every screen](docs/images/running.gif)
 
-![The screen it opens on: what today has come to per project, one-click restarts of the last few things you ran, and every day there was work](docs/images/today.png)
+![The screen it opens on: a to-do list, one with a start button for its project's meter, then one-click restarts of the last few things you ran, what today has come to per project, and every day there was work](docs/images/today.png)
 
 | Every project at once | A month, across all of them |
 | --- | --- |
