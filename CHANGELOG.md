@@ -278,6 +278,11 @@ ledger changed such that an older build can no longer read it.
 - **A piece-rate project's task list quoted `$0.00` against every task**, in
   the column next to what the task had actually been paid. Hourly figures were
   already hidden everywhere else on that kind of project; this one was missed.
+- **On a phone, the second of two date-and-time boxes ran off the screen** —
+  a task's hand-in and answer, a session's start and end — and took the page
+  with it, so it scrolled sideways. A box like that will not shrink below its
+  full reading, and two are wider than a phone; there they now go one under
+  the other.
 
 ## [1.1.0] — 2026-09-26
 

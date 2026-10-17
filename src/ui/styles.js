@@ -538,6 +538,12 @@ export const CSS = `
 .inp:focus{border-color:var(--jade);background:var(--card);outline:none;}
 .pair{display:flex;gap:10px;}
 .pair > *{flex:1;}
+/* A date-and-time box will not shrink below its full reading, and two of them
+   are wider than a phone. Side by side, the second ran off the screen and took
+   the page with it. On a phone they go one under the other. */
+@media (max-width:420px){
+  .pair:has(input[type="datetime-local"]){flex-direction:column;gap:0;}
+}
 .hint{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:-4px;margin-bottom:14px;}
 
 .empty{text-align:center;padding:34px 16px;color:var(--muted);font-size:13.5px;line-height:1.6;}

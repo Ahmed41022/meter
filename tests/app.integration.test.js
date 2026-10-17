@@ -6830,3 +6830,15 @@ describe("the Overview's tiles", () => {
     expect(css).toMatch(/\.tile-sub \.delta\{white-space:normal;\}/);
   });
 });
+
+describe("a pair of date-and-time boxes on a phone", () => {
+  it("stacks them rather than let the second run off the screen", () => {
+    // A datetime-local box will not shrink below its full reading, and two
+    // side by side are wider than a phone: at 375px the second ran out to
+    // 517px and the whole page scrolled sideways with it. Measured in a real
+    // browser on the task, session and add-time forms; pinned here is the rule.
+    const css = readFileSync(DIST, "utf8");
+    expect(css).toMatch(
+      /@media \(max-width:420px\)\{\s*\.pair:has\(input\[type="datetime-local"\]\)\{flex-direction:column;gap:0;\}/);
+  });
+});
