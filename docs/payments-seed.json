@@ -1,0 +1,450 @@
+{
+  "projects": [
+    {
+      "sessionGoal": null,
+      "overallGoal": null,
+      "createdAt": 1793610000000,
+      "id": "pl1",
+      "name": "label-sprint",
+      "company": "Larkspur Data",
+      "currentRate": 28,
+      "currency": "USD",
+      "tasks": [
+        {
+          "id": "pl1a",
+          "label": "batch 12",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794499200000,
+          "submittedAt": 1794499200000
+        },
+        {
+          "id": "pl1b",
+          "label": "batch 13",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794567600000,
+          "submittedAt": 1794567600000
+        },
+        {
+          "id": "pl1c",
+          "label": "batch 14",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794823200000,
+          "submittedAt": 1794823200000
+        },
+        {
+          "id": "pl1d",
+          "label": "batch 15",
+          "createdAt": 1793610000000
+        }
+      ]
+    },
+    {
+      "sessionGoal": null,
+      "overallGoal": null,
+      "createdAt": 1793610000000,
+      "id": "pl2",
+      "name": "intent-review",
+      "company": "Larkspur Data",
+      "currentRate": 0,
+      "perTask": 35,
+      "paysOnAcceptance": true,
+      "currency": "USD",
+      "tasks": [
+        {
+          "id": "pl2a",
+          "label": "review 801",
+          "createdAt": 1793610000000,
+          "state": "accepted",
+          "stateAt": 1794492000000,
+          "submittedAt": 1794409200000
+        },
+        {
+          "id": "pl2b",
+          "label": "review 802",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794841200000,
+          "submittedAt": 1794841200000
+        }
+      ]
+    },
+    {
+      "sessionGoal": null,
+      "overallGoal": null,
+      "createdAt": 1793610000000,
+      "id": "pm1",
+      "name": "translation-review",
+      "company": "Meridian Lingua",
+      "currentRate": 22,
+      "currency": "EUR",
+      "tasks": [
+        {
+          "id": "pm1a",
+          "label": "chapter 3",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794315600000,
+          "submittedAt": 1794315600000
+        },
+        {
+          "id": "pm1b",
+          "label": "chapter 4",
+          "createdAt": 1793610000000,
+          "state": "submitted",
+          "stateAt": 1794661200000,
+          "submittedAt": 1794661200000
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "id": "s1",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1a",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1794474000000,
+      "closedAt": 1794484800000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794474000000,
+          "endedAt": 1794484800000
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1b",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1794556800000,
+      "closedAt": 1794564000000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794556800000,
+          "endedAt": 1794564000000
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1c",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1794816000000,
+      "closedAt": 1794821400000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794816000000,
+          "endedAt": 1794821400000
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1d",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1794902400000,
+      "closedAt": 1794906000000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794902400000,
+          "endedAt": 1794906000000
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "projectId": "pl2",
+      "kind": "billed",
+      "taskId": "pl2a",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1794391200000,
+      "closedAt": 1794394800000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794391200000,
+          "endedAt": 1794394800000
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "projectId": "pl2",
+      "kind": "billed",
+      "taskId": "pl2b",
+      "rate": 0,
+      "currency": "USD",
+      "createdAt": 1794830400000,
+      "closedAt": 1794834000000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794830400000,
+          "endedAt": 1794834000000
+        }
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "s7",
+      "projectId": "pm1",
+      "kind": "billed",
+      "taskId": "pm1a",
+      "rate": 22,
+      "currency": "EUR",
+      "createdAt": 1794301200000,
+      "closedAt": 1794315600000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794301200000,
+          "endedAt": 1794315600000
+        }
+      ]
+    },
+    {
+      "id": "s8",
+      "projectId": "pm1",
+      "kind": "billed",
+      "taskId": "pm1b",
+      "rate": 22,
+      "currency": "EUR",
+      "createdAt": 1794646800000,
+      "closedAt": 1794655800000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794646800000,
+          "endedAt": 1794655800000
+        }
+      ]
+    }
+  ],
+  "objectives": [],
+  "earnings": [
+    {
+      "id": "e1",
+      "projectId": "pl1",
+      "taskId": "pl1a",
+      "kind": "piece",
+      "cents": 1200,
+      "units": 2,
+      "currency": "USD",
+      "at": 1794499200000,
+      "note": "two items past the quota",
+      "createdAt": 1794499200000,
+      "deletedAt": null
+    },
+    {
+      "id": "e2",
+      "projectId": "pl1",
+      "taskId": "pl1a",
+      "kind": "bonus",
+      "cents": 1500,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794501000000,
+      "note": "quality bonus",
+      "createdAt": 1794501000000,
+      "deletedAt": null
+    },
+    {
+      "id": "e3",
+      "projectId": "pl1",
+      "taskId": "pl1a",
+      "kind": "adjust",
+      "cents": 400,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794560400000,
+      "note": "time corrected up",
+      "createdAt": 1794560400000,
+      "deletedAt": null
+    },
+    {
+      "id": "e4",
+      "projectId": "pl1",
+      "taskId": "pl1b",
+      "kind": "adjust",
+      "cents": -300,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794646800000,
+      "note": "duplicate row removed",
+      "createdAt": 1794646800000,
+      "deletedAt": null
+    },
+    {
+      "id": "e5",
+      "projectId": "pl1",
+      "taskId": "pl1c",
+      "kind": "bonus",
+      "cents": 800,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794825000000,
+      "note": "fast turnaround",
+      "createdAt": 1794825000000,
+      "deletedAt": null
+    },
+    {
+      "id": "e6",
+      "projectId": "pl1",
+      "taskId": "pl1c",
+      "kind": "bonus",
+      "cents": 2000,
+      "units": 1,
+      "currency": "EUR",
+      "at": 1794825900000,
+      "note": "referral, paid in euros",
+      "createdAt": 1794825900000,
+      "deletedAt": null
+    },
+    {
+      "id": "e7",
+      "projectId": "pl1",
+      "taskIds": [
+        "pl1a",
+        "pl1b",
+        "pl1c"
+      ],
+      "kind": "bonus",
+      "cents": 5000,
+      "units": 3,
+      "currency": "USD",
+      "at": 1794826800000,
+      "note": "Finish-three bonus",
+      "createdAt": 1794826800000,
+      "deletedAt": null
+    },
+    {
+      "id": "e8",
+      "projectId": "pl2",
+      "taskId": "pl2a",
+      "kind": "piece",
+      "cents": 3500,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794492000000,
+      "note": "",
+      "createdAt": 1794492000000,
+      "deletedAt": null
+    },
+    {
+      "id": "e9",
+      "projectId": "pl2",
+      "taskId": "pl2a",
+      "kind": "bonus",
+      "cents": 1000,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794492300000,
+      "note": "accuracy bonus",
+      "createdAt": 1794492300000,
+      "deletedAt": null
+    },
+    {
+      "id": "e10",
+      "projectId": "pl2",
+      "taskId": "pl2b",
+      "kind": "piece",
+      "cents": 3500,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794841200000,
+      "note": "",
+      "createdAt": 1794841200000,
+      "deletedAt": null,
+      "status": "pending"
+    },
+    {
+      "id": "e11",
+      "projectId": "pm1",
+      "taskId": "pm1a",
+      "kind": "bonus",
+      "cents": 2500,
+      "units": 1,
+      "currency": "EUR",
+      "at": 1794317400000,
+      "note": "terminology bonus",
+      "createdAt": 1794317400000,
+      "deletedAt": null
+    },
+    {
+      "id": "e12",
+      "projectId": "pm1",
+      "taskId": "pm1a",
+      "kind": "adjust",
+      "cents": -500,
+      "units": 1,
+      "currency": "EUR",
+      "at": 1794387600000,
+      "note": "late-delivery deduction",
+      "createdAt": 1794387600000,
+      "deletedAt": null
+    },
+    {
+      "id": "e13",
+      "projectId": "pm1",
+      "taskId": "pm1b",
+      "kind": "piece",
+      "cents": 1800,
+      "units": 6,
+      "currency": "EUR",
+      "at": 1794661200000,
+      "note": "glossary entries",
+      "createdAt": 1794661200000,
+      "deletedAt": null
+    }
+  ],
+  "todos": [],
+  "companies": [
+    {
+      "id": "co:larkspur data",
+      "name": "Larkspur Data",
+      "payPeriod": {
+        "kind": "weekly",
+        "cutoff": 1,
+        "payday": 3,
+        "after": 0,
+        "closesAt": 0,
+        "zone": "UTC"
+      },
+      "createdAt": 1793610000000,
+      "deletedAt": null
+    },
+    {
+      "id": "co:meridian lingua",
+      "name": "Meridian Lingua",
+      "payPeriod": {
+        "kind": "monthly",
+        "cutoff": 1,
+        "payday": 10,
+        "after": 0,
+        "closesAt": 0,
+        "zone": "UTC"
+      },
+      "createdAt": 1793610000000,
+      "deletedAt": null
+    }
+  ]
+}

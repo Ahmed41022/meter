@@ -365,6 +365,10 @@ export const CSS = `
   margin-left:2px;}
 .payline{display:flex;justify-content:space-between;gap:12px;align-items:baseline;
   font-family:var(--mono);font-size:12px;color:var(--ink-2);padding:3px 0;}
+/* The name sits in a flex row beside the amount, so on a phone it has to be
+   allowed to shrink and break, or a long task label pushes the amount off. */
+.payline > span:first-child{min-width:0;overflow-wrap:anywhere;}
+.payline-kind{color:var(--ink);}
 .payline-of{color:var(--muted);}
 .payline-amt{font-variant-numeric:tabular-nums;white-space:nowrap;}
 

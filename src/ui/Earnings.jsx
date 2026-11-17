@@ -15,7 +15,8 @@ const KINDS = [
   [EARNING.BONUS, "Bonus"],
   [EARNING.ADJUSTMENT, "Adjustment"],
 ];
-const KIND_WORD = Object.fromEntries(KINDS);
+/** What each kind of earning is called, here and on the Overview's paydays. */
+export const KIND_WORD = Object.fromEntries(KINDS);
 
 const day = (t) => new Date(t).toLocaleDateString(undefined, {
   day: "numeric", month: "short", year: "numeric",

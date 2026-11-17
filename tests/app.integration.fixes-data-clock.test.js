@@ -263,6 +263,20 @@ describe("fixes: data, export and layout", () => {
       expect(names(dom)).toEqual(["Orion", "Lumen"]);
     }, 25_000);
 
+    it("takes the example ledger in docs/payments-seed.json, companies and payments with it", async () => {
+      const seed = readFileSync(new URL("../docs/payments-seed.json", import.meta.url), "utf8");
+      const dom = await boot(mine);
+      await pick(dom, seed, "payments-seed.json");
+      const d = dom.window.document;
+      expect(panel(d).textContent).toContain("payments-seed.json");
+      btn(d, /^Replace my ledger$/).click();
+      await settle();
+      const now = JSON.parse(stored(dom));
+      expect(names(dom)).toEqual(["label-sprint", "intent-review", "translation-review"]);
+      expect(now.earnings).toHaveLength(JSON.parse(seed).earnings.length);
+      expect(now.companies.map((c) => c.name)).toEqual(["Larkspur Data", "Meridian Lingua"]);
+    }, 25_000);
+
     it("leaves everything as it was on Cancel", async () => {
       const dom = await boot(mine);
       const before = stored(dom);

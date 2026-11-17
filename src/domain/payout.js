@@ -47,7 +47,13 @@
  * "northwind" are the one payment they are.
  *
  * Each row carries what makes it up — its tasks, and any shared reward — so a
- * figure can be opened and accounted for rather than taken on trust.
+ * figure can be opened and accounted for rather than taken on trust. A task's
+ * money is spread over a line for each KIND of it: what the clock earned, what
+ * it was paid per accepted item, its bonuses, its adjustments. A bonus is a
+ * different thing from an hour, and "where did that $40 come from" is the
+ * question an opened row is there to answer. The split is only how the same
+ * figure is shown: lines add up to the row's cents exactly, and nothing about
+ * when the money arrives depends on it.
  *
  * Anything whose payday has already passed is left out. It arrived, or it is a
  * conversation with the client rather than a forecast.
@@ -57,7 +63,7 @@ import { fold, isOffClock } from "./projects.js";
 import { tasksFor } from "./tasks.js";
 import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
-import { isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
+import { EARNING, isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
 import { dayOnClock, payPeriodFor, paydayFor } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
@@ -76,17 +82,32 @@ const hourlyCents = (sessions, project, taskId, now) => {
  * Sums into a keyed bucket, so several tasks landing on one payday read as
  * one payment — which is what the platform will actually send.
  *
- * A task's hours and its own reward are added up before they get here and
- * arrive as one line per currency, so a task is counted once however many
- * records its money is written on.
+ * A task's money is added up by kind before it gets here and arrives as one
+ * line per kind and currency, so however many records it is written on, a
+ * kind is one line and the task is still one task.
  */
 const into = (map, key, seed) => {
   if (!map.has(key)) map.set(key, { ...seed, key, cents: 0, tasks: [] });
   return map.get(key);
 };
 
+/** Where a task's own lines sit among themselves: the clock first, then the
+ *  kinds of earning in the order Earnings lists them, anything else last. */
+const PARTS = ["hours", EARNING.PIECE, EARNING.BONUS, EARNING.ADJUSTMENT];
+const partRank = (part) => {
+  const at = PARTS.indexOf(part);
+  return at === -1 ? PARTS.length : at;
+};
+
 /**
- * The buckets as the panel reads them, biggest line first inside each.
+ * The buckets as the panel reads them.
+ *
+ * Inside a row, a task's lines stay TOGETHER, and the groups run biggest
+ * first — a task by everything it is owed, a shared reward by its own amount.
+ * Sorting every line by its own size would scatter one task's hours and
+ * bonus between other tasks' lines, and the point of opening a row is to read
+ * a task's money as one thing. Within a task the order is fixed, hours then
+ * item, bonus, adjustment, so the same task reads the same way every time.
  *
  * The key is prefixed with which list it came from, because a dated row and a
  * not-before row can agree on company, day and currency — which is the common
@@ -95,16 +116,25 @@ const into = (map, key, seed) => {
  *
  * `items` counts tasks and `rewards` the shared rewards beside them: a reward
  * covering six tasks is one payment, and counting it as a task, or as six,
- * would misreport what the row is made of.
+ * would misreport what the row is made of. A task with three kinds of money
+ * is three lines and one item.
  */
 const rows = (map, kind) => [...map.values()]
-  .map((row) => ({
-    ...row,
-    key: `${kind}|${row.key}`,
-    items: row.tasks.filter((line) => line.kind === "task").length,
-    rewards: row.tasks.filter((line) => line.kind === "reward").length,
-    tasks: [...row.tasks].sort((a, b) => b.cents - a.cents),
-  }))
+  .map((row) => {
+    const group = (line) => (line.kind === "task" ? `task:${line.taskId}` : line.key);
+    const worth = new Map();
+    for (const line of row.tasks) worth.set(group(line), (worth.get(group(line)) ?? 0) + line.cents);
+    return {
+      ...row,
+      key: `${kind}|${row.key}`,
+      items: new Set(row.tasks.filter((line) => line.kind === "task").map((line) => line.taskId)).size,
+      rewards: row.tasks.filter((line) => line.kind === "reward").length,
+      tasks: [...row.tasks].sort((a, b) =>
+        worth.get(group(b)) - worth.get(group(a))
+        || (group(a) < group(b) ? -1 : group(a) > group(b) ? 1 : 0)
+        || partRank(a.part) - partRank(b.part)),
+    };
+  })
   .sort((a, b) => a.at - b.at || a.company.localeCompare(b.company));
 
 /**
@@ -205,29 +235,43 @@ export const upcomingPay = (state, now) => {
       if (pay === null || pay.date < today) continue;
 
       /*
-       * What this task is owed, by currency, because a reward recorded in one
-       * currency cannot be added to hours in another. Hours and reward
-       * together: under a single per-accepted payment they are one piece of
-       * money that happens to be written down in two places, and they land on
-       * the same day for the same reason.
+       * What this task is owed, by currency and then by kind, because a reward
+       * recorded in one currency cannot be added to hours in another. Hours
+       * and reward together in the row's figure: under a single per-accepted
+       * payment they are one piece of money that happens to be written down in
+       * two places, and they land on the same day for the same reason. Kept
+       * apart as lines, because an hour and a bonus are not the same thing.
+       *
+       * Only money coming in is counted, a record at a time. A negative
+       * adjustment is not taken off the task's other lines: it was never
+       * netted here, and a forecast that began to would move every figure it
+       * had already given. It stays in the ledger and in the totals, and is
+       * left off a payday it would only have made look smaller.
        */
       const owed = new Map();
-      const add = (cur, cents) => {
-        if (cents > 0) owed.set(cur, (owed.get(cur) ?? 0) + cents);
+      const add = (cur, part, cents) => {
+        if (!(cents > 0)) return;
+        if (!owed.has(cur)) owed.set(cur, new Map());
+        const parts = owed.get(cur);
+        parts.set(part, (parts.get(part) ?? 0) + cents);
       };
-      add(currency, hourlyCents(sessions, project, task.id, now));
+      add(currency, "hours", hourlyCents(sessions, project, task.id, now));
       // Only lines naming this task alone. A reward shared across many tasks
       // is not this one's to date, and is dated on its own below.
-      for (const earning of sole.get(task.id) ?? []) add(earning.currency, earning.cents);
+      for (const earning of sole.get(task.id) ?? []) {
+        add(earning.currency, earning.kind || "other", earning.cents);
+      }
 
-      for (const [cur, cents] of owed) {
+      for (const [cur, parts] of owed) {
         const row = into(pendingReview ? waiting : due, `${client}|${pay.date}|${cur}`,
                          { company, at: pay.at, date: pay.date, currency: cur });
-        row.cents += cents;
-        row.tasks.push({
-          key: `task:${task.id}`, kind: "task",
-          taskId: task.id, label: task.label, project: project.name, cents, status,
-        });
+        for (const [part, cents] of parts) {
+          row.cents += cents;
+          row.tasks.push({
+            key: `task:${task.id}:${part}`, kind: "task", part,
+            taskId: task.id, label: task.label, project: project.name, cents, status,
+          });
+        }
       }
     }
 

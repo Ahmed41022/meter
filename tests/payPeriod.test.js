@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   PERIOD, companyId, dayOnClock, describePeriod, findCompany, knownZone, nextClose, nextPayout,
   normalisePeriod, payPeriodFor, paydayFor, samePeriod, setPayPeriod, storedPeriodFor,
@@ -880,5 +881,178 @@ describe("a reward shared across several tasks", () => {
   it("drops off once its payday has passed, like everything else", () => {
     const s = answer(ledger(), ["t1", "t2", "t3"], TASK.ACCEPTED, on(2026, 10, 4, 10));
     expect(upcomingPay(s, on(2026, 10, 8, 12))).toEqual({ due: [], waiting: [] });
+  });
+});
+
+describe("what is coming in, line by line", () => {
+  /*
+   * Built by hand on a UTC schedule so no figure here depends on the machine's
+   * own zone. In before Monday, paid Wednesday: a task handed in on Thursday
+   * 12 November rides Wednesday 18th, and a reward shared by three tasks the
+   * last of them hands in on Monday 16th rides Wednesday 25th.
+   */
+  const NOW = Date.UTC(2026, 10, 17, 12);
+  const at = (d, h = 12) => Date.UTC(2026, 10, d, h);
+  const utcWeekly = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "UTC" };
+  const mkTask = (id, label, handedIn = at(12)) => ({
+    id, label, createdAt: at(2), state: "submitted", stateAt: handedIn, submittedAt: handedIn,
+  });
+  const sitting = (id, taskId, hours, rate = 40) => ({
+    id, projectId: "p", kind: "billed", taskId, rate, currency: "USD", deletedAt: null,
+    createdAt: at(12, 8), closedAt: at(12, 8) + hours * HOUR,
+    segments: [{ startedAt: at(12, 8), endedAt: at(12, 8) + hours * HOUR }],
+  });
+  const money = (id, taskIds, kind, cents, currency = "USD", extra = {}) => ({
+    id, projectId: "p", ...(taskIds.length === 1 ? { taskId: taskIds[0] } : { taskIds }),
+    kind, cents, units: 1, currency, at: at(12), createdAt: at(12), deletedAt: null, ...extra,
+  });
+  const ledger = ({ tasks, sessions = [], earnings = [] }) => ({
+    projects: [{ id: "p", name: "Gateway", company: "Larkspur", currentRate: 40, currency: "USD",
+                 createdAt: at(2), tasks }],
+    sessions, earnings,
+    companies: [{ id: "co:larkspur", name: "Larkspur", payPeriod: utcWeekly, createdAt: at(2), deletedAt: null }],
+  });
+  const lines = (s) => upcomingPay(s, NOW).due.flatMap((r) => r.tasks);
+
+  it("gives each kind of a task's money its own line, still naming the task", () => {
+    const s = ledger({
+      tasks: [mkTask("t1", "batch 12")],
+      sessions: [sitting("s1", "t1", 2)],
+      earnings: [
+        money("e1", ["t1"], EARNING.PIECE, 1_200),
+        money("e2", ["t1"], EARNING.BONUS, 1_500),
+        money("e3", ["t1"], EARNING.ADJUSTMENT, 400),
+      ],
+    });
+    const { due } = upcomingPay(s, NOW);
+    expect(due).toHaveLength(1);
+    expect(due[0].date).toBe("2026-11-18");
+    expect(due[0].tasks.map((l) => [l.part, l.cents])).toEqual([
+      ["hours", 8_000], ["piece", 1_200], ["bonus", 1_500], ["adjust", 400],
+    ]);
+    for (const line of due[0].tasks) {
+      expect(line).toMatchObject({ kind: "task", taskId: "t1", label: "batch 12", project: "Gateway", status: TASK.SUBMITTED });
+    }
+    // The split is only how the figure is shown.
+    expect(due[0].cents).toBe(8_000 + 1_200 + 1_500 + 400);
+    expect(due[0].items).toBe(1);
+  });
+
+  it("makes several earnings of one kind a single line, and leaves out a line of nothing", () => {
+    const s = ledger({
+      tasks: [mkTask("t1", "batch 12")],
+      earnings: [
+        money("e1", ["t1"], EARNING.BONUS, 500), money("e2", ["t1"], EARNING.BONUS, 700),
+        money("e3", ["t1"], EARNING.PIECE, 0),
+      ],
+    });
+    expect(lines(s).map((l) => [l.part, l.cents])).toEqual([["bonus", 1_200]]);
+    expect(upcomingPay(s, NOW).due[0].cents).toBe(1_200);
+  });
+
+  it("does not take a negative adjustment off the day, as before", () => {
+    // The forecast only ever counted money coming in, a record at a time, and
+    // netting a deduction in would have moved every figure it had given.
+    const base = { tasks: [mkTask("t1", "batch 12")], sessions: [sitting("s1", "t1", 2)] };
+    const plain = upcomingPay(ledger({ ...base, earnings: [money("e1", ["t1"], EARNING.BONUS, 1_000)] }), NOW);
+    const docked = upcomingPay(ledger({
+      ...base,
+      earnings: [money("e1", ["t1"], EARNING.BONUS, 1_000), money("e2", ["t1"], EARNING.ADJUSTMENT, -300)],
+    }), NOW);
+    expect(docked.due[0].cents).toBe(plain.due[0].cents);
+    expect(docked.due[0].tasks.map((l) => l.part)).toEqual(["hours", "bonus"]);
+    // A task with nothing but a deduction contributes nothing at all.
+    const only = ledger({ tasks: [mkTask("t1", "batch 12")], earnings: [money("e1", ["t1"], EARNING.ADJUSTMENT, -300)] });
+    expect(upcomingPay(only, NOW)).toEqual({ due: [], waiting: [] });
+  });
+
+  it("keeps a currency of its own for each line, never adding across them", () => {
+    const s = ledger({
+      tasks: [mkTask("t1", "batch 12")],
+      sessions: [sitting("s1", "t1", 1)],
+      earnings: [money("e1", ["t1"], EARNING.BONUS, 2_000, "EUR"), money("e2", ["t1"], EARNING.BONUS, 500)],
+    });
+    const { due } = upcomingPay(s, NOW);
+    expect(due.map((r) => [r.currency, r.cents, r.tasks.map((l) => l.part)]).sort()).toEqual([
+      ["EUR", 2_000, ["bonus"]], ["USD", 4_500, ["hours", "bonus"]],
+    ]);
+    // One task, though it sits on two rows.
+    expect(due.map((r) => r.items)).toEqual([1, 1]);
+  });
+
+  it("counts tasks and shared rewards, not lines, and leaves a shared reward as one line", () => {
+    const s = ledger({
+      tasks: [mkTask("t1", "batch 12"), mkTask("t2", "batch 13", at(13)), mkTask("t3", "batch 14", at(16, 10))],
+      sessions: [sitting("s1", "t1", 1), sitting("s2", "t2", 1)],
+      earnings: [
+        money("e1", ["t1"], EARNING.BONUS, 100), money("e2", ["t1"], EARNING.PIECE, 200),
+        money("e3", ["t2"], EARNING.BONUS, 300),
+        money("e4", ["t1", "t2", "t3"], EARNING.BONUS, 5_000, "USD", { note: "Finish-three bonus" }),
+      ],
+    });
+    const { due } = upcomingPay(s, NOW);
+    // Batches 12 and 13 ride the 18th; the reward waits for the 16th's hand-in.
+    expect(due.map((r) => [r.date, r.items, r.rewards, r.cents])).toEqual([
+      ["2026-11-18", 2, 0, 4_000 + 100 + 200 + 4_000 + 300], ["2026-11-25", 0, 1, 5_000],
+    ]);
+    expect(due[1].tasks).toEqual([expect.objectContaining({
+      kind: "reward", label: "Finish-three bonus", covers: 3, cents: 5_000,
+    })]);
+  });
+
+  it("keeps a task's lines together, the biggest task first", () => {
+    const s = ledger({
+      tasks: [mkTask("t1", "small"), mkTask("t2", "large")],
+      sessions: [sitting("s2", "t2", 1)],
+      earnings: [
+        money("e1", ["t1"], EARNING.BONUS, 900), money("e2", ["t1"], EARNING.PIECE, 800),
+        money("e3", ["t2"], EARNING.BONUS, 1_000),
+      ],
+    });
+    // t2 is owed 5,000 to t1's 1,700. Sorted by line, t1's 900 bonus would
+    // have come between t2's hours and t2's bonus.
+    expect(lines(s).map((l) => `${l.taskId}:${l.part}`)).toEqual([
+      "t2:hours", "t2:bonus", "t1:piece", "t1:bonus",
+    ]);
+  });
+});
+
+describe("docs/payments-seed.json", () => {
+  const seed = JSON.parse(readFileSync(new URL("../docs/payments-seed.json", import.meta.url), "utf8"));
+  const NOW = Date.UTC(2026, 10, 17, 12);
+  const { due, waiting } = upcomingPay(seed, NOW);
+  const parts = (rows) => rows.flatMap((r) => r.tasks).filter((l) => l.kind === "task").map((l) => l.part);
+
+  it("loads as a ledger: the shape a restore asks for", () => {
+    expect(Array.isArray(seed.projects) && Array.isArray(seed.sessions)).toBe(true);
+  });
+
+  it("shows hours, per-item pay, bonuses and adjustments each on a line of its own", () => {
+    for (const part of ["hours", "piece", "bonus", "adjust"]) expect(parts(due)).toContain(part);
+    // One task carries all four.
+    const batch12 = due.flatMap((r) => r.tasks).filter((l) => l.taskId === "pl1a").map((l) => l.part);
+    expect(batch12).toEqual(["hours", "piece", "bonus", "adjust"]);
+  });
+
+  it("has a shared reward, two currencies and work still under review", () => {
+    expect(due.flatMap((r) => r.tasks).filter((l) => l.kind === "reward")).toHaveLength(1);
+    expect(new Set([...due, ...waiting].map((r) => r.currency))).toEqual(new Set(["USD", "EUR"]));
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(parts(waiting)).toEqual(["piece"]);
+  });
+
+  it("leaves its negative adjustments off the paydays, whose rows still add up", () => {
+    // Two deductions sit in the ledger, and neither makes a line.
+    expect(seed.earnings.filter((e) => e.kind === "adjust" && e.cents < 0)).toHaveLength(2);
+    for (const row of [...due, ...waiting]) {
+      expect(row.cents).toBe(row.tasks.reduce((sum, l) => sum + l.cents, 0));
+      expect(row.tasks.every((l) => l.cents > 0)).toBe(true);
+    }
+  });
+
+  it("keeps every payday between 18 November and 20 December", () => {
+    for (const row of [...due, ...waiting]) {
+      expect(row.date >= "2026-11-18" && row.date <= "2026-12-20").toBe(true);
+    }
   });
 });

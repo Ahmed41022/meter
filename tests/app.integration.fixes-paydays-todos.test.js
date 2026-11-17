@@ -307,6 +307,37 @@ describe("fixes: paydays and settling", () => {
     expect(lines).toContain("Two-task bonus · 2 tasks · Gateway$60.00");
   }, 30_000);
 
+  it("opens a payday into a line for each kind of a task's money", async () => {
+    // Hours, a per-item payment, a bonus and an adjustment were one line, so a
+    // bonus could not be told from the time it came with.
+    const now = Date.now();
+    const seed = scheduled({
+      company: "Northwind", rules: { Northwind: WEEKLY },
+      tasks: [{ id: "1234", label: "1234", createdAt: now - 80 * HOUR,
+                state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR }],
+    });
+    const earning = (id, kind, cents) => ({
+      id, projectId: "a", taskId: "1234", kind, cents, currency: "USD", units: 1,
+      at: now - HOUR, createdAt: now - HOUR, deletedAt: null,
+    });
+    seed.earnings = [earning("e1", "piece", 1_200), earning("e2", "bonus", 1_500),
+                     earning("e3", "adjust", 400), earning("e4", "adjust", -250)];
+    const d = (await bootDash(seed)).window.document;
+    // One task, whatever the number of lines, and the row's figure unchanged:
+    // an hour at 40, plus 12 + 15 + 4 (71). The deduction is not in it.
+    expect(payRows(d)).toEqual(["Northwind · 1 task"]);
+    expect(d.querySelector(".payrow .trow-amt").textContent).toBe("$71.00");
+    d.querySelector(".payrow .trow").click();
+    await settle();
+    const lines = [...d.querySelectorAll(".payline")].map((e) => e.textContent);
+    expect(lines).toEqual([
+      "Hours · 1234 · Gateway$40.00",
+      "Per accepted item · 1234 · Gateway$12.00",
+      "Bonus · 1234 · Gateway$15.00",
+      "Adjustment · 1234 · Gateway$4.00",
+    ]);
+  }, 30_000);
+
   it("puts one client on one payday row however its name was typed", async () => {
     const now = Date.now();
     const project = (id, name, company) => ({

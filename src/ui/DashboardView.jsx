@@ -18,6 +18,7 @@ import {
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
 import { upcomingPay } from "../domain/payout.js";
+import { KIND_WORD } from "./Earnings.jsx";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
 // and the heading directly under it says "All time" in full.
@@ -543,9 +544,19 @@ export default function DashboardView({
                       {row.tasks.map((t) => (
                         <div className="payline" key={t.key}>
                           <span>
-                            {/* A shared reward says how many tasks it covers,
-                                because that is what tells it from a task. */}
-                            {t.kind === "reward" ? `${t.label} · ${t.covers} tasks` : t.label}
+                            {/* A task's money is a line for each kind of it, so
+                                the kind leads and the task follows: "Bonus ·
+                                batch 4417". A shared reward says how many tasks
+                                it covers, because that is what tells it from a
+                                task. */}
+                            {t.kind === "reward" ? `${t.label} · ${t.covers} tasks` : (
+                              <>
+                                <span className="payline-kind">
+                                  {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
+                                </span>
+                                {` · ${t.label}`}
+                              </>
+                            )}
                             <span className="payline-of"> · {t.project}</span>
                           </span>
                           <span className="payline-amt">
@@ -565,7 +576,9 @@ export default function DashboardView({
               next run — and work nobody has reviewed yet has no date, only the soonest it
               could arrive. A reward shared by several tasks is paid with the last of them
               to get there, and waits like unreviewed work until then. Open a row to see
-              what makes it up. Anything whose payday has passed has dropped off.
+              what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
+              on lines of their own. A negative adjustment is not taken off the day, only
+              the money coming in is listed. Anything whose payday has passed has dropped off.
             </div>
           </div>
         </div>

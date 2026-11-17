@@ -9,6 +9,17 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Upcoming payments lists a task's bonuses on lines of their own.** Opening a
+  payday used to show one line per task, with its hours, per-item payment,
+  bonuses and adjustments added together. Now each kind is a line, named for
+  what it is, so a bonus can be told from the time it came with. Every figure
+  and date is as it was; the lines only show what already made it up. A task's
+  lines sit together, biggest task first, and a negative adjustment is still
+  left off, as it always was, since only money coming in is forecast.
+  `docs/payments-seed.json` is a fictional ledger for trying it: restore it
+  from **Work → Restore** (it replaces the ledger, so use a spare profile or
+  back up first) and open the paydays from 18 November to 10 December 2026.
+
 - **A time limit per task, and what the time over it pays.** Some platforms
   pay a task's time in full only up to a limit and the rest at a share of the
   rate — 30%, or nothing. A project can say so in Settings: the first two hours
