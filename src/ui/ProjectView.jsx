@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { elapsedMs, isOpen, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
+import { elapsedMs, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
 import {
   formatDuration, formatMoney, formatShortDuration, moneyParts,
 } from "../domain/money.js";
@@ -7,59 +7,23 @@ import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/
 import { wordsFor } from "./words.js";
 import { paceGoal, periodBoundary } from "../domain/goals.js";
 import { effectiveRate, goalValue } from "../domain/performance.js";
-import {
-  PAY, earnedFrom, hasReward, isCancelled, isPending, isPerTask, isPieceOnly, namesTask,
-  paysOnAcceptance, perTask, priceFor, taskPay, tasksOf,
-} from "../domain/earnings.js";
-import {
-  isIdle, KIND, overLimitMs, sessionCents, utilisation, wasCorrected, wasManual,
-} from "../domain/sessions.js";
-import { limitFor, pricer } from "../domain/terms.js";
-import { TASK, taskState } from "../domain/taskState.js";
-import {
-  ORDER, ORDERS, findTask, nameTakenBy, rateFor, sessionsUnderTask, sortTaskRows, taskLabel,
-  taskTotals, UNASSIGNED,
-} from "../domain/tasks.js";
+import { isCancelled, isPerTask, isPieceOnly, priceFor } from "../domain/earnings.js";
+import { isIdle, KIND, sessionCents, utilisation } from "../domain/sessions.js";
+import { pricer } from "../domain/terms.js";
+import { ORDER, findTask, rateFor, taskLabel, taskTotals } from "../domain/tasks.js";
 import TaskPrompt from "./TaskPrompt.jsx";
-import TaskBreakdown from "./TaskBreakdown.jsx";
-import TaskEditor from "./TaskEditor.jsx";
-import TaskSettle from "./TaskSettle.jsx";
 import SettlePrompt from "./SettlePrompt.jsx";
-import SessionEditor from "./SessionEditor.jsx";
+import TaskList from "./project/TaskList.jsx";
+import Ledger from "./project/Ledger.jsx";
+import { date, time } from "./project/format.js";
 
-/** Above this many rows the ledger is collapsed on arrival, so Settings and
- *  the per-task figures stay reachable without a long scroll. */
-const LEDGER_AUTO_COLLAPSE = 5;
 import { GoalBar } from "./parts.jsx";
 import { StatTile } from "./charts.jsx";
 import Settings, { unsavedSettings } from "./Settings.jsx";
 import Objectives from "./Objectives.jsx";
-import ManualSession from "./ManualSession.jsx";
 import Earnings from "./Earnings.jsx";
 
 const MS_PER_HOUR = 3_600_000;
-const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-
-/** What marking these sessions would say against their tasks' answers: how
- *  many it touches, under what, and what the mark would claim about them. */
-const contradiction = (status, { rejected, accepted }) => {
-  const n = rejected + accepted;
-  const under = rejected && accepted
-    ? `rejected tasks (${rejected}) and accepted ones (${accepted})`
-    : rejected
-      ? (rejected === 1 ? "a rejected task" : "rejected tasks")
-      : (accepted === 1 ? "an accepted task" : "accepted tasks");
-  const claim = status === PAY.PAID
-    ? "money came in for work that was turned down"
-    : !accepted
-      ? "money is still to come for work that was turned down"
-      : !rejected
-        ? "work already accepted is still waiting to be paid"
-        : "money is still to come for work that has already been answered";
-  return `${n} of the selected sessions ${n === 1 ? "is" : "are"} under ${under}. Marking `
-    + `${n === 1 ? "it" : "them"} ${status === PAY.PAID ? "paid" : "pending"} says ${claim}.`;
-};
 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
@@ -75,7 +39,6 @@ export default function ProjectView({
   findOverlaps, onAddManual, focusSession = null,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [addingTime, setAddingTime] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
   // Which session is being asked "what did this earn?". Set when a piece-rate
   // meter stops, and settable again later from any row — acceptance lands days
@@ -84,17 +47,12 @@ export default function ProjectView({
   const [ledgerOpen, setLedgerOpen] = useState(null); // null = follow the default
   const [filterTask, setFilterTask] = useState(null); // UNASSIGNED, a taskId, or null
   const [selected, setSelected] = useState([]);       // session ids picked for re-filing
-  const [bulkPrompt, setBulkPrompt] = useState(false);
-  // A mark waiting on a yes because it would contradict a task's answer.
-  // Tied to the rows it was asked about, so changing the selection drops it.
-  const [asked, setAsked] = useState(null);           // {status, ids} | null
   const [pickedTasks, setPickedTasks] = useState([]); // task ids picked for settling
   // How the task list reads. Most-earned-first to begin with, as it always
   // was; the other orders answer questions that one cannot.
   const [order, setOrder] = useState(ORDER.PAY);
   const [orderDesc, setOrderDesc] = useState(true);
   const [editingTask, setEditingTask] = useState(null);
-  const [editingSession, setEditingSession] = useState(null);
   const focusRow = useRef(null);
 
   /**
@@ -187,73 +145,8 @@ export default function ProjectView({
     ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now, price)
     : 0;
 
-  // The ledger shows both kinds; the totals above keep them apart.
-  const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
-  const visible = filterTask
-    ? ordered.filter((s) =>
-        filterTask === UNASSIGNED ? !s.taskId : s.taskId === filterTask)
-    : ordered;
-  const showLedger = ledgerOpen ?? (visible.length <= LEDGER_AUTO_COLLAPSE && !filterTask);
-  // The session the editor is open on, for as long as it exists. Deleted from
-  // its own row while the form is open, it has no times left to read, and a
-  // form reading them anyway would take the whole page down with it.
-  const editedSession = editingSession
-    ? ordered.find((x) => x.id === editingSession) ?? null
-    : null;
-  const selecting = selected.length > 0;
-  const toggleSelect = (id) =>
-    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-
-  /**
-   * How many selected sessions a mark would set against their task's answer.
-   *
-   * A rejected task's sessions are cancelled because the work was turned
-   * down, so marking them paid or pending says money is coming for it. An
-   * accepted task's are paid, so marking them pending says it is still to
-   * come. Either can be meant — an answer overturned later, a payment that
-   * bounced — but it is far more often a row ticked by mistake, so the bar
-   * says so and waits for a yes. Nothing else is asked about.
-   */
-  const against = (status) => {
-    const count = { rejected: 0, accepted: 0 };
-    for (const s of ordered) {
-      if (!selected.includes(s.id) || !s.taskId) continue;
-      const answer = taskState(findTask(project, s.taskId));
-      if (answer === TASK.CANCELLED) count.rejected += 1;
-      else if (answer === TASK.ACCEPTED && status === PAY.PENDING) count.accepted += 1;
-    }
-    return count;
-  };
-  const mark = (status, anyway = false) => {
-    const count = against(status);
-    if (!anyway && count.rejected + count.accepted > 0) {
-      setAsked({ status, ids: selected });
-      return;
-    }
-    onSetPayStateMany(selected, status);
-    setSelected([]);
-    setAsked(null);
-  };
-  const askedAbout = asked && asked.ids.length === selected.length
-    && asked.ids.every((id) => selected.includes(id)) ? asked.status : null;
-  const objection = askedAbout ? against(askedAbout) : null;
-  const askedNow = objection && objection.rejected + objection.accepted > 0 ? askedAbout : null;
-
   const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now, price);
   const hasTasks = rawTaskRows.some((r) => r.taskId);
-
-  /**
-   * Whether money here is CLAIMED per task, which decides whether a task with
-   * no money against it is owed something or simply worth nothing.
-   *
-   * The project's own per-item price says yes, and so does any single task
-   * carrying one — some projects price nothing centrally and everything per
-   * task. So does being paid once accepted, where the hourly money itself is
-   * claimed a task at a time. Anywhere else, "not claimed" against a task
-   * would be a warning about money that was never owed, on every row, forever.
-   */
-  const accepts = settles || hasReward(project) || paysOnAcceptance(project)
-    || rawTaskRows.some((r) => r.price != null);
 
   /**
    * Whether tasks here can be moved through their life, which is a different
@@ -269,54 +162,6 @@ export default function ProjectView({
    * there, so the whole lifecycle would be ceremony.
    */
   const canSettle = !offClock && hasTasks;
-
-  /**
-   * What a task is worth, for ordering by it.
-   *
-   * The clock's money plus whatever reward names this task and this task
-   * alone. A shared reward is left out rather than divided, exactly as the row
-   * itself leaves it out: a fiftieth of a milestone payment is not a figure
-   * anybody quoted, and sorting by it would rank rows on an invented number.
-   */
-  const payOf = (r) => {
-    if (!r.taskId || !accepts) return r.billedCents;
-    const pay = taskPay(earnings, r.taskId);
-    return r.billedCents + pay.settled + pay.pending;
-  };
-  // Off the clock there is no amount to sort by — the money columns are not
-  // merely zero there, they are absent.
-  const orders = offClock ? ORDERS.filter(([key]) => key !== ORDER.PAY) : ORDERS;
-  const taskRows = sortTaskRows(rawTaskRows, order, orderDesc, payOf);
-  const pickable = taskRows.filter((r) => r.taskId).map((r) => r.taskId);
-  const toggleTask = (id) =>
-    setPickedTasks((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  /**
-   * The pending lines that answering a task will never settle: a reward covering
-   * fifty tasks is not paid by accepting one of them. Accept handles
-   * everything else, so offering "mark paid" for the rest as well would be two
-   * buttons doing the same thing to the same line.
-   */
-  /**
-   * When the last sitting on some tasks ended, or null where they have none.
-   *
-   * The default time for submitting them, because work is nearly always
-   * handed in as it is finished — and when a pay cutoff falls between
-   * finishing and remembering to tick the box, the difference is a whole
-   * payday. Asked of the tasks actually being submitted, at the click, rather
-   * than of everything ticked when the bar opened: a task already handed in
-   * and ticked alongside has a last sitting that says nothing about these. A
-   * sitting still running ends when they go in, because submitting stops it,
-   * so it counts as ending at `at`.
-   */
-  const lastWorkedOn = (ids, at) => sessions
-    .filter((s) => ids.includes(s.taskId))
-    .reduce((latest, s) => Math.max(latest, isRunning(s) ? at : (lastActivityAt(s) ?? 0)), 0)
-    || null;
-
-  const sharedOwedIds = earnings
-    .filter((e) => !e.deletedAt && isPending(e) && tasksOf(e).length > 1
-      && pickedTasks.some((t) => namesTask(e, t)))
-    .map((e) => e.id);
 
   const stopped = !acceptsTime(project);
   /** A stopped project with nothing open has no meter to show: the money
@@ -608,97 +453,18 @@ export default function ProjectView({
       )}
 
       {hasTasks && (
-        <div className="sec">
-          <div className="sec-head">
-            <span className="eyebrow">{w.byTask}</span>
-            {canSettle && pickable.length > 1 ? (
-              <button className="linkbtn"
-                      onClick={() => setPickedTasks(
-                        pickedTasks.length === pickable.length ? [] : pickable
-                      )}>
-                {pickedTasks.length === pickable.length ? "Select none" : `Select all ${pickable.length}`}
-              </button>
-            ) : (
-              <span className="eyebrow">
-                {taskRows.length} {w.task}{taskRows.length === 1 ? "" : "s"}
-              </span>
-            )}
-          </div>
-
-          {/* How the list reads. Quiet until chosen, because the sort is a
-              tool you reach for rather than a figure to be read. Clicking the
-              order already on turns it round — "least idle first" is a real
-              question and does not deserve a control of its own. */}
-          {taskRows.length > 1 && (
-            <div className="sortbar" role="group" aria-label="Order the tasks by">
-              <span className="eyebrow">Sort</span>
-              {orders.map(([key, label]) => (
-                <button key={key} className={"sortbtn" + (order === key ? " on" : "")}
-                        aria-pressed={order === key}
-                        onClick={() => {
-                          if (order === key) setOrderDesc((v) => !v);
-                          else { setOrder(key); setOrderDesc(true); }
-                        }}>
-                  {label}
-                  {order === key && <span aria-hidden="true">{orderDesc ? " ↓" : " ↑"}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {canSettle && pickedTasks.length > 0 && (
-            <TaskSettle
-              project={project} taskIds={pickedTasks} rows={taskRows}
-              sharedOwedIds={sharedOwedIds} allIds={pickable}
-              now={now} lastWorkedOn={lastWorkedOn}
-              onSubmit={(ids, at) => { onSubmitTasks(ids, at); setPickedTasks([]); }}
-              onAnswer={(ids, answer, at) => { onAnswerTasks(ids, answer, at); setPickedTasks([]); }}
-              onReopen={(ids) => { onReopenTasks(ids); setPickedTasks([]); }}
-              onReward={(entry) => { onRewardTasks(pickedTasks, entry); setPickedTasks([]); }}
-              onPay={() => { onSetPayStateMany(sharedOwedIds, PAY.PAID); setPickedTasks([]); }}
-              onSelectAll={() => setPickedTasks(pickable)}
-              onClear={() => setPickedTasks([])} />
-          )}
-          {/* Only while the task is still there to edit: one removed under
-              the open form, by an undo or by the other device, would leave
-              it reading the fields of nothing. */}
-          {editingTask && findTask(project, editingTask) && (
-            <div style={{ marginBottom: 12 }}>
-              <TaskEditor words={w} key={editingTask}
-                task={findTask(project, editingTask)}
-                currency={project.currency}
-                projectRate={project.currentRate}
-                projectPrice={perTask(project)}
-                byAnswer={paysOnAcceptance(project)}
-                projectLimit={limitFor(project, { ...findTask(project, editingTask), limitMs: null })}
-                sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
-                nameTakenBy={(label) => nameTakenBy(project, label, editingTask)}
-                onCancel={() => setEditingTask(null)}
-                onSave={({ limitMs, ...patch }) => {
-                  onSaveTask(editingTask, patch);
-                  if (limitMs !== undefined) onSetOwnLimit?.(editingTask, limitMs);
-                  setEditingTask(null);
-                }}
-                onDelete={() => {
-                  onDeleteTask(editingTask);
-                  if (filterTask === editingTask) setFilterTask(null);
-                  setEditingTask(null);
-                }}
-              />
-            </div>
-          )}
-          <TaskBreakdown offClock={offClock} piece={piece} rows={taskRows}
-                         currency={project.currency} active={filterTask}
-                         earnings={accepts ? earnings : null}
-                         selected={canSettle ? pickedTasks : null}
-                         onToggleSelect={canSettle ? toggleTask : undefined}
-                         onEdit={(id) => setEditingTask(id)}
-                         onPick={(key) => {
-                           setFilterTask(key === filterTask ? null : key);
-                           setLedgerOpen(true);
-                           setSelected([]);
-                         }} />
-        </div>
+        <TaskList
+          project={project} sessions={sessions} idleSessions={idleSessions} now={now}
+          earnings={earnings} w={w} offClock={offClock} piece={piece} settles={settles}
+          canSettle={canSettle} rawTaskRows={rawTaskRows} order={order} setOrder={setOrder}
+          orderDesc={orderDesc} setOrderDesc={setOrderDesc} pickedTasks={pickedTasks}
+          setPickedTasks={setPickedTasks} editingTask={editingTask}
+          setEditingTask={setEditingTask} filterTask={filterTask} setFilterTask={setFilterTask}
+          setLedgerOpen={setLedgerOpen} setSelected={setSelected} onSaveTask={onSaveTask}
+          onDeleteTask={onDeleteTask} onSetOwnLimit={onSetOwnLimit} onSubmitTasks={onSubmitTasks}
+          onAnswerTasks={onAnswerTasks} onReopenTasks={onReopenTasks}
+          onRewardTasks={onRewardTasks} onSetPayStateMany={onSetPayStateMany}
+        />
       )}
 
       {share !== null && idleMs > 0 && !offClock && (
@@ -728,208 +494,18 @@ export default function ProjectView({
         </div>
       )}
 
-      <div className="sec">
-        <div className="sec-head">
-          <button className="toggle" onClick={() => setLedgerOpen(!showLedger)}
-                  aria-expanded={showLedger}>
-            <span className={"chev" + (showLedger ? " open" : "")}>▶</span>
-            <span className="eyebrow">
-              {w.ledger} · {ordered.length}{offClock
-                ? ` entr${ordered.length === 1 ? "y" : "ies"}`
-                : ` session${ordered.length === 1 ? "" : "s"}`}
-            </span>
-          </button>
-          <span className="eyebrow">
-            {offClock ? "" : `${formatMoney(totalCents, project.currency)} · `}
-            {totalMs ? formatShortDuration(totalMs) : "0m"}
-            {!stopped && <>
-              {" · "}
-              <button className="linkish" onClick={() => setAddingTime((v) => !v)}>
-                {addingTime ? "cancel" : "add time"}
-              </button>
-            </>}
-          </span>
-        </div>
-
-        {addingTime && (
-          <div style={{ marginBottom: 14 }}>
-            <ManualSession
-              project={project} offClock={offClock} now={now} findOverlaps={findOverlaps}
-              sessions={[...sessions, ...idleSessions]}
-              onCancel={() => setAddingTime(false)}
-              // Closed only once the time is in. A refused block keeps what
-              // was typed, so the reason can be read and the entry fixed.
-              onSave={(entry) => { if (onAddManual(entry)) setAddingTime(false); }} />
-          </div>
-        )}
-
-        {filterTask && (
-          <>
-            <button className="chip" onClick={() => setFilterTask(null)}>
-              Showing {filterTask === UNASSIGNED ? "sessions with no task" : taskLabel(project, filterTask)} ✕
-            </button>
-            {/* Filtering down to a task is what you do in order to WORK on it,
-                and its note is where the ids live. Making them readable only
-                from the summary above would mean scrolling away from the
-                sessions you came here for. */}
-            {findTask(project, filterTask)?.note && (
-              <div className="filter-note">
-                {findTask(project, filterTask).note}
-                <button className="linkish" onClick={() => setEditingTask(filterTask)}>edit</button>
-              </div>
-            )}
-          </>
-        )}
-
-        {selecting && (
-          <div className="selbar">
-            {askedNow ? (
-              <>
-                <span className="selbar-count" role="alert"
-                      style={{ color: "var(--ink-2)", fontWeight: 500 }}>
-                  {contradiction(askedNow, objection)}
-                </span>
-                <button className="btn primary" onClick={() => mark(askedNow, true)}>
-                  Mark {askedNow === PAY.PAID ? "paid" : "pending"} anyway
-                </button>
-                <button className="btn ghost" onClick={() => setAsked(null)}>Cancel</button>
-              </>
-            ) : (
-              <>
-                <span className="selbar-count">{selected.length} selected</span>
-                <button className="btn primary" onClick={() => setBulkPrompt(true)}>
-                  {w.assign}
-                </button>
-                {/* Work paid on acceptance arrives pending and is settled in
-                    batches, which is how it actually gets approved. */}
-                <button className="btn ghost" onClick={() => mark(PAY.PAID)}>Mark paid</button>
-                <button className="btn ghost" onClick={() => mark(PAY.PENDING)}>Mark pending</button>
-                <button className="btn ghost" onClick={() => setSelected([])}>Clear</button>
-              </>
-            )}
-          </div>
-        )}
-
-        {bulkPrompt && (
-          <div style={{ marginBottom: 12 }}>
-            <TaskPrompt
-              project={project} confirmLabel={`Move ${selected.length} session${selected.length === 1 ? "" : "s"}`}
-              onCancel={() => setBulkPrompt(false)}
-              onConfirm={(pick) => {
-                onAssign(selected, pick);
-                setSelected([]);
-                setBulkPrompt(false);
-              }}
-            />
-          </div>
-        )}
-
-        {showLedger && visible.length > 1 && (
-          <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
-            <button className="btn ghost"
-                    onClick={() => setSelected(
-                      selected.length === visible.length ? [] : visible.map((x) => x.id)
-                    )}>
-              {selected.length === visible.length ? "Deselect all" : `Select all ${visible.length}`}
-            </button>
-          </div>
-        )}
-
-        {editedSession && (
-          <div style={{ marginBottom: 12 }}>
-            <SessionEditor
-              key={editedSession.id}
-              session={editedSession}
-              project={project} findOverlaps={findOverlaps}
-              sessions={[...sessions, ...idleSessions]}
-              onCancel={() => setEditingSession(null)}
-              onSave={(window_) => { onCorrect(editingSession, window_); setEditingSession(null); }}
-              onRevert={() => { onRevertCorrection(editingSession); setEditingSession(null); }}
-            />
-          </div>
-        )}
-
-        {showLedger && (
-        <div className="panel">
-          {visible.length === 0 ? (
-            <div className="empty">
-              {filterTask ? w.emptyFiltered : w.emptyLedger}
-            </div>
-          ) : visible.map((s) => (
-            <div className={"row pick" + (isIdle(s) ? " is-idle" : "")
-                   + (isCancelled(s) ? " is-void" : "")
-                   + (selected.includes(s.id) ? " sel" : "")
-                   + (s.id === focusSession ? " focus" : "")}
-                 ref={s.id === focusSession ? focusRow : null}
-                 key={s.id}>
-              <input type="checkbox" className="row-check" checked={selected.includes(s.id)}
-                     aria-label={`Select session from ${date(startedAt(s))}`}
-                     onChange={() => toggleSelect(s.id)} />
-              <div>
-                <div className="row-when">
-                  {date(startedAt(s))} · {time(startedAt(s))}{isRunning(s) && " · running"}
-                  {isPending(s) && <span className="tag">Pending</span>}
-                  {isCancelled(s) && <span className="tag">Cancelled</span>}
-                  {isIdle(s) && <span className="tag">Idle</span>}
-                  {wasCorrected(s) && <span className="edited">Edited</span>}
-                  {wasManual(s) && <span className="edited">Added</span>}
-                  {!isOpen(s) && (
-                    <>
-                      {" "}
-                      <button className="linkish" onClick={() => setEditingSession(s.id)}>edit</button>
-                      {/* The second way in. Acceptance lands days after the
-                          work, so the answer at stop time is often "not yet". */}
-                      {settles && (
-                        <>
-                          {" · "}
-                          <button className="linkish" onClick={() => setSettling(s.id)}>
-                            {earnedFrom(earnings, s.id) > 0 ? "add more" : "what it earned"}
-                          </button>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="row-meta">
-                  {s.taskId ? `${taskLabel(project, s.taskId)} · ` : `${w.noTask} · `}
-                  {formatDuration(elapsedMs(s, now))}
-                  {!offClock && (piece ? (
-                    // A piece-rate project pays for accepted items, so an
-                    // hourly figure here is a $0.00 that means nothing. What it
-                    // is worth is the price of what this sitting produced.
-                    <>
-                      {" · "}
-                      {priceFor(project, findTask(project, s.taskId)) !== null
-                        ? `${formatMoney(Math.round(priceFor(project, findTask(project, s.taskId)) * 100), currency)} per item`
-                        : "no price set"}
-                    </>
-                  ) : (
-                    <>
-                      {" at "}
-                      {formatMoney(Math.round(rateFor(project, s) * 100), s.currency)}/hr
-                      {rateFor(project, s) !== s.rate && " (task rate)"}
-                      {/* Said, because the figure on the right is less than
-                          the hours at this rate, and would read as a slip. */}
-                      {overLimitMs(s, -Infinity, Infinity, now, price) > 0
-                        && ` · ${formatShortDuration(overLimitMs(s, -Infinity, Infinity, now, price))} over the limit at ${Math.round(price.limit(s).factor * 100)}%`}
-                    </>
-                  ))}
-                  {s.segments.length > 1 && ` · ${s.segments.length} blocks`}
-                </div>
-              </div>
-              <span className="row-amt">
-                {offClock
-                  ? formatShortDuration(elapsedMs(s, now))
-                  : piece
-                    ? formatMoney(earnedFrom(earnings, s.id), currency)
-                    : formatMoney(whole(s), s.currency)}
-              </span>
-              <button className="x" aria-label="Remove session" onClick={() => onDeleteSession(s.id)}>×</button>
-            </div>
-          ))}
-        </div>
-        )}
-      </div>
+      <Ledger
+        project={project} sessions={sessions} idleSessions={idleSessions} now={now} price={price}
+        whole={whole} totalCents={totalCents} totalMs={totalMs} currency={currency}
+        offClock={offClock} piece={piece} settles={settles} stopped={stopped} w={w}
+        earnings={earnings} findOverlaps={findOverlaps} focusSession={focusSession}
+        focusRow={focusRow} ledgerOpen={ledgerOpen} setLedgerOpen={setLedgerOpen}
+        filterTask={filterTask} setFilterTask={setFilterTask} selected={selected}
+        setSelected={setSelected} setEditingTask={setEditingTask} setSettling={setSettling}
+        onSetPayStateMany={onSetPayStateMany} onAssign={onAssign} onCorrect={onCorrect}
+        onRevertCorrection={onRevertCorrection} onDeleteSession={onDeleteSession}
+        onAddManual={onAddManual}
+      />
 
       <div className="sec">
         <div className="sec-head">
