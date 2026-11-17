@@ -37,10 +37,66 @@ src/
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
     TodayView      the Today tab: to-dos, today so far, and the days before it
-    DashboardView  the Overview tab: what a day, week or month was worth
+    DashboardView  the Overview tab: what a day, week or month was worth (see dashboard/)
     PaymentAnswer  the form that asks what happened to a payment
-    ProjectView    one project: the meter, its tasks, its ledger, its settings
+    ProjectView    one project: the meter, its tasks, its ledger, its settings (see project/)
     charts.jsx     stat tiles, the trend columns and the activity calendar
+    App.jsx        the entry component: the ledger in React, sync, and the screen they sit behind
+    app/           what App is built from, split out of it
+      useStartup.js        loads the ledger and decides which startup banner shows
+      useClock.js          the tick that moves `now`, once a second while a meter runs
+      useWakeCatchUp.js    catches the clock up when the app is looked at again
+      useHeartbeat.js      proof of life for a running meter, written without a stamp
+      useOverLimit.js      says so when the running task crosses its time limit
+      backup.js            export, CSV, restore and downloading an unreadable ledger
+      sessionActions.js    start, pause, stop, re-file, correct and add time by hand
+      taskActions.js       edit tasks, and hand in, answer and reopen them
+      moneyActions.js      earnings and pay states, and answering paydays
+      projectActions.js    a project's schedule, terms, status and deletion
+      objectiveActions.js  a project's objectives
+      todayActions.js      the to-do list, and starting a session from Today
+      navigation.js        opening a project on its tab, and jumping to a session
+      shared.js            ids, and reading a task prompt, which several actions share
+      TopBar.jsx           the app name, the way back from a project, and the tabs
+      UnreadableBanner.jsx the saved ledger could not be read
+      AlreadyRunning.jsx   a session was ticking moments ago
+      VolatileNotice.jsx   the browser is not keeping anything
+      SaveFailedNotice.jsx a write did not reach storage
+      RecoveryPrompt.jsx   close a meter left running by a crash
+      PaydayNotice.jsx     the oldest passed payday that nobody has answered
+      BackupReminder.jsx   a backup is overdue
+    project/       the parts of one project's page
+      ProjectFace.jsx      the meter: name, rate, figures, rail, prompts and controls
+      ClosingSummary.jsx   what a finished project came to
+      Goals.jsx            the session and overall goal bars
+      TimeAtDesk.jsx       billed against idle, as a split bar
+      TaskList.jsx         the By task section: sorting, picking, editing, settling
+      Ledger.jsx           the session list: filter, selection, add time, rows
+      SettingsSection.jsx  the Settings block that opens the panel
+      format.js            how a clock time and a day are printed on this page
+    Settings.jsx   a project's settings panel, composed from `settings/`
+    settings/      the parts of the settings panel
+      form.js              the form's shape: what the inputs hold, and reading it back
+      drafts.js            unsaved settings kept outside the panel, and the leave warning
+      zones.js             the clocks a payday cutoff can be read on
+      RateTerms.jsx        rate, time limit, acceptance reward, how far a change reaches
+      CompanyPayday.jsx    the company and its payday schedule
+      goalFields.jsx       the boxes a goal is set with
+      ProjectState.jsx     counts as, when it pays and status: the immediate controls
+      Danger.jsx           deleting a project, behind a second click
+    dashboard/     the sections of the Overview
+      PeriodHeader.jsx     the period control and its stepper
+      Headline.jsx         what the period earned, its window, and the comparison
+      TodayFocus.jsx       today's objectives across every project
+      StatTiles.jsx        billed, idle, share, activity and the hourly rates
+      Trend.jsx            the trend chart
+      DeskTime.jsx         billed against idle for the period
+      OffClockList.jsx     what was tracked off the clock
+      UpcomingPayments.jsx overdue, confirmed and waiting paydays, and their answers
+      Activity.jsx         the activity calendar with its scale and stepper
+      WhenYouWork.jsx      the shape of the week and the day
+      labels.js            period names, comparison wording, window dates
+      model.js             the calendar, how far back it goes, and goal pacing
 scripts/build.mjs  bundles everything into one HTML file, and the web app beside it
 tests/             unit tests on domain and storage, integration tests on the built file
 desktop/           optional Electron wrapper for a standalone .exe
