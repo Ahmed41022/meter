@@ -1,58 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
-import { isOpen, isRunning, startedAt } from "../domain/time.js";
-import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { isRunning, startedAt } from "../domain/time.js";
+import { formatShortDuration } from "../domain/money.js";
 import {
-  addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
-  overlappingSessions, revertCorrection, idleSessionsFor, isBilled,
-  KIND, liveSessions, ownedBy, pauseSession, restoreSession,
-  resumeSession, sessionsFor, startSession, stopSession,
+  currentSession, idleSessionsFor, isBilled, liveSessions, ownedBy, sessionsFor, stopSession,
 } from "../domain/sessions.js";
-import {
-  addProject, liveProjects, patchProject, removeProject, setStatus,
-} from "../domain/projects.js";
-import {
-  EARNING, PAY, addEarning, earningsFor, isPieceOnly, liveEarnings, paysOnAcceptance,
-  removeEarning, restoreEarning, setEarningTasks, setPayState, setPayStateMany,
-} from "../domain/earnings.js";
-import {
-  addTask, findTask, parseTaskRate, readPrice, removeTask, renameTask, resolveTaskId,
-  setTaskNote, setTaskPrice, setTaskRate, taskLabel,
-} from "../domain/tasks.js";
-import {
-  TASK, isAccepted, isRejected, setAnsweredAt, setSubmittedAt,
-} from "../domain/taskState.js";
-import { answerTasks, reopenTasks, repriceHourlyRewards, submitTasks } from "../domain/settle.js";
-import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
-import {
-  OUTCOME, answerPayouts, largestProject, payoutKey, restorePayment, snapshotPayment,
-} from "../domain/payouts.js";
+import { liveProjects } from "../domain/projects.js";
+import { earningsFor, liveEarnings } from "../domain/earnings.js";
+import { storedPeriodFor } from "../domain/payPeriod.js";
+import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
-import { payDay } from "./PaymentAnswer.jsx";
 import { backupState } from "../domain/backup.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync, { SyncPip } from "./Sync.jsx";
-import { askToNotify } from "./notify.js";
-import { pricer, SCOPE, setOwnLimit, setProjectRate, setTaskLimit } from "../domain/terms.js";
+import { pricer } from "../domain/terms.js";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
-import { acceptsTime, isDone, offClockProjects, workProjects } from "../domain/projects.js";
-import {
-  addObjective, dayKey, editObjective, focusObjective, liveObjectives, objectivesFor,
-  removeObjective, restoreObjective, toggleObjective, unlinkTask,
-} from "../domain/objectives.js";
-import {
-  addTodo, clearDone, editTodo, liveTodos, removeTodo, restoreTodos, toggleTodo,
-} from "../domain/todos.js";
+import { offClockProjects, workProjects } from "../domain/projects.js";
+import { dayKey, liveObjectives, objectivesFor, toggleObjective } from "../domain/objectives.js";
+import { liveTodos } from "../domain/todos.js";
 import { CSS } from "./styles.js";
 import { ledgerWords } from "./words.js";
 import { Notice, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
-import { closedTaskNote } from "./TaskPrompt.jsx";
 import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
 
@@ -63,6 +37,14 @@ import { useWakeCatchUp } from "./app/useWakeCatchUp.js";
 import { useHeartbeat } from "./app/useHeartbeat.js";
 import UnreadableBanner from "./app/UnreadableBanner.jsx";
 import AlreadyRunning from "./app/AlreadyRunning.jsx";
+import { sessionActions } from "./app/sessionActions.js";
+import { taskActions } from "./app/taskActions.js";
+import { moneyActions, paymentActions } from "./app/moneyActions.js";
+import { projectActions, projectListActions } from "./app/projectActions.js";
+import { objectiveActions } from "./app/objectiveActions.js";
+import { todayActions } from "./app/todayActions.js";
+import { navigation } from "./app/navigation.js";
+import TopBar from "./app/TopBar.jsx";
 import { backupHandlers } from "./app/backup.js";
 import VolatileNotice from "./app/VolatileNotice.jsx";
 import SaveFailedNotice from "./app/SaveFailedNotice.jsx";
@@ -84,41 +66,6 @@ const VERSION = typeof __METER_VERSION__ === "string" ? __METER_VERSION__ : "dev
  */
 const LIVE_PULL_MS = 120_000;
 const TOAST_MS = 7_000;
-
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-
-/**
- * Turns a prompt answer into a task id plus the state change that must land
- * first. A new label reuses an existing task's id when it already matches, so
- * the prompt can never mint a duplicate the user would read as the same task.
- */
-const resolveTaskPick = (project, pick, createTask) => {
-  if (pick?.label === undefined) return { id: pick?.taskId ?? null, prepare: (s) => s };
-  const id = resolveTaskId(project, pick.label, uid());
-  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay, pick.note) };
-};
-
-/**
- * What the one pay box on the task prompt means, which depends on how the
- * project pays. A piece-rate project reads it as what one accepted item is
- * worth; an hourly one reads it as a rate, or as a share of the base — and
- * that includes hourly work with a per-item bonus, where the box says Rate.
- * Read as a price there, a task meant to pay $45 an hour was given a $45 item
- * price and no rate. Both readings take a decimal comma, as the editor does.
- *
- * Nothing is written when the box was left empty, because empty already has a
- * meaning — inherit — and a stored null would say it less clearly.
- */
-const payFields = (project, pay) => {
-  if (!String(pay ?? "").trim()) return {};
-  if (isPieceOnly(project)) {
-    const price = readPrice(pay);
-    return price === null ? {} : { price };
-  }
-  const { rate, factor } = parseTaskRate(pay);
-  // `!= null`, not truthiness: zero is a rate somebody meant to type.
-  return { ...(rate != null ? { rate } : {}), ...(factor != null ? { factor } : {}) };
-};
 
 const clockTime = (t) =>
   new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -217,39 +164,7 @@ export default function App({ store: injectedStore }) {
     toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
 
-  /**
-   * Records what was said about one or many payments, as ONE change, with an
-   * Undo that is itself an edit: a payment that had an answer before gets that
-   * answer back, and one that had none has the new one tombstoned. Putting an
-   * old copy of the list back instead would drop records without a stamp, and
-   * the next sync would bring them back from the other device.
-   */
-  const recordAnswers = (answers, message) => {
-    const keyOf = (a) => payoutKey(a.client, a.currency, a.scheduled);
-    // What each payment's answer, and the adjustment it wrote, were before.
-    const before = answers.map((a) => snapshotPayment(stateRef.current, a));
-    commit((s) => answerPayouts(s, answers, Date.now(), uid));
-    flash(message, "Undo", () => commit((s) => {
-      const at = Date.now();
-      return answers.reduce((acc, a, i) => restorePayment(acc, keyOf(a), before[i], at), s);
-    }));
-  };
-  /** One row's answer, with the row's own figures: what it said was coming,
-   *  and the project a difference is booked to. */
-  const answerFor = (row, fields) => ({
-    client: row.company, currency: row.currency, scheduled: row.scheduled,
-    expectedCents: row.cents, projectId: largestProject(row), ...fields,
-  });
-  const answerPayment = (row, fields) => {
-    const money = (c) => formatMoney(c, row.currency);
-    const message = fields.outcome === OUTCOME.CANCELLED ? `Cancelled. ${money(row.cents)} off your earnings.`
-      : fields.outcome === OUTCOME.PARTIAL ? `Received ${money(fields.receivedNow)}. The rest is on ${payDay(fields.movedTo)}.`
-        : fields.receivedNow !== undefined && fields.receivedNow !== row.cents
-          ? `Recorded ${money(fields.receivedNow)} received.` : "Marked as paid.";
-    recordAnswers([answerFor(row, fields)], message);
-  };
-  const answerPayments = (rows, outcome, movedTo, message) =>
-    recordAnswers(rows.map((row) => answerFor(row, { outcome, movedTo })), message);
+  const { answerPayment, answerPayments } = paymentActions({ commit, flash, stateRef });
 
   useStartup({
     store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryId,
@@ -384,21 +299,9 @@ export default function App({ store: injectedStore }) {
     setUnreadable,
   });
 
-  /** Opening a project lands on the tab it belongs to, so the back link
-   *  returns somewhere the project is actually listed. */
-  const openProject = (id, session = null) => {
-    const p = stateRef.current.projects.find((x) => x.id === id);
-    setOpenProjectId(id);
-    setFocusSession(session);
-    setTab(p?.offClock ? "life" : "work");
-  };
-
-  /** Takes the reader to one named session, wherever it lives. A warning that
-   *  says two records disagree is only actionable if it can hand them over. */
-  const showSession = (id) => {
-    const found = stateRef.current.sessions.find((x) => x.id === id);
-    if (found) openProject(found.projectId, id);
-  };
+  const { openProject, showSession } = navigation({
+    stateRef, setOpenProjectId, setFocusSession, setTab,
+  });
 
   if (!ready) {
     return <div className="mtr"><style>{CSS}</style><div className="wrap empty">Loading your ledger…</div></div>;
@@ -439,23 +342,10 @@ export default function App({ store: injectedStore }) {
           />
         )}
 
-        <div className="topbar">
-          <span className="mark">Meter</span>
-          {project
-            ? <button className="linkbtn"
-                      onClick={() => { setOpenProjectId(null); setFocusSession(null); }}>
-                ← All projects
-              </button>
-            : <nav className="tabs" role="tablist" aria-label="Views">
-                {[["today", "Today"], ["overview", "Overview"], ["work", "Work"], ["life", "Life"]].map(([key, label]) => (
-                  <button key={key} role="tab" aria-selected={tab === key}
-                          className={"tab" + (tab === key ? " on" : "")}
-                          onClick={() => setTab(key)}>
-                    {label}
-                  </button>
-                ))}
-              </nav>}
-        </div>
+        <TopBar
+          project={project} tab={tab} setTab={setTab} setOpenProjectId={setOpenProjectId}
+          setFocusSession={setFocusSession}
+        />
 
         {/* First, because it is about the ledger itself. Opening empty without
             a word is how the original used to get saved over: nothing looked
@@ -545,259 +435,22 @@ export default function App({ store: injectedStore }) {
             project={project} current={current} now={now}
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
-            onStart={(kind, pick) => {
-              const taskId = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
-                addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
-              commit((s) => startSession(
-                taskId.prepare(s), project,
-                { now: Date.now(), id: uid(), kind, taskId: taskId.id, device }));
-            }}
-            onPause={() => commit((s) => pauseSession(s, current.id, Date.now()))}
-            onResume={() => commit((s) => resumeSession(s, current.id, Date.now(), device))}
-            onStop={() => commit((s) => stopSession(s, current.id, Date.now()))}
-            onSettle={(sessionId, lines) => commit((s) => lines.reduce(
-              // Pending, not paid. The work is submitted; whether it is
-              // accepted is somebody else's decision and days away.
-              (acc, line) => addEarning(acc, project, {
-                cents: line.cents, kind: EARNING.PIECE, units: line.units,
-                taskIds: line.taskId ? [line.taskId] : [], sessionId, status: PAY.PENDING,
-              }, Date.now(), uid()),
-              s,
-            ))}
-            onDeleteSession={(id) => {
-              commit((s) => deleteSession(s, id, Date.now()));
-              flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
-            }}
-            onAssign={(sessionIds, pick) => {
-              const chosen = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
-                addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
-              commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
-            }}
-            onCorrect={(sessionId, window_) => {
-              const snapshot = stateRef.current;
-              commit((s) => correctSession(s, sessionId, window_, Date.now()));
-              flash("Session corrected.", "Undo", () => commit(() => snapshot));
-            }}
-            onRevertCorrection={(sessionId) =>
-              commit((s) => revertCorrection(s, sessionId))}
-            onSaveTask={(taskId, { label, rate, price, note, submittedAt, answeredAt }) =>
-              commit((s) => setAnsweredAt(
-                setSubmittedAt(
-                  setTaskNote(
-                    setTaskPrice(
-                      setTaskRate(renameTask(s, project.id, taskId, label),
-                                  project.id, taskId, rate),
-                      project.id, taskId, price),
-                    project.id, taskId, note),
-                  project.id, taskId, submittedAt),
-                project.id, taskId, answeredAt))}
-            onDeleteTask={(taskId) => {
-              const snapshot = stateRef.current;
-              // Objectives pointing at the task are unfiled with it, so the
-              // intent survives even though the bucket does not.
-              commit((s) => unlinkTask(removeTask(s, project.id, taskId), taskId));
-              flash("Task deleted. Its sessions moved to “No task”.", "Undo",
-                    () => commit(() => snapshot));
-            }}
+            {...sessionActions({ commit, flash, stateRef, device, project, current })}
+            {...taskActions({ commit, flash, stateRef, project })}
+            {...moneyActions({ commit, flash, stateRef, project })}
+            {...projectActions({ commit, flash, stateRef, project, setOpenProjectId })}
+            {...objectiveActions({ commit, flash, project })}
             focusSession={focusSession}
-            /* Named, not linked. You meet this warning mid-form, and a link
-               that threw the half-typed entry away to show you the clash
-               would cost more than it told you — so it says which record it
-               is instead, and you decide. */
-            findOverlaps={(window_) => overlappingSessions(stateRef.current, window_).map((s) => {
-              const owner = stateRef.current.projects.find((x) => x.id === s.projectId);
-              return {
-                ...s,
-                projectName: owner?.name ?? "a removed project",
-                taskName: s.taskId ? taskLabel(owner, s.taskId) : null,
-              };
-            })}
-            /* The domain turns typed-in time away from a project that has
-               stopped and from a task already handed in, quietly, by handing
-               the ledger back untouched. "Time added." over that would lose
-               the hour without a word, so the toast says what really
-               happened, and the answer tells the form whether to close. */
-            onAddManual={(entry) => {
-              const before = stateRef.current;
-              const next = addManualSession(before, project, entry, Date.now(), uid());
-              if (next === before) {
-                const why = !acceptsTime(project)
-                  ? `This project is ${isDone(project) ? "done" : "on hold"}, so it won't take new time.`
-                  : closedTaskNote(project, entry.taskId) ?? "A block needs an end after its start.";
-                flash(`Nothing was added. ${why}`);
-                return false;
-              }
-              commit(() => next);
-              flash("Time added.");
-              return true;
-            }}
             objectives={objectivesFor(state, project.id)}
             today={dayKey(now)}
-            onAddObjective={(fields) =>
-              commit((s) => addObjective(s, project.id, fields, Date.now(), uid()))}
-            onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
-            onEditObjective={(id, patch) => commit((s) => editObjective(s, id, patch))}
-            onFocusObjective={(id, key) => commit((s) => focusObjective(s, id, key))}
-            onRemoveObjective={(id) => {
-              commit((s) => removeObjective(s, id, Date.now()));
-              flash("Removed.", "Undo", () => commit((s) => restoreObjective(s, id)));
-            }}
             projects={projects}
             earnings={earningsFor(state, project.id)}
-            onAddEarning={(entry) =>
-              commit((s) => addEarning(s, project, entry, Date.now(), uid()))}
-            onRemoveEarning={(id) => {
-              commit((s) => removeEarning(s, id, Date.now()));
-              flash("Removed.", "Undo", () => commit((s) => restoreEarning(s, id)));
-            }}
-            onSetPayState={(id, status) => commit((s) => setPayState(s, id, status))}
-            onSetEarningTasks={(id, taskIds) => commit((s) => setEarningTasks(s, id, taskIds))}
-            onSetPayStateMany={(ids, status) => {
-              if (!ids.length) return;
-              const snapshot = stateRef.current;
-              commit((s) => setPayStateMany(s, ids, status));
-              flash(`${ids.length} marked ${status === PAY.PAID ? "paid" : status}.`, "Undo",
-                    () => commit(() => snapshot));
-            }}
-            /* Handing work in. A meter still running on the work stops at the
-               click, the hours stop forever, and they move by the
-               project's own rule — counted as earned where it pays as worked,
-               pending where it pays once accepted — and the acceptance reward
-               is filed pending: a fresh one, or the one the task already had,
-               re-priced, so a task handed in twice is never paid twice. All of
-               it moves inside `submitTasks`, so no route can leave a task
-               marked submitted whose sessions never moved with it.
-
-               The project is re-read from the state being committed rather
-               than taken from this render: two clicks in quick succession
-               would otherwise price the second against a stale task list. */
-            onSubmitTasks={(taskIds, at) => {
-              const snapshot = stateRef.current;
-              const wasOpen = new Set(liveSessions(snapshot.sessions).filter(isOpen).map((s) => s.id));
-              commit((s) => {
-                const live = s.projects.find((p) => p.id === project.id);
-                return live ? submitTasks(s, live, taskIds, Date.now(), uid, at) : s;
-              });
-              // Submitting stops a meter left going on the work, and the
-              // running bar vanishing without a word would look like a fault.
-              const stopped = stateRef.current.sessions.some((s) => wasOpen.has(s.id) && !isOpen(s));
-              const one = taskIds.length === 1;
-              // What submitting did depends on how the project pays, and the
-              // two outcomes are not close enough to share a sentence. Neither
-              // calls the hours settled: a rejection can still take them back.
-              flash(`${taskIds.length} task${one ? "" : "s"} submitted. `
-                    + (stopped ? `The meter on ${one ? "it" : "them"} is stopped. ` : "")
-                    + (paysOnAcceptance(project)
-                      ? `The clock is closed; nothing is earned until ${one ? "it is" : "they are"} accepted.`
-                      : "The clock is closed and the hours count as earned, unless "
-                        + `${one ? "it is" : "they are"} rejected.`),
-                    "Undo", () => commit(() => snapshot));
-            }}
-            onAnswerTasks={(taskIds, answer, at) => {
-              const snapshot = stateRef.current;
-              commit((s) => {
-                const live = s.projects.find((p) => p.id === project.id);
-                return live ? answerTasks(s, live, taskIds, answer, at ?? Date.now()) : s;
-              });
-              const one = taskIds.length === 1;
-              const count = `${taskIds.length} task${one ? "" : "s"}`;
-              // "Own" because a reward shared across a batch is not paid or
-              // cancelled by answering one task in it.
-              flash(
-                answer === TASK.ACCEPTED
-                  ? `${count} accepted. ${one ? "Its hours and its own reward are" : "Their hours and their own rewards are"} paid.`
-                  : `${count} rejected. ${one ? "Its" : "Their"} money is cancelled and the hours `
-                    + "stay on the record; answering Accepted puts the money back.",
-                "Undo", () => commit(() => snapshot),
-              );
-            }}
-            /* Reopening an answered task takes back what the answer did: its
-               hours and its own reward are pending until it is accepted again,
-               so an acceptance reopened by mistake stops counting at once.
-               A task that was only handed in had no answer to take back, and
-               its money stays where it is. The toast says which happened,
-               because the two look the same on the button. */
-            onReopenTasks={(taskIds) => {
-              const snapshot = stateRef.current;
-              const before = snapshot.projects.find((p) => p.id === project.id) ?? project;
-              const answered = taskIds.filter((id) => {
-                const task = findTask(before, id);
-                return isAccepted(task) || isRejected(task);
-              }).length;
-              commit((s) => {
-                const live = s.projects.find((p) => p.id === project.id);
-                return live ? reopenTasks(s, live, taskIds, Date.now()) : s;
-              });
-              const one = taskIds.length === 1;
-              flash(`${taskIds.length} task${one ? "" : "s"} reopened. ${one ? "It takes" : "They take"} time again`
-                    + (answered === 0
-                      ? "; the money is as it was."
-                      : answered === taskIds.length
-                        ? `, and ${one ? "its" : "their"} money is pending until `
-                          + `${one ? "it is" : "they are"} accepted again.`
-                        : `. The ${answered} that had an answer ${answered === 1 ? "has its" : "have their"}`
-                          + " money pending until accepted again."),
-                    "Undo", () => commit(() => snapshot));
-            }}
-            /* One payment for the whole batch — "finish fifty and we pay you
-               X". It names every task without giving any of them a share:
-               splitting it would invent a per-task price nobody quoted. */
-            onRewardTasks={(taskIds, { cents, note }) => {
-              const snapshot = stateRef.current;
-              commit((s) => addEarning(s, project, {
-                cents, kind: EARNING.BONUS, units: taskIds.length, taskIds,
-                status: PAY.PENDING, note,
-              }, Date.now(), uid()));
-              flash(`Reward recorded across ${taskIds.length} tasks.`, "Undo",
-                    () => commit(() => snapshot));
-            }}
             /* As stored, so a zone this browser does not know is shown and
                saved back rather than quietly dropped. */
             payPeriod={storedPeriodFor(state, project)}
             /* Every client's schedule, so Settings can say when a company
                typed into it already has one that saving would replace. */
             companies={state.companies ?? []}
-            /* Keyed by company name rather than by project: every project
-               under one client shares the schedule, which is the point. */
-            onSetPayPeriod={(company, rule) =>
-              commit((s) => setPayPeriod(s, company, rule, Date.now()))}
-            onPatch={(patch) => commit((s) => patchProject(s, project.id, patch))}
-            onSetTerms={({ rate, limit }, scope) => {
-              const snapshot = stateRef.current;
-              const at = Date.now();
-              commit((s) => {
-                let next = rate ? setProjectRate(s, project.id, rate, scope) : s;
-                if (limit) {
-                  next = setTaskLimit(next, project.id, limit, scope, at);
-                  // A bonus already written for a task handed in was priced
-                  // from the old limit; reaching the past, it follows the new.
-                  if (scope === SCOPE.ALL) next = repriceHourlyRewards(next, project.id, at);
-                }
-                return next;
-              });
-              // Asked here, while the person is clicking: the crossing itself
-              // happens with nobody at the keyboard, when a browser will not ask.
-              if (limit?.ms) askToNotify();
-              // Reaching the past moves figures already reported, so it can be
-              // taken back as one step.
-              if (scope === SCOPE.ALL) {
-                flash("Repriced the whole project.", "Undo", () => commit(() => snapshot));
-              }
-            }}
-            onSetOwnLimit={(taskId, ms) => commit((s) => setOwnLimit(s, project.id, taskId, ms))}
-            onSetStatus={(status) => {
-              commit((s) => setStatus(s, project.id, status, Date.now()));
-              if (status !== "active") {
-                flash(status === "done" ? "Marked done." : "Paused.", "Undo",
-                  () => commit((s) => setStatus(s, project.id, "active", Date.now())));
-              }
-            }}
-            onDeleteProject={() => {
-              const snapshot = stateRef.current;
-              commit((s) => removeProject(s, project.id, Date.now()));
-              setOpenProjectId(null);
-              flash("Project removed.", "Undo", () => commit(() => snapshot));
-            }}
           />
         ) : tab === "today" ? (
           <TodayView
@@ -806,32 +459,9 @@ export default function App({ store: injectedStore }) {
             earnings={liveEarnings(state)}
             now={now} running={Boolean(runningSession)}
             todos={liveTodos(state)}
-            onAddTodo={(fields) => commit((s) => addTodo(s, fields, Date.now(), uid()))}
-            onToggleTodo={(id) => commit((s) => toggleTodo(s, id, Date.now()))}
-            onEditTodo={(id, patch) => commit((s) => editTodo(s, id, patch))}
-            onRemoveTodo={(id) => {
-              commit((s) => removeTodo(s, id, Date.now()));
-              flash("Removed.", "Undo", () => commit((s) => restoreTodos(s, [id])));
-            }}
-            onClearDone={() => {
-              // The ids are taken from the state the clear is made on, so
-              // Undo puts back those and not one removed by hand earlier.
-              const at = Date.now();
-              const { ids } = clearDone(stateRef.current, at);
-              if (ids.length === 0) return;
-              commit((s) => clearDone(s, at).state);
-              flash("Cleared.", "Undo", () => commit((s) => restoreTodos(s, ids)));
-            }}
+            {...todayActions({ commit, flash, stateRef, projects, device, openProject })}
             onOpen={openProject}
             onShowSession={showSession}
-            onStart={(projectId, taskId, kind) => {
-              const owner = projects.find((p) => p.id === projectId);
-              if (!owner) return;
-              commit((s) => startSession(s, owner, {
-                now: Date.now(), id: uid(), kind: kind ?? KIND.BILLED, taskId, device,
-              }));
-              openProject(projectId);
-            }}
           />
         ) : tab === "overview" ? (
           <DashboardView
@@ -865,7 +495,7 @@ export default function App({ store: injectedStore }) {
             objectives={liveObjectives(state)}
             now={now}
             onOpen={openProject}
-            onAdd={(fields) => commit((s) => addProject(s, fields, Date.now(), uid()))}
+            {...projectListActions({ commit })}
             onExport={exportBackup} onImport={importBackup} backup={backup}
             onExportCsv={exportCsv}
             restore={restoring && {
