@@ -180,6 +180,14 @@ ledger changed such that an older build can no longer read it.
 
 ### Changed
 
+- **The test suite runs in about 30 seconds instead of ten minutes**, with the
+  same 1,195 tests. The integration tests slept on fixed waits, about nine of
+  every ten minutes; they now wait for what each step needs and fail, naming
+  it, when it never comes, while the few that check time passing or nothing
+  happening keep a real window longer than the app's tick. Every page a test
+  opens is closed after it, and the 7,119-line integration file is twelve
+  files by area, so they run side by side. The same planted bugs fail the
+  same tests as before, and a stopped clock now fails two more.
 - **Changing a project's rate, or its time limit, asks how far back the change
   reaches.** *From now on*: tasks already handed in keep the terms they were
   handed in under, and tasks still open take the new ones along with
