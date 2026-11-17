@@ -87,6 +87,7 @@ export default function PaymentAnswer({ row, clock, choices, start = null, dismi
         <label className="field">
           <span className="eyebrow">Received ({row.currency})</span>
           <input className="inp" type="number" step="any" min="0" value={amount}
+                 aria-label={`Received (${row.currency})`}
                  onChange={(e) => setAmount(e.target.value)} />
           {got !== null && got > 0 && got !== owed && (
             <span className="hint">
@@ -101,6 +102,7 @@ export default function PaymentAnswer({ row, clock, choices, start = null, dismi
           <label className="field">
             <span className="eyebrow">Received so far ({row.currency})</span>
             <input className="inp" type="number" step="any" min="0" value={soFar}
+                   aria-label={`Received so far (${row.currency})`}
                    onChange={(e) => setSoFar(e.target.value)} />
           </label>
           <label className="field">

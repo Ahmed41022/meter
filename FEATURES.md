@@ -22,6 +22,7 @@ src/
     earnings.js    money with no duration, pay states, how a project pays
     payPeriod.js   a client's payday: cutoff, zone, the run a time falls in
     payout.js      Upcoming payments: what lands on which day
+    payouts.js     what you said about a payment: paid, cancelled, moved, partly received
     performance.js windows, overlap splitting, trends, comparisons, rollups
     recent.js      Today's lists: what to restart, every day there was work
     rhythm.js      when in the day and week the work happens
@@ -37,6 +38,7 @@ src/
     words.js       work vs off-clock wording, the only thing the flag changes
     TodayView      the Today tab: to-dos, today so far, and the days before it
     DashboardView  the Overview tab: what a day, week or month was worth
+    PaymentAnswer  the form that asks what happened to a payment
     ProjectView    one project: the meter, its tasks, its ledger, its settings
     charts.jsx     stat tiles, the trend columns and the activity calendar
 scripts/build.mjs  bundles everything into one HTML file, and the web app beside it
@@ -283,10 +285,15 @@ Northwind · 2 waiting on a review
 - Where a project pays **as worked**, a task is paid in the run for the period it was **handed in**, its hours and its reward together. There is no answer to wait for: it is listed with its date as soon as it goes in, and a rejection later takes it off.
 - Where a project pays **once accepted**, the **answer** decides instead. A run covers the tasks accepted during a period, so a task handed in on Sunday and accepted on Wednesday missed the period that shut on Monday and rides the next one. Work nobody has answered yet has no payday, only the earliest it could arrive — *Not before* — and is not totalled.
 - A reward shared across several tasks is one payment, paid with the last of them to get there: accepted where the project pays once accepted, handed in where it pays as worked. Until then it waits like unreviewed work.
-- One client is one row per day and currency however its name was typed. Every row opens to list what makes it up. Rejected work appears nowhere, and anything whose payday has passed drops off.
+- One client is one row per day and currency however its name was typed. Every row opens to list what makes it up, and a task's money is a line for each kind of it: its hours, what it was paid per accepted item, its bonuses and its adjustments. Rejected work appears nowhere. A negative adjustment is not taken off the day, since only money coming in is forecast.
+- A bonus, adjustment or per-item payment tied to no task is a line of its own, dated by the day it was added: it rides the next payday after that. Where the client has a schedule, the form for adding earnings asks **When is it paid?** — the next payday, already paid, or one of the six after it. A payday picked is a real date, never "the next run", and leaving the default keeps the date following the schedule. A task's own money, or a shared reward, can be moved to a payday or marked paid the same way. Where the client has no schedule nothing is forecast and the money counts in your earnings at once.
 - A payday is a date on the client's calendar all the way to the screen, so a client east of you is never shown a day early.
 
-Nothing here is stored. A forecast written down would be wrong the moment a schedule changed, and wrong silently.
+A payday that has passed stays listed, first, as **overdue**, with its own total in the heading, until you say what happened. A notice on every tab asks about the oldest: **Paid in full** with the amount that came, **Not yet / partly** with what has come and the day the rest is expected, or **Cancelled**. The amount is prefilled and can be changed: $101 against an expected $100 is saved as it was, and the dollar goes into your earnings as an adjustment. Cancelling takes the money off your earnings and leaves the hours. A payment still to come can be marked **Already paid**, with an amount, or given **Change date**, from its row. Each has an Undo. **Later** puts the notice off until tomorrow. The first time there are any past paydays, Meter asks once whether to mark them all as received, since a ledger with years of them would open on a wall of overdue.
+
+The forecast is not stored. A forecast written down would be wrong the moment a schedule changed, and wrong silently. What you said about a payment is, because it is not something the ledger could work out.
+
+`docs/payments-seed.json` is a fictional ledger that shows all of it: paydays, bonuses of each kind, a shared reward, two currencies, overdue and answered payments. Restoring it from **Work → Restore** replaces your ledger, so try it on a spare profile or back up first.
 
 ---
 

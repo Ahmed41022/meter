@@ -64,6 +64,11 @@ rates. `npm run shots` regenerates every one of them.</sub>
   and Upcoming payments lists what arrives on which day, task by task: work
   paid as worked from the day it was handed in, work paid once accepted from
   its answer, and work still under review only as the earliest it could arrive.
+  A task's hours, per-item pay, bonuses and adjustments are lines of their own,
+  and a bonus tied to no task rides the next payday after the day you add it.
+  Once a payday passes, Meter asks what happened: paid in full, cancelled, or
+  not yet or only partly received. What actually came is recorded, so $101
+  against an expected $100 is a dollar more in your earnings.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.

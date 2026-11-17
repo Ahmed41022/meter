@@ -538,7 +538,8 @@ describe("fixes: paydays and settling", () => {
       const dom = await bootDash(withOverdue(), ASKED);
       const d = dom.window.document;
       await answerIn(notice(d), "Paid in full");
-      const box = notice(d).querySelector('input[type="number"]');
+      // Found by the name a screen reader gives it, not by its type.
+      const box = notice(d).querySelector('input[aria-label="Received (USD)"]');
       expect(box.value).toBe("40");
       setValue(dom.window, box, "41");
       await settle();
@@ -562,7 +563,8 @@ describe("fixes: paydays and settling", () => {
       const dom = await bootDash(withOverdue(), ASKED);
       const d = dom.window.document;
       await answerIn(notice(d), "Not yet / partly");
-      const [received, date] = [...notice(d).querySelectorAll("input")];
+      const received = notice(d).querySelector('input[aria-label="Received so far (USD)"]');
+      const date = notice(d).querySelector('input[aria-label="New payday"]');
       setValue(dom.window, received, "15");
       const target = localIso(10);
       setValue(dom.window, date, target);
