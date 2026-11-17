@@ -37,6 +37,19 @@
  * Until the rest have all got there it waits, like unreviewed work. Rejected
  * tasks are left out of that reckoning.
  *
+ * Money naming no task at all — a bonus for being around, a referral, a
+ * correction — is dated by when it was ADDED: it rides the next payday after
+ * that moment, as a task handed in then would. It has no task whose answer
+ * could move it, so nothing else is asked. A person can say otherwise, with a
+ * payday of their own choosing, and a payday is always a DATE ("2026-11-25"),
+ * never "the next run": two code paths computing the same vague word is how
+ * a picker once put two different choices on one day. Money marked received
+ * has already landed and is not forecast; a task's own money and a shared
+ * reward honour both of those too, so a bonus moved to another payday is on
+ * that payday whether or not it names a task. Where a company has no
+ * schedule there is nothing to date, and none of this applies: the money
+ * simply counts in the earnings.
+ *
  * Rejected work appears nowhere. It earns nothing, so there is nothing to
  * date — and a cancelled reward is not coming either.
  *
@@ -63,8 +76,8 @@ import { fold, isOffClock } from "./projects.js";
 import { tasksFor } from "./tasks.js";
 import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
-import { EARNING, isCancelled, paysOnAcceptance, tasksOf } from "./earnings.js";
-import { dayOnClock, payPeriodFor, paydayFor } from "./payPeriod.js";
+import { EARNING, isCancelled, isPending, paysOnAcceptance, tasksOf } from "./earnings.js";
+import { dayOnClock, isDay, payPeriodFor, paydayFor, paydayOn } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
  *  valued at, time over a limit at its share. Idle time is left out, as it
@@ -117,7 +130,8 @@ const partRank = (part) => {
  * `items` counts tasks and `rewards` the shared rewards beside them: a reward
  * covering six tasks is one payment, and counting it as a task, or as six,
  * would misreport what the row is made of. A task with three kinds of money
- * is three lines and one item.
+ * is three lines and one item. Money named for no task is `extras`, a count
+ * of its own, because it is neither.
  */
 const rows = (map, kind) => [...map.values()]
   .map((row) => {
@@ -129,6 +143,7 @@ const rows = (map, kind) => [...map.values()]
       key: `${kind}|${row.key}`,
       items: new Set(row.tasks.filter((line) => line.kind === "task").map((line) => line.taskId)).size,
       rewards: row.tasks.filter((line) => line.kind === "reward").length,
+      extras: row.tasks.filter((line) => line.kind === "extra").length,
       tasks: [...row.tasks].sort((a, b) =>
         worth.get(group(b)) - worth.get(group(a))
         || (group(a) < group(b) ? -1 : group(a) > group(b) ? 1 : 0)
@@ -165,20 +180,28 @@ export const upcomingPay = (state, now) => {
   const due = new Map();
   const waiting = new Map();
   const sessions = state.sessions ?? [];
-  // Lines naming one task, by that task; lines naming several, by project.
-  // The number of tasks a line names is what tells a task's own reward from
-  // one shared across a batch, and the two are dated differently.
+  // Lines naming one task, by that task; lines naming several, by project;
+  // lines with a date of their own, or naming nothing, by project too. The
+  // number of tasks a line names is what tells a task's own reward from one
+  // shared across a batch, and the two are dated differently.
   const sole = new Map();
   const shared = new Map();
+  const loose = new Map();
+  const file = (map, key, earning) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(earning);
+  };
   for (const earning of state.earnings ?? []) {
-    if (earning.deletedAt || isCancelled(earning)) continue;
+    if (earning.deletedAt || isCancelled(earning) || earning.received === true) continue;
     const named = tasksOf(earning);
-    if (named.length === 1) {
-      if (!sole.has(named[0])) sole.set(named[0], []);
-      sole.get(named[0]).push(earning);
-    } else if (named.length > 1) {
-      if (!shared.has(earning.projectId)) shared.set(earning.projectId, []);
-      shared.get(earning.projectId).push(earning);
+    if (named.length === 0) {
+      if (earning.cents > 0) file(loose, earning.projectId, earning);
+    } else if (named.length === 1) {
+      // Moved to a payday by hand, it leaves its task and stands on its own.
+      if (!isDay(earning.payday)) file(sole, named[0], earning);
+      else if (earning.cents > 0) file(loose, earning.projectId, earning);
+    } else {
+      file(shared, earning.projectId, earning);
     }
   }
 
@@ -295,8 +318,12 @@ export const upcomingPay = (state, now) => {
         .filter((task) => task && taskState(task) !== TASK.CANCELLED);
       if (counted.length === 0) continue;
       const times = counted.map((task) => reachedAt(project, task));
-      const earned = times.every((t) => t !== null);
-      const pay = paydayFor(rule, earned ? Math.max(...times) : now);
+      // A payday chosen by hand settles the date, and with it the question of
+      // whether the tasks have all got there. Only a pending reward still waits.
+      const chosen = isDay(earning.payday);
+      const earned = chosen ? !isPending(earning) : times.every((t) => t !== null);
+      const pay = chosen ? paydayOn(rule, earning.payday)
+        : paydayFor(rule, earned ? Math.max(...times) : now);
       if (pay === null || pay.date < today) continue;
 
       const row = into(earned ? due : waiting, `${client}|${pay.date}|${earning.currency}`,
@@ -306,6 +333,36 @@ export const upcomingPay = (state, now) => {
         key: `reward:${earning.id}`, kind: "reward",
         label: earning.note || "Reward", covers: tasksOf(earning).length,
         project: project.name, cents: earning.cents,
+      });
+    }
+
+    /*
+     * Money with no task to ride with: named for none, or moved to a payday of
+     * its own. One line each, because each is a payment somebody chose to
+     * record, and none of them is a task.
+     *
+     * It is dated from when it was ADDED unless a payday was picked, and a
+     * pending one waits, with the date as a floor, like work under review. A
+     * correction is as likely to take money off as to add it, and as with a
+     * task's lines only money coming in is forecast.
+     */
+    for (const earning of loose.get(project.id) ?? []) {
+      const pay = isDay(earning.payday) ? paydayOn(rule, earning.payday) : paydayFor(rule, earning.at);
+      if (pay === null || pay.date < today) continue;
+      const task = tasksOf(earning).length === 1
+        ? tasksFor(project).find((t) => t.id === tasksOf(earning)[0]) : null;
+      // Moved to a payday of its own, a task's bonus still goes with the
+      // task's answer: a rejected task's money is not coming, whatever date
+      // it was given.
+      if (task && taskState(task) === TASK.CANCELLED) continue;
+      const row = into(isPending(earning) ? waiting : due, `${client}|${pay.date}|${earning.currency}`,
+                       { company, at: pay.at, date: pay.date, currency: earning.currency });
+      row.cents += earning.cents;
+      row.tasks.push({
+        key: `extra:${earning.id}`, kind: "extra", part: earning.kind || "other",
+        earningId: earning.id, label: earning.note || "", project: project.name,
+        cents: earning.cents,
+        ...(task ? { taskId: task.id, taskLabel: task.label } : {}),
       });
     }
   }

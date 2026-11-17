@@ -5,6 +5,7 @@ import {
   EARNING, PAY, isCancelled, isPending, isPieceOnly, perTask, perTaskCents, priceFor,
   tasksOf,
 } from "../domain/earnings.js";
+import { nextPaydays } from "../domain/payPeriod.js";
 
 /** The value a "no task" option carries. A select cannot hold null, and ""
  *  is indistinguishable from an unset control. */
@@ -21,6 +22,13 @@ export const KIND_WORD = Object.fromEntries(KINDS);
 const day = (t) => new Date(t).toLocaleDateString(undefined, {
   day: "numeric", month: "short", year: "numeric",
 });
+/** A payday, "2026-11-18", as the client's calendar names it: read through UTC
+ *  so this device's zone cannot move it a day. */
+const payDay = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
+  timeZone: "UTC", weekday: "short", day: "numeric", month: "short",
+});
+/** How many paydays after the default are offered as "Another payday". */
+const OTHER_PAYDAYS = 6;
 const pad = (n) => String(n).padStart(2, "0");
 const toInput = (t) => {
   const d = new Date(t);
@@ -37,15 +45,19 @@ const toInput = (t) => {
  * the ledger has to remember that some rows do not mean what the columns say.
  */
 export default function Earnings({
-  project, earnings, now, onAdd, onRemove, onSetPayState, onSetTasks,
+  project, earnings, now, onAdd, onRemove, onSetPayState, onSetTasks, payPeriod = null,
 }) {
   const [adding, setAdding] = useState(false);
   // Which row is having its task changed. One at a time: a select on every
   // row would turn a list you read into a form you have to be careful in.
   const [filing, setFiling] = useState(null);
-  const [form, setForm] = useState({
-    amount: "", kind: EARNING.PIECE, at: toInput(now), units: "", taskId: NONE, note: "",
+  const blank = (kind) => ({
+    amount: "", kind, at: toInput(now), units: "", taskId: NONE, note: "",
+    // Where the money lands: "next" leaves the payday to the schedule, "paid"
+    // says it already has, "other" is the date in `payday`.
+    when: "next", payday: "",
   });
+  const [form, setForm] = useState(() => blank(EARNING.PIECE));
   const tasks = tasksFor(project);
   /** What one accepted item is worth under whatever task is picked, or null
    *  where there is no such price and a count means nothing on its own. */
@@ -69,6 +81,21 @@ export default function Earnings({
   const dated = Number.isFinite(at);
   const valid = Number.isFinite(amount) && amount !== 0 && dated;
 
+  /*
+   * The paydays on offer, real dates and nothing vaguer: the one the schedule
+   * gives money added on this day, then the six after it. Only where the
+   * company has a schedule — without one there is nothing to date, and the
+   * money counts in the earnings the moment it is added.
+   */
+  const paydays = dated && payPeriod ? nextPaydays(payPeriod, at, OTHER_PAYDAYS + 1) : [];
+  // Money with no task already has the first of them as its default. Money
+  // tied to a task rides the TASK's payday by default, which is not that one,
+  // so for it every date is a real alternative, the first included.
+  const others = form.taskId === NONE ? paydays.slice(1) : paydays;
+  // Re-derived from the day typed, so a date changed after picking one cannot
+  // leave a payday that is no longer offered.
+  const other = others.find((p) => p.date === form.payday) ?? others[0] ?? null;
+
   const submit = () => {
     if (!valid) return;
     const units = Number(form.units);
@@ -79,8 +106,12 @@ export default function Earnings({
       units: Number.isFinite(units) && units > 0 ? units : null,
       taskIds: form.taskId === NONE ? [] : [form.taskId],
       note: form.note,
+      // Only a payday somebody picked is written. The default stays absent so
+      // it follows the schedule.
+      ...(paydays.length && form.when === "other" && other ? { payday: other.date } : {}),
+      ...(paydays.length && form.when === "paid" ? { received: true } : {}),
     });
-    setForm({ amount: "", kind: form.kind, at: toInput(now), units: "", taskId: NONE, note: "" });
+    setForm(blank(form.kind));
     setAdding(false);
   };
 
@@ -232,6 +263,27 @@ export default function Earnings({
                   ))}
                 </select>
               </label>
+            )}
+            {paydays.length > 0 && (
+              <div className="field">
+                <span className="eyebrow">When is it paid?</span>
+                <select className="inp" aria-label="When is it paid?" value={form.when}
+                        onChange={(e) => setForm({ ...form, when: e.target.value })}>
+                  <option value="next">
+                    {form.taskId === NONE ? `Next payday — ${payDay(paydays[0].date)}`
+                      : "With its task's payday"}
+                  </option>
+                  <option value="paid">Already paid</option>
+                  {others.length > 0 && <option value="other">Another payday</option>}
+                </select>
+                {form.when === "other" && other && (
+                  <select className="inp" style={{ marginTop: 8 }} aria-label="Which payday"
+                          value={other.date}
+                          onChange={(e) => setForm({ ...form, payday: e.target.value })}>
+                    {others.map((p) => <option key={p.date} value={p.date}>{payDay(p.date)}</option>)}
+                  </select>
+                )}
+              </div>
             )}
             <label className="field">
               <span className="eyebrow">Note</span>

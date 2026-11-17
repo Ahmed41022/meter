@@ -272,7 +272,7 @@ describe("fixes: data, export and layout", () => {
       btn(d, /^Replace my ledger$/).click();
       await settle();
       const now = JSON.parse(stored(dom));
-      expect(names(dom)).toEqual(["label-sprint", "intent-review", "translation-review"]);
+      expect(names(dom)).toEqual(["label-sprint", "intent-review", "translation-review", "sketch-retainer"]);
       expect(now.earnings).toHaveLength(JSON.parse(seed).earnings.length);
       expect(now.companies.map((c) => c.name)).toEqual(["Larkspur Data", "Meridian Lingua"]);
     }, 25_000);

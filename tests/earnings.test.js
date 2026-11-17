@@ -4,7 +4,7 @@ import {
   isPending, isSettled, liveEarnings, paysOnAcceptance, payStateOf, removeEarning,
   isPerTask, perTask, perTaskCents, priceFor, earningsForSession, sessionEarnedCents,
   restoreEarning, setPayState, setPayStateMany, setEarningTasks, earningsForTask,
-  tasksOf, taskPay,
+  tasksOf, taskPay, setEarningPayday, setEarningReceived,
 } from "../src/domain/earnings.js";
 import { performanceIn, untimedShare, byProject, byCompany } from "../src/domain/performance.js";
 import { KIND } from "../src/domain/sessions.js";
@@ -480,5 +480,43 @@ describe("marking a batch off in one go", () => {
   it("leaves everything alone when handed an empty list", () => {
     const s = { projects: [piece], sessions: [], earnings: [{ id: "e1", status: PAY.PENDING }] };
     expect(setPayStateMany(s, [], PAY.PAID).earnings[0].status).toBe(PAY.PENDING);
+  });
+});
+
+describe("choosing where an earning is paid", () => {
+  const piece = { id: "p1", name: "Orion", currentRate: 0, currency: "USD", tasks: [] };
+  const s0 = { projects: [piece], sessions: [], earnings: [] };
+  const base = { cents: 2_500, kind: EARNING.BONUS, at: T };
+  const written = (opts) => addEarning(s0, piece, { ...base, ...opts }, T, "e1").earnings[0];
+
+  it("writes neither field unless one was chosen, so absent keeps its meaning", () => {
+    const e = written({});
+    expect(e).not.toHaveProperty("payday");
+    expect(e).not.toHaveProperty("received");
+    expect(written({ received: false })).not.toHaveProperty("received");
+  });
+
+  it("keeps a payday that is a real date, and drops anything vaguer", () => {
+    expect(written({ payday: "2026-11-25" }).payday).toBe("2026-11-25");
+    expect(written({ payday: "next" })).not.toHaveProperty("payday");
+    expect(written({ payday: "2026-02-31" })).not.toHaveProperty("payday");
+  });
+
+  it("marks money as received without making it pending", () => {
+    const e = written({ received: true });
+    expect(e.received).toBe(true);
+    expect(isPending(e)).toBe(false);
+    expect(payStateOf(e)).toBe(PAY.PAID);
+  });
+
+  it("sets and clears both after the fact, as new records the sync can see", () => {
+    const s = addEarning(s0, piece, base, T, "e1");
+    const moved = setEarningPayday(s, "e1", "2026-12-02");
+    expect(moved.earnings[0]).toMatchObject({ payday: "2026-12-02" });
+    expect(moved.earnings[0]).not.toBe(s.earnings[0]);
+    expect(setEarningPayday(moved, "e1", null).earnings[0]).not.toHaveProperty("payday");
+    const paid = setEarningReceived(s, "e1", true);
+    expect(paid.earnings[0].received).toBe(true);
+    expect(setEarningReceived(paid, "e1", false).earnings[0]).not.toHaveProperty("received");
   });
 });

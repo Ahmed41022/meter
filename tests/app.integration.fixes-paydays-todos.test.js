@@ -338,6 +338,57 @@ describe("fixes: paydays and settling", () => {
     ]);
   }, 30_000);
 
+  it("adds a bonus tied to no task for a payday picked in the form, and lists it there", async () => {
+    // Money with no task was never in Upcoming payments. Offered the client's
+    // real paydays, the owner picks one and it lands on that very date.
+    // An unanswered task on the project, so the Overview has work to show; it
+    // is not handed in and has no payday of its own.
+    const open = { id: "t1", label: "1234", createdAt: Date.now() - 80 * HOUR };
+    const { dom, d } = await openFirst(scheduled({ company: "Northwind", rules: { Northwind: WEEKLY }, tasks: [open] }));
+    btn(d, /Add earnings/i).click();
+    await settle();
+    const form = d.querySelector(".ern-form");
+    setValue(dom.window, form.querySelector('input[type="number"]'), "60");
+    setValue(dom.window, form.querySelector("select"), "bonus"); // What for
+    const when = form.querySelector('select[aria-label="When is it paid?"]');
+    // The default says which day it is, a real one.
+    expect(when.options[0].textContent).toMatch(/^Next payday — Wed/);
+    setValue(dom.window, when, "other");
+    await settle();
+    const pick = d.querySelector('select[aria-label="Which payday"]');
+    expect(pick.options).toHaveLength(6);
+    const chosen = pick.options[2].value;
+    setValue(dom.window, pick, chosen);
+    await settle();
+    btn(d, /^Add$/).click();
+    await settle();
+
+    const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    expect(saved.earnings).toHaveLength(1);
+    expect(saved.earnings[0]).toMatchObject({ cents: 6_000, payday: chosen });
+    expect(saved.earnings[0]).not.toHaveProperty("received");
+
+    // Out of the project, back to the tabs.
+    d.querySelector(".linkbtn").click();
+    await settle();
+    await toProjects(d, "Overview");
+    const label = new Date(`${chosen}T00:00:00Z`).toLocaleDateString(undefined, {
+      timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
+    });
+    expect(payLabels(d)).toEqual([label]);
+    expect(payRows(d)).toEqual(["Northwind · 1 bonus"]);
+    d.querySelector(".payrow .trow").click();
+    await settle();
+    expect([...d.querySelectorAll(".payline")].map((e) => e.textContent)).toEqual(["Bonus · Gateway$60.00"]);
+  }, 30_000);
+
+  it("offers no payday on a project whose company has no schedule", async () => {
+    const { d } = await openFirst(scheduled({ company: "Northwind", rules: {}, tasks: [] }));
+    btn(d, /Add earnings/i).click();
+    await settle();
+    expect(d.querySelector('select[aria-label="When is it paid?"]')).toBeNull();
+  }, 30_000);
+
   it("puts one client on one payday row however its name was typed", async () => {
     const now = Date.now();
     const project = (id, name, company) => ({

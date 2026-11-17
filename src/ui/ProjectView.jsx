@@ -593,7 +593,7 @@ export default function ProjectView({
       {!offClock && (
         <Earnings project={project} earnings={earnings} now={now}
                   onAdd={onAddEarning} onRemove={onRemoveEarning}
-                  onSetTasks={onSetEarningTasks}
+                  onSetTasks={onSetEarningTasks} payPeriod={payPeriod}
                   onSetPayState={onSetPayState} />
       )}
 

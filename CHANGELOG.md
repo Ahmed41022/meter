@@ -9,6 +9,15 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Bonuses tied to no task are in Upcoming payments too.** A bonus, adjustment
+  or per-item payment with no task is dated by the day you add it, on the
+  client's next payday. Where the company has a schedule, the add-earnings form
+  asks when it is paid: the next payday (shown as a date), already paid, or
+  another of the next six. A chosen payday is a date, and a task's own money
+  or a shared reward can be moved or marked paid the same way. Without a
+  schedule nothing changes: it counts in your earnings straight away. The
+  example ledger `docs/payments-seed.json` now covers all of it.
+
 - **Upcoming payments lists a task's bonuses on lines of their own.** Opening a
   payday used to show one line per task, with its hours, per-item payment,
   bonuses and adjustments added together. Now each kind is a line, named for

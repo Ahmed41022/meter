@@ -19,6 +19,7 @@
  */
 
 import { earningsCents } from "./money.js";
+import { isDay } from "./payPeriod.js";
 
 /**
  * What kind of money it is. Presentational rather than structural — every kind
@@ -255,7 +256,7 @@ export const sessionEarnedCents = (state, sessionId) =>
 export const earningsIn = (earnings, from, to) =>
   earnings.filter((e) => e.at >= from && e.at < to);
 
-export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null }, now, id) => {
+export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null, payday = null, received = false }, now, id) => {
   const amount = Math.round(cents);
   if (!Number.isFinite(amount) || amount === 0) return state;
   // An earning has no span, only this instant, so without one it belongs to
@@ -290,6 +291,16 @@ export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, no
         // the many to the one, and no list has to be kept in step.
         ...(sessionId ? { sessionId } : {}),
         ...(status ? { status } : {}),
+        /*
+         * Where the money lands, when somebody chose. Both are omitted unless
+         * set, so absent keeps meaning what it always has: dated by the
+         * schedule from the day it was added, and not yet received. A payday
+         * is a date on the client's clock, never a word like "next", so what
+         * was chosen is what is stored. Left absent for the default, so that
+         * date follows the schedule if the schedule changes.
+         */
+        ...(isDay(payday) ? { payday } : {}),
+        ...(received === true ? { received: true } : {}),
         createdAt: now,
         deletedAt: null,
       },
@@ -305,6 +316,35 @@ export const removeEarning = (state, id, now) => ({
 export const restoreEarning = (state, id) => ({
   ...state,
   earnings: (state.earnings ?? []).map((e) => (e.id === id ? { ...e, deletedAt: null } : e)),
+});
+
+/**
+ * Puts an earning on a payday of its own choosing, or back on the schedule's
+ * with null (or anything that is not a day). The record is rebuilt rather than
+ * mutated, which is what lets the sync stamp see it changed.
+ */
+export const setEarningPayday = (state, id, payday) => ({
+  ...state,
+  earnings: (state.earnings ?? []).map((e) => {
+    if (e.id !== id) return e;
+    const next = { ...e };
+    if (isDay(payday)) next.payday = payday;
+    else delete next.payday;
+    return next;
+  }),
+});
+
+/** Marks an earning as already paid out, so no payday is forecast for it, or
+ *  takes the mark off again. Absent, never `false`, means not received. */
+export const setEarningReceived = (state, id, received) => ({
+  ...state,
+  earnings: (state.earnings ?? []).map((e) => {
+    if (e.id !== id) return e;
+    const next = { ...e };
+    if (received === true) next.received = true;
+    else delete next.received;
+    return next;
+  }),
 });
 
 /**

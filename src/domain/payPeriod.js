@@ -319,6 +319,48 @@ export const paydayFor = (rule, at) => {
   return { date: isoDay(day), at: stamp(day, 0, r.zone) };
 };
 
+/** Whether a value is a calendar day written the way a payday is,
+ *  "2026-11-25", and a day that exists: "2026-02-31" is not one. */
+export const isDay = (value) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof value === "string" ? value : "");
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  const check = new Date(Date.UTC(y, mo, d));
+  return check.getUTCFullYear() === y && check.getUTCMonth() === mo && check.getUTCDate() === d;
+};
+
+/**
+ * A payday picked by hand, in the same shape `paydayFor` answers with, or null
+ * without a rule or for something that is not a day. The date is taken as it
+ * is, on the rule's own clock: choosing one is saying the money lands THAT
+ * day, whatever the schedule would have said.
+ */
+export const paydayOn = (rule, date) => {
+  const r = normalisePeriod(rule);
+  if (!r || !isDay(date)) return null;
+  const day = { y: Number(date.slice(0, 4)), m: Number(date.slice(5, 7)) - 1, d: Number(date.slice(8)) };
+  return { date, at: stamp(day, 0, r.zone) };
+};
+
+/**
+ * The next `count` paydays for money recorded at `at`, soonest first: the one
+ * the schedule gives it, then those of the periods after. Each is a real,
+ * distinct date, so a list offered to somebody never holds two names for one
+ * day. Empty without a rule.
+ */
+export const nextPaydays = (rule, at, count) => {
+  const out = [];
+  let from = at;
+  for (let i = 0; i < count; i++) {
+    const pay = paydayFor(rule, from);
+    if (pay === null) break;
+    if (!out.some((p) => p.date === pay.date)) out.push(pay);
+    // The period after this one is the one whose close follows this close.
+    from = nextClose(rule, from);
+  }
+  return out;
+};
+
 /** The payday as an instant alone: midnight on the rule's clock. */
 export const nextPayout = (rule, at) => paydayFor(rule, at)?.at ?? null;
 

@@ -35,6 +35,16 @@ const BEFORE = {
   day: "the day before", week: "the week before", month: "the month before", year: "the year before",
 };
 
+/** The task-less money on a row, counted by kind and named in lower case. */
+const extraParts = (row) => {
+  const counts = new Map();
+  for (const line of row.tasks) {
+    if (line.kind === "extra") counts.set(line.part, (counts.get(line.part) ?? 0) + 1);
+  }
+  const names = { bonus: "bonus", adjust: "adjustment", piece: "per-item payment" };
+  return [...counts].map(([part, n]) => `${n} ${names[part] ?? "payment"}${n === 1 ? "" : "s"}`);
+};
+
 const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
 
 /** Monday first, named by the reader's own locale rather than hardcoded. Built
@@ -180,6 +190,8 @@ export default function DashboardView({
       ? `${row.items} waiting on a review`
       : `${row.items} task${row.items === 1 ? "" : "s"}`),
     row.rewards > 0 && `${row.rewards} shared reward${row.rewards === 1 ? "" : "s"}`,
+    // Money named for no task, said by what it is: "1 bonus", "2 adjustments".
+    ...extraParts(row),
   ].filter(Boolean).join(" · ");
   // Which payday is open, by its own key. One at a time: these are read one
   // at a time, and all of them open at once is a wall of task names.
@@ -554,7 +566,9 @@ export default function DashboardView({
                                 <span className="payline-kind">
                                   {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
                                 </span>
-                                {` · ${t.label}`}
+                                {t.kind === "extra"
+                                  ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
+                                  : ` · ${t.label}`}
                               </>
                             )}
                             <span className="payline-of"> · {t.project}</span>
@@ -577,7 +591,9 @@ export default function DashboardView({
               could arrive. A reward shared by several tasks is paid with the last of them
               to get there, and waits like unreviewed work until then. Open a row to see
               what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
-              on lines of their own. A negative adjustment is not taken off the day, only
+              on lines of their own. A bonus tied to no task is paid on the next payday
+              after the day it was added, unless a payday was chosen for it or it was
+              marked as already paid. A negative adjustment is not taken off the day, only
               the money coming in is listed. Anything whose payday has passed has dropped off.
             </div>
           </div>

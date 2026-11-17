@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  PERIOD, companyId, dayOnClock, describePeriod, findCompany, knownZone, nextClose, nextPayout,
+  PERIOD, companyId, dayOnClock, isDay, nextPaydays, paydayOn, describePeriod, findCompany, knownZone, nextClose, nextPayout,
   normalisePeriod, payPeriodFor, paydayFor, samePeriod, setPayPeriod, storedPeriodFor,
 } from "../src/domain/payPeriod.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { submitTasks, answerTasks } from "../src/domain/settle.js";
 import { TASK, setAnsweredAt, setSubmittedAt } from "../src/domain/taskState.js";
-import { EARNING, PAY, addEarning } from "../src/domain/earnings.js";
+import { EARNING, PAY, addEarning, earningTotals, payStateOf } from "../src/domain/earnings.js";
 import { KIND, startSession, stopSession } from "../src/domain/sessions.js";
 import { addTask } from "../src/domain/tasks.js";
 
@@ -1050,9 +1050,176 @@ describe("docs/payments-seed.json", () => {
     }
   });
 
+  it("dates money with no task, moves one by hand and leaves out one marked received", () => {
+    const extras = [...due, ...waiting].flatMap((r) => r.tasks.map((l) => ({ ...l, date: r.date })))
+      .filter((l) => l.kind === "extra");
+    const byId = Object.fromEntries(extras.map((l) => [l.earningId, l]));
+    // On the schedule's own payday, added on a Saturday.
+    expect(byId.e14).toMatchObject({ date: "2026-11-18", cents: 2_500 });
+    // Moved to another payday by hand, with no task, and with one.
+    expect(byId.e15).toMatchObject({ date: "2026-12-02", cents: 3_000 });
+    expect(byId.e17).toMatchObject({ date: "2026-11-25", taskId: "pl1b" });
+    // Received: nowhere in the forecast, though it is in the ledger.
+    expect(byId.e16).toBeUndefined();
+    expect(seed.earnings.find((e) => e.id === "e16").received).toBe(true);
+    // Pending, so it waits.
+    expect(waiting.flatMap((r) => r.tasks).map((l) => l.earningId)).toContain("e18");
+  });
+
+  it("has a project with no schedule whose bonus counts only in the earnings", () => {
+    const project = seed.projects.find((p) => p.id === "pf1");
+    expect(findCompany(seed, project.company)).toBeNull();
+    expect([...due, ...waiting].some((r) => r.company === project.company)).toBe(false);
+    const bonus = seed.earnings.find((e) => e.projectId === "pf1");
+    expect(bonus).toMatchObject({ kind: "bonus", cents: 4_000 });
+    expect(payStateOf(bonus)).toBe(PAY.PAID);
+    expect(earningTotals([bonus]).settled).toEqual({ USD: 4_000 });
+  });
+
   it("keeps every payday between 18 November and 20 December", () => {
     for (const row of [...due, ...waiting]) {
       expect(row.date >= "2026-11-18" && row.date <= "2026-12-20").toBe(true);
     }
+  });
+});
+
+describe("listing paydays", () => {
+  const utcWeekly = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "UTC" };
+  const at = (d, h = 12) => Date.UTC(2026, 10, d, h);
+
+  it("gives the schedule's own payday first, then the real ones after it", () => {
+    expect(nextPaydays(utcWeekly, at(15), 4).map((p) => p.date))
+      .toEqual(["2026-11-18", "2026-11-25", "2026-12-02", "2026-12-09"]);
+    // After Monday's cutoff the first one is a week on.
+    expect(nextPaydays(utcWeekly, at(16), 2).map((p) => p.date)).toEqual(["2026-11-25", "2026-12-02"]);
+  });
+
+  it("follows a monthly schedule across a year end, and an offset", () => {
+    const monthly = { kind: "monthly", cutoff: 1, payday: 10, after: 0, closesAt: 0, zone: "UTC" };
+    expect(nextPaydays(monthly, at(17), 3).map((p) => p.date))
+      .toEqual(["2026-12-10", "2027-01-10", "2027-02-10"]);
+  });
+
+  it("is empty without a schedule or a time, and never lists a day twice", () => {
+    expect(nextPaydays(null, at(15), 3)).toEqual([]);
+    expect(nextPaydays(utcWeekly, NaN, 3)).toEqual([]);
+    const dates = nextPaydays(utcWeekly, at(15), 8).map((p) => p.date);
+    expect(new Set(dates).size).toBe(8);
+  });
+
+  it("names a day picked by hand on the client's clock, and refuses a non-day", () => {
+    expect(isDay("2026-11-25")).toBe(true);
+    expect(isDay("2026-02-31")).toBe(false);
+    expect(isDay("next")).toBe(false);
+    expect(isDay(null)).toBe(false);
+    expect(paydayOn(utcWeekly, "2026-11-25")).toEqual({ date: "2026-11-25", at: Date.UTC(2026, 10, 25) });
+    expect(paydayOn(utcWeekly, "soon")).toBeNull();
+    expect(paydayOn(null, "2026-11-25")).toBeNull();
+  });
+});
+
+describe("money with no task, in what is coming in", () => {
+  /* A weekly UTC schedule: in before Monday, paid Wednesday. Sunday 15 Nov is
+     the day a picker once put "the run it falls in" and "the next run" on the
+     same date. */
+  const NOW = Date.UTC(2026, 10, 17, 12);
+  const at = (d, h = 12) => Date.UTC(2026, 10, d, h);
+  const utcWeekly = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "UTC" };
+  const task = (id, label) => ({
+    id, label, createdAt: at(2), state: "submitted", stateAt: at(12), submittedAt: at(12),
+  });
+  const bonus = (id, when, extra = {}) => ({
+    id, projectId: "p", kind: EARNING.BONUS, cents: 2_500, units: 1, currency: "USD",
+    at: when, note: "", createdAt: when, deletedAt: null, ...extra,
+  });
+  const ledger = (earnings, { rule = utcWeekly, tasks = [] } = {}) => ({
+    projects: [{ id: "p", name: "Gateway", company: "Larkspur", currentRate: 40, currency: "USD",
+                 createdAt: at(2), tasks }],
+    sessions: [], earnings,
+    companies: rule ? [{ id: "co:larkspur", name: "Larkspur", payPeriod: rule, createdAt: at(2), deletedAt: null }] : [],
+  });
+  const dated = (s) => upcomingPay(s, NOW).due.map((r) => [r.date, r.currency, r.cents]);
+
+  it("lands on the next payday after the day it was added, as its own line", () => {
+    const { due } = upcomingPay(ledger([bonus("e1", at(14), { note: "Milestone" })]), NOW);
+    expect(due).toHaveLength(1);
+    expect(due[0]).toMatchObject({ date: "2026-11-18", cents: 2_500, items: 0, rewards: 0, extras: 1 });
+    expect(due[0].tasks).toEqual([{
+      key: "extra:e1", kind: "extra", part: "bonus", earningId: "e1", label: "Milestone",
+      project: "Gateway", cents: 2_500,
+    }]);
+  });
+
+  it("puts a bonus added on the Sunday on the 18th, or on the 25th when that is picked", () => {
+    // The boundary: Sunday is before Monday's cutoff, Monday is not.
+    expect(dated(ledger([bonus("e1", at(15))]))).toEqual([["2026-11-18", "USD", 2_500]]);
+    expect(dated(ledger([bonus("e1", at(15), { payday: "2026-11-25" })]))).toEqual([["2026-11-25", "USD", 2_500]]);
+    expect(dated(ledger([bonus("e1", at(16))]))).toEqual([["2026-11-25", "USD", 2_500]]);
+    // Two choices are two dates, never the same one under two names.
+    expect(dated(ledger([bonus("e1", at(15)), bonus("e2", at(15), { payday: "2026-11-25" })])).map((r) => r[0]))
+      .toEqual(["2026-11-18", "2026-11-25"]);
+  });
+
+  it("leaves off a payday that was chosen and has already passed", () => {
+    const s = ledger([bonus("e1", at(14)), bonus("e2", at(14), { payday: "2026-11-16" })]);
+    const { due } = upcomingPay(s, NOW);
+    // The one picked for the 16th came and went.
+    expect(due.map((r) => [r.date, r.items, r.extras])).toEqual([["2026-11-18", 0, 1]]);
+  });
+
+  it("leaves out money marked received, and money that is cancelled or not coming in", () => {
+    const s = ledger([
+      bonus("e1", at(14), { received: true }),
+      bonus("e2", at(14), { status: PAY.CANCELLED }),
+      bonus("e3", at(14), { cents: -500 }),
+      bonus("e4", at(14), { deletedAt: at(15) }),
+    ]);
+    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [] });
+  });
+
+  it("waits, like work under review, while it is pending", () => {
+    const { due, waiting } = upcomingPay(ledger([bonus("e1", at(14), { status: PAY.PENDING })]), NOW);
+    expect(due).toEqual([]);
+    expect(waiting.map((r) => [r.date, r.cents, r.extras])).toEqual([["2026-11-18", 2_500, 1]]);
+  });
+
+  it("is forecast nowhere without a schedule, and still counts in the earnings", () => {
+    const s = ledger([bonus("e1", at(14))], { rule: null });
+    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [] });
+    // Nothing about it is pending, so it is settled from the moment it is added.
+    expect(payStateOf(s.earnings[0])).toBe(PAY.PAID);
+    expect(earningTotals(s.earnings).settled).toEqual({ USD: 2_500 });
+  });
+
+  it("keeps each currency on a row of its own", () => {
+    const s = ledger([bonus("e1", at(14)), bonus("e2", at(14), { currency: "EUR", cents: 900 })]);
+    expect(dated(s).sort()).toEqual([["2026-11-18", "EUR", 900], ["2026-11-18", "USD", 2_500]]);
+  });
+
+  it("moves a task's own earning to the day chosen, off the task's line", () => {
+    const tasks = [task("t1", "batch 12")];
+    const own = bonus("e1", at(12), { taskId: "t1", note: "Quality" });
+    const riding = upcomingPay(ledger([own], { tasks }), NOW).due;
+    expect(riding.map((r) => [r.date, r.items, r.extras])).toEqual([["2026-11-18", 1, 0]]);
+    const moved = upcomingPay(ledger([{ ...own, payday: "2026-12-02" }], { tasks }), NOW).due;
+    // The task has nothing else owed, so only the moved line is left, on its day.
+    expect(moved.map((r) => [r.date, r.items, r.extras])).toEqual([["2026-12-02", 0, 1]]);
+    expect(moved[0].tasks[0]).toMatchObject({ kind: "extra", taskId: "t1", taskLabel: "batch 12", label: "Quality" });
+    // Received leaves it out altogether.
+    expect(upcomingPay(ledger([{ ...own, received: true }], { tasks }), NOW)).toEqual({ due: [], waiting: [] });
+  });
+
+  it("drops a moved bonus whose task was rejected, as it drops the task's own money", () => {
+    const tasks = [{ ...task("t1", "batch 12"), state: "cancelled", stateAt: at(13) }];
+    const own = bonus("e1", at(12), { taskId: "t1", payday: "2026-12-02" });
+    expect(upcomingPay(ledger([own], { tasks }), NOW)).toEqual({ due: [], waiting: [] });
+  });
+
+  it("lets a shared reward be moved or marked received too", () => {
+    const tasks = [task("t1", "a"), task("t2", "b")];
+    const shared = bonus("e1", at(12), { taskIds: ["t1", "t2"], cents: 5_000, note: "Both" });
+    expect(dated(ledger([shared], { tasks }))).toEqual([["2026-11-18", "USD", 5_000]]);
+    expect(dated(ledger([{ ...shared, payday: "2026-12-09" }], { tasks }))).toEqual([["2026-12-09", "USD", 5_000]]);
+    expect(dated(ledger([{ ...shared, received: true }], { tasks }))).toEqual([]);
   });
 });

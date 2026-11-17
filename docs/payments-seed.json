@@ -98,6 +98,17 @@
           "submittedAt": 1794661200000
         }
       ]
+    },
+    {
+      "id": "pf1",
+      "name": "sketch-retainer",
+      "company": "Fernhill Studio",
+      "currentRate": 30,
+      "currency": "USD",
+      "createdAt": 1793610000000,
+      "sessionGoal": null,
+      "overallGoal": null,
+      "tasks": []
     }
   ],
   "sessions": [
@@ -235,6 +246,23 @@
         {
           "startedAt": 1794646800000,
           "endedAt": 1794655800000
+        }
+      ]
+    },
+    {
+      "id": "s9",
+      "projectId": "pf1",
+      "kind": "billed",
+      "taskId": null,
+      "rate": 30,
+      "currency": "USD",
+      "createdAt": 1794560400000,
+      "closedAt": 1794567600000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1794560400000,
+          "endedAt": 1794567600000
         }
       ]
     }
@@ -413,6 +441,95 @@
       "at": 1794661200000,
       "note": "glossary entries",
       "createdAt": 1794661200000,
+      "deletedAt": null
+    },
+    {
+      "id": "e14",
+      "projectId": "pl1",
+      "kind": "bonus",
+      "cents": 2500,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794657600000,
+      "note": "Team milestone bonus",
+      "createdAt": 1794657600000,
+      "deletedAt": null
+    },
+    {
+      "id": "e15",
+      "projectId": "pl1",
+      "kind": "bonus",
+      "cents": 3000,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794659400000,
+      "note": "Quarter-end bonus, paid with the December run",
+      "createdAt": 1794659400000,
+      "deletedAt": null,
+      "payday": "2026-12-02"
+    },
+    {
+      "id": "e16",
+      "projectId": "pl1",
+      "kind": "bonus",
+      "cents": 1800,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794312000000,
+      "note": "Referral bonus, already paid",
+      "createdAt": 1794312000000,
+      "deletedAt": null,
+      "received": true
+    },
+    {
+      "id": "e17",
+      "projectId": "pl1",
+      "taskId": "pl1b",
+      "kind": "bonus",
+      "cents": 700,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794744000000,
+      "note": "Moved to the 25th by hand",
+      "createdAt": 1794744000000,
+      "deletedAt": null,
+      "payday": "2026-11-25"
+    },
+    {
+      "id": "e18",
+      "projectId": "pl1",
+      "kind": "bonus",
+      "cents": 900,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794747600000,
+      "note": "Awaiting QA sign-off",
+      "createdAt": 1794747600000,
+      "deletedAt": null,
+      "status": "pending"
+    },
+    {
+      "id": "e19",
+      "projectId": "pm1",
+      "kind": "bonus",
+      "cents": 1500,
+      "units": 1,
+      "currency": "EUR",
+      "at": 1794830400000,
+      "note": "Loyalty bonus",
+      "createdAt": 1794830400000,
+      "deletedAt": null
+    },
+    {
+      "id": "e20",
+      "projectId": "pf1",
+      "kind": "bonus",
+      "cents": 4000,
+      "units": 1,
+      "currency": "USD",
+      "at": 1794657600000,
+      "note": "Holiday bonus: no payday set, so it counts in earnings at once",
+      "createdAt": 1794657600000,
       "deletedAt": null
     }
   ],
