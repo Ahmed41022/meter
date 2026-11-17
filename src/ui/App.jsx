@@ -5,7 +5,7 @@ import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
   overlappingSessions, revertCorrection, idleSessionsFor, isBilled,
-  KIND, liveSessions, ownedBy, pauseSession, recoverSession, restoreSession,
+  KIND, liveSessions, ownedBy, pauseSession, restoreSession,
   resumeSession, sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
 import {
@@ -25,12 +25,11 @@ import {
 import { answerTasks, reopenTasks, repriceHourlyRewards, submitTasks } from "../domain/settle.js";
 import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
 import {
-  OUTCOME, answerPayouts, clockFor, largestProject, payoutKey, restorePayment, snapshotPayment,
+  OUTCOME, answerPayouts, largestProject, payoutKey, restorePayment, snapshotPayment,
 } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
-import PaymentAnswer, { payDay } from "./PaymentAnswer.jsx";
-import { backupState, recordBackup } from "../domain/backup.js";
-import { toCsv } from "../domain/csv.js";
+import { payDay } from "./PaymentAnswer.jsx";
+import { backupState } from "../domain/backup.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
@@ -49,8 +48,8 @@ import {
   addTodo, clearDone, editTodo, liveTodos, removeTodo, restoreTodos, toggleTodo,
 } from "../domain/todos.js";
 import { CSS } from "./styles.js";
-import { countWord, daysWord, ledgerWords } from "./words.js";
-import { Notice, RecoveryBanner, Toast } from "./parts.jsx";
+import { ledgerWords } from "./words.js";
+import { Notice, Toast } from "./parts.jsx";
 import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
 import { closedTaskNote } from "./TaskPrompt.jsx";
@@ -64,6 +63,12 @@ import { useWakeCatchUp } from "./app/useWakeCatchUp.js";
 import { useHeartbeat } from "./app/useHeartbeat.js";
 import UnreadableBanner from "./app/UnreadableBanner.jsx";
 import AlreadyRunning from "./app/AlreadyRunning.jsx";
+import { backupHandlers } from "./app/backup.js";
+import VolatileNotice from "./app/VolatileNotice.jsx";
+import SaveFailedNotice from "./app/SaveFailedNotice.jsx";
+import RecoveryPrompt from "./app/RecoveryPrompt.jsx";
+import PaydayNotice from "./app/PaydayNotice.jsx";
+import BackupReminder from "./app/BackupReminder.jsx";
 
 /** A burst of edits should be one upload, not one per keystroke. */
 const PUSH_DELAY_MS = 8_000;
@@ -374,44 +379,10 @@ export default function App({ store: injectedStore }) {
     return () => clearInterval(id);
   }, [anyRunning, clientId, runSync]);
 
-  /** Hands the user a file. Throws rather than failing quietly if the browser
-   *  will not make one, so nothing downstream records a backup that never
-   *  happened. */
-  const download = (name, text, type) => {
-    const url = URL.createObjectURL(new Blob([text], { type }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const stamp = () => `meter-${new Date().toISOString().slice(0, 10)}`;
-
-  const exportBackup = () => {
-    // Serialised BEFORE the stamp, so the file records the state the user asked
-    // for rather than one that claims to have already been backed up.
-    download(`${stamp()}.json`, JSON.stringify(stateRef.current, null, 2), "application/json");
-    commit((st) => recordBackup(st, Date.now()));
-  };
-
-  /**
-   * Deliberately does NOT count as a backup.
-   *
-   * A CSV is for something else to read — a tax return, a spreadsheet. It drops
-   * segments, goals, objectives and every id, so the app cannot read it back.
-   * Letting it clear the backup nudge would leave someone believing they had a
-   * copy they could restore from, which is the one mistake this whole feature
-   * exists to prevent.
-   *
-   * The file starts with a byte-order mark. Without one, Excel on Windows reads
-   * a CSV in the machine's ANSI code page instead of UTF-8, and every Arabic
-   * name, emoji and "·" in it comes out as mojibake.
-   */
-  const exportCsv = () => {
-    download(`${stamp()}.csv`, `\uFEFF${toCsv(stateRef.current, Date.now())}`,
-      "text/csv;charset=utf-8");
-  };
+  const { exportBackup, exportCsv, importBackup, confirmRestore, downloadUnreadable } = backupHandlers({
+    stateRef, commit, flash, write, store, unreadable, restoring, setRestoring, setOpenProjectId,
+    setUnreadable,
+  });
 
   /** Opening a project lands on the tab it belongs to, so the back link
    *  returns somewhere the project is actually listed. */
@@ -427,55 +398,6 @@ export default function App({ store: injectedStore }) {
   const showSession = (id) => {
     const found = stateRef.current.sessions.find((x) => x.id === id);
     if (found) openProject(found.projectId, id);
-  };
-
-  /**
-   * Picking a file changes nothing yet. Restoring REPLACES the ledger rather
-   * than merging into it, so the file is read, checked and then held until the
-   * user has seen what it holds beside what it would replace. Replacing on the
-   * pick itself, with a seven-second Undo the only word of what had happened,
-   * was how a whole ledger could be swapped for an old file by mistake.
-   */
-  const importBackup = (file) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result));
-        if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.sessions)) throw new Error();
-        setRestoring({ name: file.name, state: parsed });
-      } catch {
-        flash("That file isn't a Meter backup.");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  /** The replacement itself, once agreed to. The Undo stays, for the second
-   *  thoughts that only come once it has happened. */
-  const confirmRestore = () => {
-    const snapshot = stateRef.current;
-    commit(() => restoring.state);
-    setRestoring(null);
-    setOpenProjectId(null);
-    flash("Backup restored.", "Undo", () => commit(() => snapshot));
-  };
-
-  /** Hands over the ledger that could not be read, exactly as it was stored,
-   *  for repairing or keeping. Where no copy could be kept in the browser, the
-   *  store has been refusing to save over it; once the user holds this file
-   *  that refusal has done its job, so saving resumes with what is on screen. */
-  const downloadUnreadable = () => {
-    try {
-      download(`${stamp()}-unreadable.json`, unreadable.raw, "application/json");
-    } catch {
-      flash("The file couldn't be made, so nothing has changed.");
-      return;
-    }
-    if (store.held) {
-      store.release();
-      write(stateRef.current);
-    }
-    setUnreadable((u) => ({ ...u, downloaded: true }));
   };
 
   if (!ready) {
@@ -547,28 +469,19 @@ export default function App({ store: injectedStore }) {
         )}
 
         {store.volatile && (
-          <Notice title="Nothing is being saved">
-            This browser is blocking storage, so your sessions disappear when you reload. Serve the
-            file over http instead of opening it directly, or allow site data for this page.
-          </Notice>
+          <VolatileNotice />
         )}
 
         {/* Not while the store is holding for an unreadable ledger: the banner
             above already says nothing is saved, and why, and how to end it. */}
         {saveFailed && !(unreadable && store.held) && (
-          <Notice title="Not saving">
-            Changes aren&apos;t reaching storage, so this session won&apos;t survive a reload. Export a backup
-            before you close the tab.
-          </Notice>
+          <SaveFailedNotice />
         )}
 
         {recovering && (
-          <RecoveryBanner
-            session={recovering} now={now} sessions={liveSessions(state.sessions)}
-            project={projects.find((p) => p.id === recovering.projectId)}
-            onStopAtLastTick={() => { commit((s) => recoverSession(s, recovering.id)); setRecoveryId(null); }}
-            onKeepRunning={() => setRecoveryId(null)}
-            onDelete={() => { commit((s) => deleteSession(s, recovering.id, Date.now())); setRecoveryId(null); }}
+          <RecoveryPrompt
+            recovering={recovering} now={now} state={state} projects={projects} commit={commit}
+            setRecoveryId={setRecoveryId}
           />
         )}
 
@@ -608,22 +521,8 @@ export default function App({ store: injectedStore }) {
             off. On every tab, because money that did not arrive is worth
             knowing about wherever you are. */}
         {ready && payoutsAsked && pay.overdue.length > 0 && laterDay !== dayKey(now) && (
-          <div className="banner" role="status">
-            <span className="eyebrow">A payday has passed</span>
-            <p>
-              {pay.overdue[0].company}&apos;s payday on {payDay(pay.overdue[0].date)}
-              {" "}({formatMoney(pay.overdue[0].cents, pay.overdue[0].currency)}) has passed.
-              What happened?
-            </p>
-            <PaymentAnswer key={pay.overdue[0].key} row={pay.overdue[0]}
-                           clock={clockFor(state, pay.overdue[0], now)}
-                           choices={["paid", "partial", "cancelled"]} dismissLabel="Later"
-                           onSave={(fields) => answerPayment(pay.overdue[0], fields)}
-                           onCancel={() => {
-                             saveSetting(SETTING.PAYOUT_LATER, dayKey(now));
-                             setLaterDay(dayKey(now));
-                           }} />
-          </div>
+          <PaydayNotice pay={pay} state={state} now={now} answerPayment={answerPayment}
+                        setLaterDay={setLaterDay} />
         )}
 
         {/* Last of the banners, deliberately. A meter left running overnight or
@@ -631,13 +530,7 @@ export default function App({ store: injectedStore }) {
             backup is important but not urgent, and putting it above them buries
             the thing the user has to act on. */}
         {ready && backup.stale && (
-          <Notice title={backup.never ? "Never backed up" : `Last backed up ${daysWord(backup.days)}`}>
-            {countWord(backup.unsaved)} {backup.unsaved === 1 ? "exists" : "exist"} only in this
-            browser. Clearing site data, or
-            reinstalling, takes {backup.unsaved === 1 ? "it" : "them"} with it —
-            {" "}<button className="linkish" onClick={exportBackup}>export a backup</button> to keep a copy
-            you hold.
-          </Notice>
+          <BackupReminder backup={backup} exportBackup={exportBackup} />
         )}
 
 
