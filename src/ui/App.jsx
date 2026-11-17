@@ -24,6 +24,9 @@ import {
 } from "../domain/taskState.js";
 import { answerTasks, reopenTasks, repriceHourlyRewards, submitTasks } from "../domain/settle.js";
 import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
+import {
+  OUTCOME, answerPayout, answerPayouts, answersByPayment, payoutKey, removePayout,
+} from "../domain/payouts.js";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -211,6 +214,33 @@ export default function App({ store: injectedStore }) {
     setToast({ message, action, run });
     toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
+
+  /**
+   * Records what was said about one or many payments, as ONE change, with an
+   * Undo that is itself an edit: a payment that had an answer before gets that
+   * answer back, and one that had none has the new one tombstoned. Putting an
+   * old copy of the list back instead would drop records without a stamp, and
+   * the next sync would bring them back from the other device.
+   */
+  const answerPayments = (rows, outcome, movedTo, message) => {
+    const answers = rows.map((row) => ({
+      client: row.company, currency: row.currency, scheduled: row.scheduled, outcome, movedTo,
+    }));
+    const keyOf = (a) => payoutKey(a.client, a.currency, a.scheduled);
+    const had = answersByPayment(stateRef.current);
+    const previous = answers.map((a) => had.get(keyOf(a)) ?? null);
+    commit((s) => answerPayouts(s, answers, Date.now(), uid));
+    flash(message, "Undo", () => commit((s) => {
+      const at = Date.now();
+      const current = answersByPayment(s);
+      return answers.reduce((acc, a, i) => {
+        const prev = previous[i];
+        if (prev) return answerPayout(acc, prev, prev.answeredAt ?? at, prev.id);
+        const made = current.get(keyOf(a));
+        return made ? removePayout(acc, made.id, at) : acc;
+      }, s);
+    }));
+  };
 
   const booted = useRef(false);
 
@@ -987,6 +1017,10 @@ export default function App({ store: injectedStore }) {
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
             companyRules={state.companies ?? []}
+            payouts={state.payouts ?? []}
+            onPaid={(rows) => answerPayments(rows, OUTCOME.PAID, undefined,
+              rows.length === 1 ? "Marked as paid." : `${rows.length} payments marked as paid.`)}
+            onMovePayment={(row, date) => answerPayments([row], OUTCOME.MOVED, date, "Date changed.")}
             now={now}
             today={dayKey(now)}
             onOpenProject={openProject}

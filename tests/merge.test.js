@@ -87,13 +87,14 @@ describe("merging whole ledgers", () => {
     // Pinned on purpose: a new collection has to be added here deliberately,
     // by somebody who has just checked that the merge handles it.
     expect(COLLECTIONS)
-      .toEqual(["projects", "sessions", "objectives", "earnings", "companies", "todos"]);
+      .toEqual(["projects", "sessions", "objectives", "earnings", "companies", "todos", "payouts"]);
     const mine = ledger({ projects: [rec("p1", 1, { name: "old" })], sessions: [rec("s1", 1)] });
     const theirs = ledger({
       projects: [rec("p1", 9, { name: "new" })],
       earnings: [rec("e1", 1)],
       companies: [rec("co:acme", 1)],
       todos: [rec("td1", 1)],
+      payouts: [rec("po1", 1)],
     });
     const out = mergeState(mine, theirs);
     expect(out.projects[0].name).toBe("new");
@@ -101,6 +102,16 @@ describe("merging whole ledgers", () => {
     expect(out.earnings.map((r) => r.id)).toEqual(["e1"]);
     expect(out.companies.map((r) => r.id)).toEqual(["co:acme"]);
     expect(out.todos.map((r) => r.id)).toEqual(["td1"]);
+    expect(out.payouts.map((r) => r.id)).toEqual(["po1"]);
+  });
+
+  it("settles two devices answering one payment on the later answer", () => {
+    const mine = ledger({ payouts: [rec("po1", 1, { outcome: "paid" })] });
+    const theirs = ledger({ payouts: [rec("po1", 9, { outcome: "moved", movedTo: "2026-12-02" })] });
+    expect(mergeState(mine, theirs).payouts[0]).toMatchObject({ outcome: "moved", movedTo: "2026-12-02" });
+    // An undo is an edit like any other: the tombstone, being later, wins.
+    const undone = ledger({ payouts: [rec("po1", 12, { outcome: "paid", deletedAt: 12 })] });
+    expect(mergeState(theirs, undone).payouts[0].deletedAt).toBe(12);
   });
 
   it("settles two devices editing one client's payday on the later edit", () => {

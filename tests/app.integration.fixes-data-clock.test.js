@@ -277,6 +277,22 @@ describe("fixes: data, export and layout", () => {
       expect(now.companies.map((c) => c.name)).toEqual(["Larkspur Data", "Meridian Lingua"]);
     }, 25_000);
 
+    it("keeps the answers to payments through a restore and into a backup", async () => {
+      const answers = [{
+        id: "po1", client: "Larkspur", currency: "USD", scheduled: "2026-11-18", outcome: "moved",
+        movedTo: "2026-11-25", answeredAt: at(2026, 10, 16), createdAt: at(2026, 10, 16), deletedAt: null,
+      }];
+      const dom = await boot(mine);
+      await pick(dom, JSON.stringify({ ...file, payouts: answers }));
+      const d = dom.window.document;
+      btn(d, /^Replace my ledger$/).click();
+      await settle();
+      // Stamped by the sync on the way in, which adds `updatedAt` and no more.
+      expect(JSON.parse(stored(dom)).payouts).toMatchObject(answers);
+      const exported = await grab(dom, () => btn(d, /Export backup/i).click());
+      expect(JSON.parse(exported).payouts).toMatchObject(answers);
+    }, 25_000);
+
     it("leaves everything as it was on Cancel", async () => {
       const dom = await boot(mine);
       const before = stored(dom);

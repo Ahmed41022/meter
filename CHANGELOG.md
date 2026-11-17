@@ -9,6 +9,12 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Mark a payment paid, or give it another date, in Upcoming payments.** Open a
+  payday and choose Already paid or Change date; both have an Undo. A payday
+  that passes with no answer now stays listed as overdue instead of vanishing,
+  and the first time there are any you are asked once whether to mark them all
+  as received. The answers are kept in the ledger and sync between devices.
+
 - **Bonuses tied to no task are in Upcoming payments too.** A bonus, adjustment
   or per-item payment with no task is dated by the day you add it, on the
   client's next payday. Where the company has a schedule, the add-earnings form

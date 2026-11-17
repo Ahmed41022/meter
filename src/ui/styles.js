@@ -370,6 +370,13 @@ export const CSS = `
 .payline > span:first-child{min-width:0;overflow-wrap:anywhere;}
 .payline-kind{color:var(--ink);}
 .payline-of{color:var(--muted);}
+/* What can be said about a payment as a whole. Wraps, so on a phone the
+   buttons and the date box stack rather than push the page wide. */
+.payact{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;
+  font-family:var(--sans);}
+.payact .inp{width:auto;min-width:0;flex:1 1 150px;}
+.payact .btn{padding-top:8px;padding-bottom:8px;}
+.trow-sub.late{color:var(--amber);}
 .payline-amt{font-variant-numeric:tabular-nums;white-space:nowrap;}
 
 .task-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);

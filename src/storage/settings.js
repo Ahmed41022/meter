@@ -24,6 +24,11 @@ export const SETTING = {
    *  about a device that must NOT travel with the ledger, because its whole
    *  job is to tell this copy apart from the others. */
   DEVICE: "meter:device",
+  /** Whether the one-time question about past paydays has been answered on
+   *  this device. Not synced: it is a nag that has been dealt with, not work,
+   *  and the answers it leads to ARE in the ledger and do travel. A second
+   *  device that has not been asked yet can be asked once, which is correct. */
+  PAYOUTS_ASKED: "meter:payouts-asked",
 };
 
 export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };

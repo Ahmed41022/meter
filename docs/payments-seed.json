@@ -38,6 +38,30 @@
           "id": "pl1d",
           "label": "batch 15",
           "createdAt": 1793610000000
+        },
+        {
+          "id": "pl1e",
+          "label": "batch 8",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1792594800000,
+          "submittedAt": 1792594800000
+        },
+        {
+          "id": "pl1f",
+          "label": "batch 9",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1793199600000,
+          "submittedAt": 1793199600000
+        },
+        {
+          "id": "pl1g",
+          "label": "batch 10",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1793890800000,
+          "submittedAt": 1793890800000
         }
       ]
     },
@@ -96,6 +120,14 @@
           "state": "submitted",
           "stateAt": 1794661200000,
           "submittedAt": 1794661200000
+        },
+        {
+          "id": "pm1c",
+          "label": "chapter 2",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1792501200000,
+          "submittedAt": 1792501200000
         }
       ]
     },
@@ -263,6 +295,74 @@
         {
           "startedAt": 1794560400000,
           "endedAt": 1794567600000
+        }
+      ]
+    },
+    {
+      "id": "s10",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1e",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1792573200000,
+      "closedAt": 1792576800000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1792573200000,
+          "endedAt": 1792576800000
+        }
+      ]
+    },
+    {
+      "id": "s11",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1f",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1793178000000,
+      "closedAt": 1793185200000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1793178000000,
+          "endedAt": 1793185200000
+        }
+      ]
+    },
+    {
+      "id": "s12",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1g",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1793869200000,
+      "closedAt": 1793874600000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1793869200000,
+          "endedAt": 1793874600000
+        }
+      ]
+    },
+    {
+      "id": "s13",
+      "projectId": "pm1",
+      "kind": "billed",
+      "taskId": "pm1c",
+      "rate": 22,
+      "currency": "EUR",
+      "createdAt": 1792486800000,
+      "closedAt": 1792497600000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1792486800000,
+          "endedAt": 1792497600000
         }
       ]
     }
@@ -531,6 +631,19 @@
       "note": "Holiday bonus: no payday set, so it counts in earnings at once",
       "createdAt": 1794657600000,
       "deletedAt": null
+    },
+    {
+      "id": "e21",
+      "projectId": "pl1",
+      "taskId": "pl1g",
+      "kind": "bonus",
+      "cents": 600,
+      "units": 1,
+      "currency": "USD",
+      "at": 1793892600000,
+      "note": "speed bonus",
+      "createdAt": 1793892600000,
+      "deletedAt": null
     }
   ],
   "todos": [],
@@ -561,6 +674,29 @@
         "zone": "UTC"
       },
       "createdAt": 1793610000000,
+      "deletedAt": null
+    }
+  ],
+  "payouts": [
+    {
+      "id": "po1",
+      "client": "Larkspur Data",
+      "currency": "USD",
+      "scheduled": "2026-10-28",
+      "outcome": "paid",
+      "answeredAt": 1793268000000,
+      "createdAt": 1793268000000,
+      "deletedAt": null
+    },
+    {
+      "id": "po2",
+      "client": "Meridian Lingua",
+      "currency": "EUR",
+      "scheduled": "2026-12-10",
+      "outcome": "moved",
+      "movedTo": "2026-12-17",
+      "answeredAt": 1794823200000,
+      "createdAt": 1794823200000,
       "deletedAt": null
     }
   ]

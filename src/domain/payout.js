@@ -68,8 +68,12 @@
  * figure is shown: lines add up to the row's cents exactly, and nothing about
  * when the money arrives depends on it.
  *
- * Anything whose payday has already passed is left out. It arrived, or it is a
- * conversation with the client rather than a forecast.
+ * A payment is a row, and what the owner has said about one is kept in
+ * `payouts` (see payouts.js): that it was paid, which takes it off the list, or
+ * that it moved to another date. A dated row whose day has passed with no word
+ * is OVERDUE and listed as such, rather than dropped to look like it arrived.
+ * Money still waiting on a review has no date to be late for, and a waiting
+ * row whose floor has passed is left out as it always was.
  */
 import { isBilled, sessionCents } from "./sessions.js";
 import { fold, isOffClock } from "./projects.js";
@@ -77,14 +81,15 @@ import { tasksFor } from "./tasks.js";
 import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
 import { EARNING, isCancelled, isPending, paysOnAcceptance, tasksOf } from "./earnings.js";
+import { OUTCOME, answersByPayment, payoutKey } from "./payouts.js";
 import { dayOnClock, isDay, payPeriodFor, paydayFor, paydayOn } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
  *  valued at, time over a limit at its share. Idle time is left out, as it
  *  is from every earnings figure, and so is work a rejection cancelled —
  *  there is no payday for money that is never coming. */
-const hourlyCents = (sessions, project, taskId, now) => {
-  const mine = sessions.filter((s) => !s.deletedAt && s.projectId === project.id && s.taskId === taskId);
+const hourlyCents = (byTask, project, taskId, now) => {
+  const mine = byTask.get(`${project.id}|${taskId}`) ?? [];
   const price = pricer([project], mine);
   return mine
     .filter((s) => isBilled(s) && !isCancelled(s))
@@ -179,7 +184,19 @@ const reachedAt = (project, task) => {
 export const upcomingPay = (state, now) => {
   const due = new Map();
   const waiting = new Map();
-  const sessions = state.sessions ?? [];
+  /*
+   * Live sittings by project and task, gathered in one pass. Now that a past
+   * payday is listed as overdue rather than skipped, every task in the ledger
+   * is priced on every call, and searching the whole session list once per
+   * task made that a pause of most of a second on a ledger a few years deep.
+   */
+  const byTask = new Map();
+  for (const s of state.sessions ?? []) {
+    if (s.deletedAt) continue;
+    const key = `${s.projectId}|${s.taskId}`;
+    if (!byTask.has(key)) byTask.set(key, []);
+    byTask.get(key).push(s);
+  }
   // Lines naming one task, by that task; lines naming several, by project;
   // lines with a date of their own, or naming nothing, by project too. The
   // number of tasks a line names is what tells a task's own reward from one
@@ -212,6 +229,8 @@ export const upcomingPay = (state, now) => {
    * Rows are keyed by the folded name and show the first spelling met.
    */
   const spelling = new Map();
+  // Each client's rule and today on its clock, for dating the answers below.
+  const clocks = new Map();
 
   for (const project of state.projects ?? []) {
     if (project.deletedAt || isOffClock(project)) continue;
@@ -225,6 +244,7 @@ export const upcomingPay = (state, now) => {
     // Today on the client's clock, which is the one its paydays are named on.
     // This device's clock disagrees for hours either side of midnight.
     const today = dayOnClock(rule, now);
+    clocks.set(client, { rule, today });
 
     const byAnswer = paysOnAcceptance(project);
     for (const task of tasksFor(project)) {
@@ -255,7 +275,7 @@ export const upcomingPay = (state, now) => {
        */
       const handedIn = Number.isFinite(task.submittedAt) ? task.submittedAt : task.stateAt;
       const pay = paydayFor(rule, pendingReview ? now : byAnswer ? task.stateAt : handedIn);
-      if (pay === null || pay.date < today) continue;
+      if (pay === null) continue;
 
       /*
        * What this task is owed, by currency and then by kind, because a reward
@@ -278,7 +298,7 @@ export const upcomingPay = (state, now) => {
         const parts = owed.get(cur);
         parts.set(part, (parts.get(part) ?? 0) + cents);
       };
-      add(currency, "hours", hourlyCents(sessions, project, task.id, now));
+      add(currency, "hours", hourlyCents(byTask, project, task.id, now));
       // Only lines naming this task alone. A reward shared across many tasks
       // is not this one's to date, and is dated on its own below.
       for (const earning of sole.get(task.id) ?? []) {
@@ -287,7 +307,7 @@ export const upcomingPay = (state, now) => {
 
       for (const [cur, parts] of owed) {
         const row = into(pendingReview ? waiting : due, `${client}|${pay.date}|${cur}`,
-                         { company, at: pay.at, date: pay.date, currency: cur });
+                         { client, company, at: pay.at, date: pay.date, currency: cur });
         for (const [part, cents] of parts) {
           row.cents += cents;
           row.tasks.push({
@@ -324,10 +344,12 @@ export const upcomingPay = (state, now) => {
       const earned = chosen ? !isPending(earning) : times.every((t) => t !== null);
       const pay = chosen ? paydayOn(rule, earning.payday)
         : paydayFor(rule, earned ? Math.max(...times) : now);
-      if (pay === null || pay.date < today) continue;
+      // A dated payment whose day has gone stays, as overdue, until somebody
+      // answers it. Waiting money has no date to be late for, only a floor.
+      if (pay === null || (!earned && pay.date < today)) continue;
 
       const row = into(earned ? due : waiting, `${client}|${pay.date}|${earning.currency}`,
-                       { company, at: pay.at, date: pay.date, currency: earning.currency });
+                       { client, company, at: pay.at, date: pay.date, currency: earning.currency });
       row.cents += earning.cents;
       row.tasks.push({
         key: `reward:${earning.id}`, kind: "reward",
@@ -348,7 +370,7 @@ export const upcomingPay = (state, now) => {
      */
     for (const earning of loose.get(project.id) ?? []) {
       const pay = isDay(earning.payday) ? paydayOn(rule, earning.payday) : paydayFor(rule, earning.at);
-      if (pay === null || pay.date < today) continue;
+      if (pay === null || (isPending(earning) && pay.date < today)) continue;
       const task = tasksOf(earning).length === 1
         ? tasksFor(project).find((t) => t.id === tasksOf(earning)[0]) : null;
       // Moved to a payday of its own, a task's bonus still goes with the
@@ -356,7 +378,7 @@ export const upcomingPay = (state, now) => {
       // it was given.
       if (task && taskState(task) === TASK.CANCELLED) continue;
       const row = into(isPending(earning) ? waiting : due, `${client}|${pay.date}|${earning.currency}`,
-                       { company, at: pay.at, date: pay.date, currency: earning.currency });
+                       { client, company, at: pay.at, date: pay.date, currency: earning.currency });
       row.cents += earning.cents;
       row.tasks.push({
         key: `extra:${earning.id}`, kind: "extra", part: earning.kind || "other",
@@ -367,5 +389,36 @@ export const upcomingPay = (state, now) => {
     }
   }
 
-  return { due: rows(due, "due"), waiting: rows(waiting, "wait") };
+  /*
+   * The answers, applied last, to the rows exactly as they were built. A row
+   * is a payment, and an answer is about the whole of it: `paid` takes it off
+   * the list; `moved` keeps it as the same row, under the same key, on the date
+   * it was moved to, so it is never folded into another payment that happens
+   * to fall there. `scheduled` is the date the forecast gave it, which is what
+   * an answer is filed under, and `date` is where it is listed now.
+   *
+   * What is dated before today on its client's clock, answered or not, is
+   * OVERDUE: it should have arrived and nobody has said it did. It is listed,
+   * oldest first, instead of dropped, because a payment that quietly vanishes
+   * when its day passes is indistinguishable from one that was paid.
+   */
+  const answers = answersByPayment(state);
+  const upcoming = [];
+  const late = [];
+  for (const row of rows(due, "due")) {
+    const { rule, today } = clocks.get(row.client);
+    const answer = answers.get(payoutKey(row.client, row.currency, row.date));
+    if (answer?.outcome === OUTCOME.PAID) continue;
+    const moved = answer?.outcome === OUTCOME.MOVED ? paydayOn(rule, answer.movedTo) : null;
+    const listed = moved
+      ? { ...row, scheduled: row.date, moved: true, date: moved.date, at: moved.at }
+      : { ...row, scheduled: row.date };
+    (listed.date < today ? late : upcoming).push(listed);
+  }
+  const byDay = (a, b) => a.at - b.at || a.company.localeCompare(b.company);
+  return {
+    due: upcoming.sort(byDay),
+    waiting: rows(waiting, "wait").map((row) => ({ ...row, scheduled: row.date })),
+    overdue: late.sort(byDay),
+  };
 };

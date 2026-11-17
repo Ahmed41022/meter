@@ -18,6 +18,7 @@ import {
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
 import { upcomingPay } from "../domain/payout.js";
+import { dayOnClock, findCompany, paydayFor } from "../domain/payPeriod.js";
 import { KIND_WORD } from "./Earnings.jsx";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
@@ -151,8 +152,8 @@ const targetsFor = (projects, work, now, rateOf, earnings) =>
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], companyRules = [], now, today,
-  onOpenProject, onToggleObjective,
+  projects, sessions, earnings = [], objectives = [], companyRules = [], payouts = [], now, today,
+  onOpenProject, onToggleObjective, onPaid, onMovePayment,
 }) {
   /**
    * What is coming in, and when.
@@ -168,14 +169,34 @@ export default function DashboardView({
    */
   const minute = Math.floor(now / 60_000);
   const pay = useMemo(
-    () => upcomingPay({ projects, sessions, earnings, companies: companyRules }, now),
+    () => upcomingPay({ projects, sessions, earnings, companies: companyRules, payouts }, now),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the minute, not the second
-    [projects, sessions, earnings, companyRules, minute],
+    [projects, sessions, earnings, companyRules, payouts, minute],
   );
   /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
-  const payTotal = currenciesByValue(
-    pay.due.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
+  const totalOf = (rows) => currenciesByValue(
+    rows.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
   ).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
+  const payTotal = totalOf(pay.due);
+  const lateTotal = totalOf(pay.overdue);
+
+  /*
+   * Past paydays nobody has answered. A ledger with years of them, every one
+   * received, would open on a wall of "overdue", so the first time there are
+   * any the owner is asked once whether to mark the lot as received. Either
+   * answer is remembered on this device and the question does not come back.
+   */
+  const [asked, setAsked] = useState(() => loadSetting(SETTING.PAYOUTS_ASKED) === "1");
+  const settleAsk = () => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setAsked(true); };
+
+  /** The row being given another date, and the date typed. One at a time. */
+  const [moving, setMoving] = useState(null);
+  /** A row's client clock: today on it, and the next payday from now, which is
+   *  what a new date starts at. Both are the client's, not this device's. */
+  const clientClock = (row) => {
+    const rule = findCompany({ companies: companyRules }, row.company)?.payPeriod ?? null;
+    return { today: dayOnClock(rule, now), next: paydayFor(rule, now)?.date ?? dayOnClock(rule, now) };
+  };
   /** A payday is a date on the client's clock, "2026-10-07", and is printed
    *  as exactly that date. Read through UTC, which no device is ever off by:
    *  read through this device's clock, a Wednesday in Kolkata came out as
@@ -516,7 +537,7 @@ export default function DashboardView({
         </div>
       )}
 
-      {(pay.due.length > 0 || pay.waiting.length > 0) && (
+      {(pay.due.length > 0 || pay.waiting.length > 0 || pay.overdue.length > 0) && (
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">Upcoming payments</span>
@@ -524,17 +545,38 @@ export default function DashboardView({
                 dates of their own now, so a bare figure here would read as
                 their total and be short by everything still under review. */}
             <span className="eyebrow">
+              {pay.overdue.length > 0 && `${lateTotal} overdue · `}
               {pay.due.length === 0 ? "nothing confirmed yet" : `${payTotal} confirmed`}
             </span>
           </div>
           <div className="panel">
+            {/* Here rather than with the app's own notices: those say something
+                is wrong with the app or the data, and this is a question about
+                the list it sits on, which is where it can be read and acted on. */}
+            {pay.overdue.length > 0 && !asked && (
+              <div className="banner" role="status" style={{ marginBottom: 14 }}>
+                <span className="eyebrow">Past paydays</span>
+                <p>
+                  {pay.overdue.length} past payday{pay.overdue.length === 1 ? " has" : "s have"} no
+                  answer. Mark {pay.overdue.length === 1 ? "it" : "them all"} as received?
+                </p>
+                <div className="controls">
+                  <button className="btn primary"
+                          onClick={() => { onPaid(pay.overdue); settleAsk(); }}>
+                    Mark all received
+                  </button>
+                  <button className="btn ghost" onClick={settleAsk}>Keep them listed</button>
+                </div>
+              </div>
+            )}
             {/* Every row opens. A payday is a number you are about to plan
                 around, and "which tasks make that up, and which of them
                 somebody still has to approve" is the first thing you want to
                 know about one — especially when the two kinds of row carry
                 dates that look alike. */}
-            {[...pay.due.map((r) => [r, false]), ...pay.waiting.map((r) => [r, true])]
-              .map(([row, soft]) => (
+            {[...pay.overdue.map((r) => [r, false, true]), ...pay.due.map((r) => [r, false, false]),
+              ...pay.waiting.map((r) => [r, true, false])]
+              .map(([row, soft, late]) => (
                 <div className="payrow" key={row.key}>
                   <div className={"trow clickable" + (openPay === row.key ? " on" : "")}
                        role="button" tabIndex={0}
@@ -543,10 +585,12 @@ export default function DashboardView({
                        onClick={() => togglePay(row.key)}>
                     <div>
                       <div className="trow-label">
-                        {soft ? `Not before ${payDay(row.date)}` : payDay(row.date)}
+                        {soft ? `Not before ${payDay(row.date)}`
+                          : late ? `Overdue · ${payDay(row.date)}` : payDay(row.date)}
                       </div>
-                      <div className={"trow-sub" + (soft ? " owed" : "")}>
+                      <div className={"trow-sub" + (soft ? " owed" : late ? " late" : "")}>
                         {row.company || "No company"} · {payParts(row, soft)}
+                        {row.moved && ` · moved from ${payDay(row.scheduled)}`}
                       </div>
                     </div>
                     <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
@@ -578,6 +622,39 @@ export default function DashboardView({
                           </span>
                         </div>
                       ))}
+                      {/* What was said about the payment as a whole, not about
+                          one line of it: a payout either came or did not. Not
+                          on money still waiting on a review, which has no date
+                          to have moved or arrived on. */}
+                      {!soft && (
+                        <div className="payact">
+                          <button className="btn ghost" onClick={() => onPaid([row])}>Already paid</button>
+                          {moving?.key === row.key ? (() => {
+                            const from = clientClock(row).today;
+                            const ok = moving.date >= from;
+                            return (
+                              <>
+                                <input className="inp" type="date" aria-label="New payday" min={from}
+                                       value={moving.date}
+                                       onChange={(e) => setMoving({ ...moving, date: e.target.value })} />
+                                <button className="btn primary" disabled={!ok}
+                                        onClick={() => { onMovePayment(row, moving.date); setMoving(null); }}>
+                                  Save
+                                </button>
+                                <button className="btn ghost" onClick={() => setMoving(null)}>Cancel</button>
+                                {!ok && (
+                                  <span className="hint warn" role="alert">Pick today or a later day.</span>
+                                )}
+                              </>
+                            );
+                          })() : (
+                            <button className="btn ghost"
+                                    onClick={() => setMoving({ key: row.key, date: clientClock(row).next })}>
+                              Change date
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -588,7 +665,8 @@ export default function DashboardView({
               was handed in. Where it pays once accepted, it is paid in the run for the
               period its answer fell in — accepted after its own period shut, it rides the
               next run — and work nobody has reviewed yet has no date, only the soonest it
-              could arrive. A reward shared by several tasks is paid with the last of them
+              could arrive. A payday that has passed stays listed, as overdue, until you say
+              it was paid or give it a new date. A reward shared by several tasks is paid with the last of them
               to get there, and waits like unreviewed work until then. Open a row to see
               what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
               on lines of their own. A bonus tied to no task is paid on the next payday

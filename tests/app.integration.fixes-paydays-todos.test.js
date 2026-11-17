@@ -389,6 +389,144 @@ describe("fixes: paydays and settling", () => {
     expect(d.querySelector('select[aria-label="When is it paid?"]')).toBeNull();
   }, 30_000);
 
+  describe("answering a payment", () => {
+    const ASKED = { "meter:payouts-asked": "1" };
+    const DAY = 24 * HOUR;
+    /** One payday well in the past and one still to come, both Northwind's. */
+    const withOverdue = (ages = [30]) => {
+      const now = Date.now();
+      const done = (id, ago) => ({ id, label: id, createdAt: now - 80 * DAY, state: "accepted",
+                                  stateAt: now - ago, submittedAt: now - ago - HOUR });
+      return scheduled({ company: "Northwind", rules: { Northwind: WEEKLY },
+                         tasks: [...ages.map((d, i) => done(`old${i}`, d * DAY)), done("new", HOUR)] });
+    };
+    const longDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
+      timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
+    });
+    const localIso = (daysAhead) => {
+      const t = new Date(Date.now() + daysAhead * DAY);
+      const two = (n) => String(n).padStart(2, "0");
+      return `${t.getFullYear()}-${two(t.getMonth() + 1)}-${two(t.getDate())}`;
+    };
+    const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
+    const asking = (d) => [...d.querySelectorAll(".banner")].find((b) => /Past paydays/.test(b.textContent));
+    const open = async (d, which = 0) => {
+      d.querySelectorAll(".payrow .trow")[which].click();
+      await settle();
+    };
+
+    it("lists a payday that passed unanswered as overdue, first, with its own total", async () => {
+      const d = (await bootDash(withOverdue(), ASKED)).window.document;
+      const labels = payLabels(d);
+      expect(labels).toHaveLength(2);
+      expect(labels[0]).toMatch(/^Overdue · /);
+      expect(labels[1]).not.toMatch(/Overdue/);
+      const head = [...d.querySelectorAll(".sec-head")].find((h) => /Upcoming payments/.test(h.textContent));
+      expect(head.textContent).toMatch(/overdue · .* confirmed/);
+    }, 30_000);
+
+    it("marks a payment already paid, and brings it back with Undo", async () => {
+      const dom = await bootDash(withOverdue(), ASKED);
+      const d = dom.window.document;
+      await open(d, 0);
+      btn(d, /^Already paid$/).click();
+      await settle();
+      expect(payLabels(d)).toHaveLength(1);
+      expect(stored(dom).payouts).toHaveLength(1);
+      expect(stored(dom).payouts[0]).toMatchObject({ outcome: "paid", client: "Northwind", currency: "USD" });
+      btn(d.querySelector(".toast"), /^Undo$/).click();
+      await settle();
+      expect(payLabels(d)).toHaveLength(2);
+      expect(payLabels(d)[0]).toMatch(/^Overdue · /);
+      // Undone as an edit the other device can see: the answer is tombstoned,
+      // not dropped from the list, or a sync would bring it back.
+      expect(stored(dom).payouts).toHaveLength(1);
+      expect(stored(dom).payouts[0].deletedAt).toEqual(expect.any(Number));
+    }, 30_000);
+
+    it("puts an earlier answer back when a later one is undone", async () => {
+      const dom = await bootDash(withOverdue(), ASKED);
+      const d = dom.window.document;
+      await open(d, 0);
+      btn(d, /^Change date$/).click();
+      await settle();
+      const target = localIso(12);
+      setValue(dom.window, d.querySelector('input[aria-label="New payday"]'), target);
+      await settle();
+      btn(d, /^Save$/).click();
+      await settle();
+      const moved = stored(dom).payouts[0];
+      // Now the moved payment is said to have arrived, and that is undone.
+      // A moved payment keeps its key, so it may still be open from the move.
+      const at = payLabels(d).indexOf(longDay(target));
+      if (!d.querySelectorAll(".payrow .trow")[at].classList.contains("on")) await open(d, at);
+      btn(d, /^Already paid$/).click();
+      await settle();
+      expect(stored(dom).payouts[0]).toMatchObject({ id: moved.id, outcome: "paid" });
+      btn(d.querySelector(".toast"), /^Undo$/).click();
+      await settle();
+      expect(stored(dom).payouts).toHaveLength(1);
+      expect(stored(dom).payouts[0]).toMatchObject({ id: moved.id, outcome: "moved", movedTo: target, deletedAt: null });
+      expect(payLabels(d)).toContain(longDay(target));
+    }, 30_000);
+
+    it("moves a payment to another date, says where it came from, and refuses the past", async () => {
+      const dom = await bootDash(withOverdue(), ASKED);
+      const d = dom.window.document;
+      await open(d, 0);
+      btn(d, /^Change date$/).click();
+      await settle();
+      const box = d.querySelector('input[aria-label="New payday"]');
+      // Yesterday is refused, and nothing is saved.
+      setValue(dom.window, box, localIso(-1));
+      await settle();
+      expect(btn(d, /^Save$/).disabled).toBe(true);
+      expect(d.querySelector(".payact").textContent).toMatch(/today or a later day/i);
+      const target = localIso(12);
+      setValue(dom.window, box, target);
+      await settle();
+      btn(d, /^Save$/).click();
+      await settle();
+      expect(stored(dom).payouts[0]).toMatchObject({ outcome: "moved", movedTo: target });
+      // Not overdue any more, and its sub line says so.
+      expect(payLabels(d).some((l) => /Overdue/.test(l))).toBe(false);
+      expect(payLabels(d)).toContain(longDay(target));
+      expect(payRows(d).some((r) => /moved from/.test(r))).toBe(true);
+    }, 30_000);
+
+    it("asks once about past paydays, and marks them all received in one go", async () => {
+      const dom = await bootDash(withOverdue([30, 45]));
+      const d = dom.window.document;
+      const banner = () => asking(d);
+      expect(banner().textContent).toMatch(/2 past paydays have no answer\. Mark them all as received\?/);
+      expect(payLabels(d).filter((l) => /^Overdue/.test(l))).toHaveLength(2);
+      btn(banner(), /^Mark all received$/).click();
+      await settle();
+      expect(banner()).toBeUndefined();
+      expect(payLabels(d).some((l) => /^Overdue/.test(l))).toBe(false);
+      expect(stored(dom).payouts).toHaveLength(2);
+      expect(dom.window.localStorage.getItem("meter:payouts-asked")).toBe("1");
+      // One Undo gives back both.
+      btn(d.querySelector(".toast"), /^Undo$/).click();
+      await settle();
+      expect(payLabels(d).filter((l) => /^Overdue/.test(l))).toHaveLength(2);
+    }, 30_000);
+
+    it("keeps them listed on request, and does not ask again after a reload", async () => {
+      const seed = withOverdue();
+      const dom = await bootDash(seed);
+      const d = dom.window.document;
+      btn(d, /^Keep them listed$/).click();
+      await settle();
+      expect(asking(d)).toBeUndefined();
+      expect(payLabels(d)[0]).toMatch(/^Overdue · /);
+      const asked = dom.window.localStorage.getItem("meter:payouts-asked");
+      const again = (await bootDash(stored(dom), { "meter:payouts-asked": asked })).window.document;
+      expect(asking(again)).toBeUndefined();
+      expect(payLabels(again)[0]).toMatch(/^Overdue · /);
+    }, 60_000);
+  });
+
   it("puts one client on one payday row however its name was typed", async () => {
     const now = Date.now();
     const project = (id, name, company) => ({

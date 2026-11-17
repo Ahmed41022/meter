@@ -457,7 +457,7 @@ describe("what is coming in", () => {
   it("says nothing at all before anything is submitted", () => {
     // Work in progress has no date: it has not been handed in, so no period
     // has closed on it.
-    expect(upcomingPay(seeded(), T)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(seeded(), T)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("gives work still under review a floor, not a date", () => {
@@ -634,21 +634,25 @@ describe("what is coming in", () => {
     // and in every time figure; they simply have no payday.
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     s = answerTasks(s, project, ["t1"], TASK.CANCELLED, T);
-    expect(upcomingPay(s, T)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(s, T)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
-  it("drops a payday that has already been and gone", () => {
+  it("lists a payday that has already been and gone as overdue", () => {
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     s = answerTasks(s, project, ["t1"], TASK.ACCEPTED, on(2026, 10, 5));
-    // Looking back from a month later: that money arrived.
-    expect(upcomingPay(s, on(2026, 11, 20))).toEqual({ due: [], waiting: [] });
+    // Looking back from a month later it is no longer coming, and nobody has
+    // said it arrived, so it is listed as overdue instead of vanishing.
+    const later = upcomingPay(s, on(2026, 11, 20));
+    expect(later.due).toEqual([]);
+    expect(later.waiting).toEqual([]);
+    expect(later.overdue.map((r) => r.date)).toEqual(["2026-10-14"]);
   });
 
   it("forecasts nothing for a company with no schedule", () => {
     let s = seeded();
     s = setPayPeriod(s, "Outlier", null, T);
     const after = submitTasks(s, project, ["t1"], T, () => "e1");
-    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("sums a payday across tasks, because that is one payment", () => {
@@ -726,7 +730,7 @@ describe("what is coming in", () => {
     let s = seeded();
     s.projects = [{ ...proj(s), offClock: true }];
     const after = submitTasks(s, proj(s), ["t1"], T, () => "e1");
-    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(after, T)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("lists a reward shared across many tasks on a line of its own", () => {
@@ -791,7 +795,7 @@ describe("a project paid as worked", () => {
   it("takes a rejected task off the list", () => {
     let s = submitTasks(seeded(), project, ["t1"], T, () => "e1");
     s = answerTasks(s, project, ["t1"], TASK.CANCELLED, on(2026, 10, 4));
-    expect(upcomingPay(s, on(2026, 10, 4))).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(s, on(2026, 10, 4))).toEqual({ due: [], waiting: [], overdue: [] });
   });
 });
 
@@ -857,7 +861,7 @@ describe("a reward shared across several tasks", () => {
 
   it("has nothing to date once every one of its tasks is rejected", () => {
     const s = answer(ledger(), ["t1", "t2", "t3"], TASK.CANCELLED, on(2026, 10, 4, 10));
-    expect(upcomingPay(s, on(2026, 10, 4, 12))).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(s, on(2026, 10, 4, 12))).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("is dated from the last hand-in where the project pays as worked", () => {
@@ -878,9 +882,11 @@ describe("a reward shared across several tasks", () => {
     expect(due[0].cents).toBe(3 * 8_000);
   });
 
-  it("drops off once its payday has passed, like everything else", () => {
+  it("leaves the upcoming list once its payday has passed, and is overdue", () => {
     const s = answer(ledger(), ["t1", "t2", "t3"], TASK.ACCEPTED, on(2026, 10, 4, 10));
-    expect(upcomingPay(s, on(2026, 10, 8, 12))).toEqual({ due: [], waiting: [] });
+    const later = upcomingPay(s, on(2026, 10, 8, 12));
+    expect(later.due).toEqual([]);
+    expect(later.overdue.map((r) => [r.rewards, r.cents > 0])).toEqual([[1, true]]);
   });
 });
 
@@ -963,7 +969,7 @@ describe("what is coming in, line by line", () => {
     expect(docked.due[0].tasks.map((l) => l.part)).toEqual(["hours", "bonus"]);
     // A task with nothing but a deduction contributes nothing at all.
     const only = ledger({ tasks: [mkTask("t1", "batch 12")], earnings: [money("e1", ["t1"], EARNING.ADJUSTMENT, -300)] });
-    expect(upcomingPay(only, NOW)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(only, NOW)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("keeps a currency of its own for each line, never adding across them", () => {
@@ -1020,7 +1026,7 @@ describe("what is coming in, line by line", () => {
 describe("docs/payments-seed.json", () => {
   const seed = JSON.parse(readFileSync(new URL("../docs/payments-seed.json", import.meta.url), "utf8"));
   const NOW = Date.UTC(2026, 10, 17, 12);
-  const { due, waiting } = upcomingPay(seed, NOW);
+  const { due, waiting, overdue } = upcomingPay(seed, NOW);
   const parts = (rows) => rows.flatMap((r) => r.tasks).filter((l) => l.kind === "task").map((l) => l.part);
 
   it("loads as a ledger: the shape a restore asks for", () => {
@@ -1074,6 +1080,26 @@ describe("docs/payments-seed.json", () => {
     expect(bonus).toMatchObject({ kind: "bonus", cents: 4_000 });
     expect(payStateOf(bonus)).toBe(PAY.PAID);
     expect(earningTotals([bonus]).settled).toEqual({ USD: 4_000 });
+  });
+
+  it("has three past paydays nobody answered, listed oldest first as overdue", () => {
+    expect(overdue.map((r) => [r.date, r.company, r.currency])).toEqual([
+      ["2026-11-04", "Larkspur Data", "USD"],
+      ["2026-11-10", "Meridian Lingua", "EUR"],
+      ["2026-11-11", "Larkspur Data", "USD"],
+    ]);
+  });
+
+  it("has a past payday answered paid, which is not listed anywhere", () => {
+    expect(seed.payouts.find((p) => p.outcome === "paid")).toMatchObject({ scheduled: "2026-10-28" });
+    for (const row of [...due, ...waiting, ...overdue]) expect(row.scheduled).not.toBe("2026-10-28");
+    // The task is in the ledger, and its payday has come and been answered.
+    expect(JSON.stringify(seed.projects)).toContain("batch 8");
+  });
+
+  it("has a future payment moved to another date, and says where it came from", () => {
+    const moved = due.filter((r) => r.moved);
+    expect(moved.map((r) => [r.scheduled, r.date, r.currency])).toEqual([["2026-12-10", "2026-12-17", "EUR"]]);
   });
 
   it("keeps every payday between 18 November and 20 December", () => {
@@ -1174,7 +1200,7 @@ describe("money with no task, in what is coming in", () => {
       bonus("e3", at(14), { cents: -500 }),
       bonus("e4", at(14), { deletedAt: at(15) }),
     ]);
-    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("waits, like work under review, while it is pending", () => {
@@ -1185,7 +1211,7 @@ describe("money with no task, in what is coming in", () => {
 
   it("is forecast nowhere without a schedule, and still counts in the earnings", () => {
     const s = ledger([bonus("e1", at(14))], { rule: null });
-    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(s, NOW)).toEqual({ due: [], waiting: [], overdue: [] });
     // Nothing about it is pending, so it is settled from the moment it is added.
     expect(payStateOf(s.earnings[0])).toBe(PAY.PAID);
     expect(earningTotals(s.earnings).settled).toEqual({ USD: 2_500 });
@@ -1206,13 +1232,13 @@ describe("money with no task, in what is coming in", () => {
     expect(moved.map((r) => [r.date, r.items, r.extras])).toEqual([["2026-12-02", 0, 1]]);
     expect(moved[0].tasks[0]).toMatchObject({ kind: "extra", taskId: "t1", taskLabel: "batch 12", label: "Quality" });
     // Received leaves it out altogether.
-    expect(upcomingPay(ledger([{ ...own, received: true }], { tasks }), NOW)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(ledger([{ ...own, received: true }], { tasks }), NOW)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("drops a moved bonus whose task was rejected, as it drops the task's own money", () => {
     const tasks = [{ ...task("t1", "batch 12"), state: "cancelled", stateAt: at(13) }];
     const own = bonus("e1", at(12), { taskId: "t1", payday: "2026-12-02" });
-    expect(upcomingPay(ledger([own], { tasks }), NOW)).toEqual({ due: [], waiting: [] });
+    expect(upcomingPay(ledger([own], { tasks }), NOW)).toEqual({ due: [], waiting: [], overdue: [] });
   });
 
   it("lets a shared reward be moved or marked received too", () => {
