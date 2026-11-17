@@ -1,29 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { elapsedMs, isRunning, lastActivityAt, startedAt } from "../domain/time.js";
-import {
-  formatDuration, formatMoney, formatShortDuration, moneyParts,
-} from "../domain/money.js";
-import { acceptsTime, companyOf, isDone, isOffClock, isPaused } from "../domain/projects.js";
+import { elapsedMs, isRunning } from "../domain/time.js";
+import { acceptsTime, isDone, isOffClock } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
-import { paceGoal, periodBoundary } from "../domain/goals.js";
-import { effectiveRate, goalValue } from "../domain/performance.js";
-import { isCancelled, isPerTask, isPieceOnly, priceFor } from "../domain/earnings.js";
-import { isIdle, KIND, sessionCents, utilisation } from "../domain/sessions.js";
+import { periodBoundary } from "../domain/goals.js";
+import { goalValue } from "../domain/performance.js";
+import { isCancelled, isPerTask, isPieceOnly } from "../domain/earnings.js";
+import { isIdle, sessionCents, utilisation } from "../domain/sessions.js";
 import { pricer } from "../domain/terms.js";
-import { ORDER, findTask, rateFor, taskLabel, taskTotals } from "../domain/tasks.js";
-import TaskPrompt from "./TaskPrompt.jsx";
-import SettlePrompt from "./SettlePrompt.jsx";
+import { ORDER, taskTotals } from "../domain/tasks.js";
 import TaskList from "./project/TaskList.jsx";
 import Ledger from "./project/Ledger.jsx";
-import { date, time } from "./project/format.js";
-
-import { GoalBar } from "./parts.jsx";
-import { StatTile } from "./charts.jsx";
-import Settings, { unsavedSettings } from "./Settings.jsx";
+import ProjectFace from "./project/ProjectFace.jsx";
+import ClosingSummary from "./project/ClosingSummary.jsx";
+import Goals from "./project/Goals.jsx";
+import TimeAtDesk from "./project/TimeAtDesk.jsx";
+import SettingsSection from "./project/SettingsSection.jsx";
 import Objectives from "./Objectives.jsx";
 import Earnings from "./Earnings.jsx";
-
-const MS_PER_HOUR = 3_600_000;
 
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
@@ -38,7 +31,6 @@ export default function ProjectView({
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
   // Which session is being asked "what did this earn?". Set when a piece-rate
   // meter stops, and settable again later from any row — acceptance lands days
@@ -99,10 +91,6 @@ export default function ProjectView({
   // can disagree with the Overview about what a sitting came to.
   const price = pricer([project], [...sessions, ...idleSessions]);
   const whole = (s) => sessionCents(s, -Infinity, Infinity, now, price);
-  const { head, tail } = moneyParts(current ? whole(current) : 0, currency);
-
-  const minuteInHour = Math.floor((shownMs % MS_PER_HOUR) / 60_000);
-  const hoursBilled = Math.floor(shownMs / MS_PER_HOUR);
 
   /**
    * What a sitting is worth here, which is nothing once it has been rejected.
@@ -164,275 +152,35 @@ export default function ProjectView({
   const canSettle = !offClock && hasTasks;
 
   const stopped = !acceptsTime(project);
-  /** A stopped project with nothing open has no meter to show: the money
-   *  reads $0.00 for ever and the rail counts out an hour that will never
-   *  start. What it came to is the panel below. */
-  const bare = stopped && !current;
-  const company = companyOf(project);
-  /** The span the project actually ran, taken from the work rather than from
-   *  when it was created or marked done — a project made in March and first
-   *  worked in June ran from June. */
-  const allSessions = [...sessions, ...idleSessions];
-  const ranFrom = allSessions.length
-    ? Math.min(...allSessions.map((s) => startedAt(s))) : null;
-  const ranTo = allSessions.length
-    ? Math.max(...allSessions.map((s) => s.closedAt ?? lastActivityAt(s) ?? startedAt(s))) : null;
-  const closingRate = effectiveRate(totalCents, totalMs);
-  const goalUnit = (v) => (overallGoal?.type === "money"
-    ? formatMoney(Math.round(v * 100), currency) : formatShortDuration(v * 60_000));
 
   return (
     <>
-      <div className={"face" + (idling ? " idle" : "")}>
-        <div className="face-top">
-          <div>
-            <div className="plate-name">
-              {project.name}
-              {isPaused(project) && <span className="tag">Paused</span>}
-              {isDone(project) && <span className="tag">Done</span>}
-            </div>
-            {company && <div className="plate-for">{company}</div>}
-            <div className="plate-rate">
-              {offClock ? "off the clock · not counted as work" : piece ? <>
-                {priceFor(project, current ? findTask(project, current.taskId) : null) !== null
-                  ? `${formatMoney(Math.round(priceFor(project, current ? findTask(project, current.taskId) : null) * 100), currency)} per accepted item`
-                  : "no price set"}
-                {current?.taskId && findTask(project, current.taskId)?.price != null && " · task price"}
-              </> : <>
-                {formatMoney(Math.round((current ? rateFor(project, current) : project.currentRate) * 100), currency)} per hour
-                {current && rateFor(project, current) !== current.rate && " · task rate"}
-                {current && rateFor(project, current) === current.rate
-                  && current.rate !== project.currentRate && " · rate locked for this session"}
-              </>}
-            </div>
-          </div>
-          {!bare && (
-            <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
-              {running ? (idling ? "Idling" : "Running") : current ? "Paused" : "Stopped"}
-            </span>
-          )}
-        </div>
-
-        {/* An off-clock project has no earnings to show, and a huge 0.00 reads
-            as a broken meter. The elapsed time is the figure that matters.
-            Piece-rate work is the same case for a different reason: the money
-            is not known until an item is accepted, and pretending otherwise
-            would put a confident zero where the truth is "not yet". */}
-        {!bare && <div className="money">
-          {offClock || piece
-            ? <span className="money-head">{formatDuration(shownMs)}</span>
-            : <>
-                <span className="money-head">{head}</span>
-                {tail !== null && <span className="money-tail">{tail}</span>}
-              </>}
-        </div>}
-
-        {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
-
-        {current && (
-          <button className="task-chip" onClick={() => setPrompt({ reassign: true })}>
-            {w.taskCap} · {current.taskId ? taskLabel(project, current.taskId) : "none"} · change
-          </button>
-        )}
-
-        {!bare && <div className="clock">
-          {/* Where the headline figure is already this duration — off the
-              clock, or paid per item — repeating it here prints the same
-              number twice. */}
-          {!offClock && !piece && <span className="clock-main">{formatDuration(shownMs)}</span>}
-          <span className="clock-note">
-            {current
-              ? `started ${time(startedAt(current))}`
-              : offClock ? "not tracking" : "meter is stopped"}
-          </span>
-        </div>}
-
-        {/* Minute rail: one mark per minute of the current billable hour. It
-            counts out an hour you are going to charge for — so off the clock,
-            or paid per accepted item, there is no such hour to count. */}
-        {!offClock && !piece && !bare && <>
-        <div className="rail" aria-hidden="true">
-          {Array.from({ length: 60 }, (_, i) => (
-            <span key={i} className={
-              "tick"
-              + (i < minuteInHour ? " filled" : "")
-              + (i === minuteInHour && running ? " head" : "")
-              + (i % 15 === 0 && i >= minuteInHour ? " q" : "")
-            } />
-          ))}
-        </div>
-        <div className="rail-legend">
-          <span className="eyebrow">
-            {hoursBilled > 0
-              ? `${hoursBilled} full hour${hoursBilled === 1 ? "" : "s"} billed`
-              : "minutes into this hour"}
-          </span>
-          <span className="eyebrow">{minuteInHour}/60</span>
-        </div>
-        </>}
-
-        {/* Every editor on this page is keyed by the thing it edits. A form
-            seeds its boxes once, when it first appears, so the same instance
-            handed a different session or task would go on showing the first
-            one's values, and Save would write them onto the second. A new key
-            is a new form, seeded from what it now edits. */}
-        {settling && (
-          <SettlePrompt
-            key={settling}
-            project={project}
-            session={[...sessions, ...idleSessions].find((x) => x.id === settling) ?? null}
-            onCancel={() => setSettling(null)}
-            onConfirm={(lines) => { onSettle(settling, lines); setSettling(null); }}
-          />
-        )}
-
-        {prompt && !settling && (
-          <TaskPrompt
-            key={prompt.reassign ? `move:${current?.id}` : `start:${prompt.kind}`}
-            project={project} words={w}
-            initialTaskId={prompt.reassign ? current?.taskId : null}
-            confirmLabel={
-              prompt.reassign ? "Save" : prompt.kind === KIND.IDLE ? "Start idle" : w.start
-            }
-            onCancel={() => setPrompt(null)}
-            onConfirm={(pick) => {
-              if (prompt.reassign) onAssign([current.id], pick);
-              else onStart(prompt.kind, pick);
-              setPrompt(null);
-            }}
-          />
-        )}
-
-        <div className="controls">
-          {!current && !prompt && !stopped && (
-            <>
-              <button className="btn primary" onClick={() => setPrompt({ kind: KIND.BILLED })}>
-                {w.start}
-              </button>
-              {/* Billed against idle is a question about what to invoice.
-                  Off the clock there is nothing to invoice, so the split would
-                  be a distinction without a difference. */}
-              {!offClock && (
-                <button className="btn ghost" onClick={() => setPrompt({ kind: KIND.IDLE })}>
-                  Start idle
-                </button>
-              )}
-            </>
-          )}
-          {running && (
-            <>
-              <button className="btn ghost" onClick={onPause}>Pause</button>
-              <button className="btn primary"
-                      onClick={() => {
-                        const id = current?.id ?? null;
-                        onStop();
-                        if (settles && id) setSettling(id);
-                      }}>
-                {idling ? "Stop idling" : w.stop}
-              </button>
-            </>
-          )}
-          {!current && !prompt && stopped && (
-            <button className="btn primary" onClick={() => onSetStatus("active")}>
-              {isDone(project) ? "Reopen this project" : "Set it running again"}
-            </button>
-          )}
-          {/* Whatever is already open can always be finished — stopping a
-              project refuses NEW time, it does not strand a session that was
-              running when you stopped it. Only the new-session button goes. */}
-          {current && !running && (
-            <>
-              <button className="btn primary" onClick={onResume}>Resume</button>
-              {!stopped && (
-                <button className="btn ghost"
-                        onClick={() => onStart(idling ? KIND.IDLE : KIND.BILLED, { taskId: current.taskId })}>
-                  {offClock ? "New entry" : "New session"}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-
-        {stopped && (
-          <div className="hint" style={{ marginTop: 14, marginBottom: 0 }}>
-            {isDone(project)
-              ? "This project is done, so it won't take new time. Everything it recorded is still here."
-              : "This project is on hold, so it won't take new time. Nothing it recorded has changed."}
-          </div>
-        )}
-
-        {/* Switching kind is always explicit. Auto-starting the other timer
-            would attribute time to the wrong bucket with no trace of why. */}
-        {running && !offClock && (
-          <div className="controls">
-            <button className="btn ghost"
-                    onClick={() => onStart(idling ? KIND.BILLED : KIND.IDLE, { taskId: current.taskId })}>
-              {idling ? "Back to work" : "Switch to idle"}
-            </button>
-          </div>
-        )}
-      </div>
+      <ProjectFace
+        project={project} current={current} running={running} idling={idling}
+        stopped={stopped} offClock={offClock} piece={piece} settles={settles} w={w}
+        currency={currency} shownMs={shownMs} whole={whole} sessions={sessions}
+        idleSessions={idleSessions} prompt={prompt} setPrompt={setPrompt} settling={settling}
+        setSettling={setSettling} onStart={onStart} onPause={onPause} onResume={onResume}
+        onStop={onStop} onSettle={onSettle} onAssign={onAssign} onSetStatus={onSetStatus}
+      />
 
       {/* What it came to. A finished project is no longer a thing to pace, so
           the goal reads as an outcome and the panel reports the whole run
           rather than this week's slice of it. */}
       {isDone(project) && (
-        <div className="sec">
-          <div className="sec-head">
-            <span className="eyebrow">What it came to</span>
-            {ranFrom !== null && (
-              <span className="eyebrow">
-                {date(ranFrom)} – {date(ranTo)}{new Date(ranTo).getFullYear() !== new Date().getFullYear()
-                  ? ` ${new Date(ranTo).getFullYear()}` : ""}
-              </span>
-            )}
-          </div>
-          <div className="panel">
-            {allSessions.length === 0 ? (
-              <div className="empty">No time was ever recorded against this one.</div>
-            ) : (
-              <div className="tiles closing">
-                {!offClock && (
-                  <StatTile label="Earned" value={formatMoney(totalCents, currency)} />
-                )}
-                <StatTile label={offClock ? "Tracked" : "Billed"}
-                          value={formatShortDuration(totalMs)}
-                          sub={idleMs > 0 ? `${formatShortDuration(idleMs)} idle` : null} />
-                {!offClock && closingRate !== null && (
-                  <StatTile label="An hour came to" value={`${formatMoney(closingRate, currency)}/hr`}
-                            sub={share === null ? null : `${Math.round(share * 100)}% of desk time billed`} />
-                )}
-                {overallGoal && (
-                  <StatTile label="Goal"
-                            value={overallValue >= overallGoal.target ? "Met" : "Short"}
-                            sub={`${goalUnit(overallValue)} of ${goalUnit(overallGoal.target)}`} />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <ClosingSummary
+          sessions={sessions} idleSessions={idleSessions} offClock={offClock}
+          currency={currency} totalCents={totalCents} totalMs={totalMs} idleMs={idleMs}
+          share={share} overallGoal={overallGoal} overallValue={overallValue}
+        />
       )}
 
       {!isDone(project) && (sessionGoal || overallGoal) && (
-        <div className="sec">
-          <div className="sec-head"><span className="eyebrow">Goals</span></div>
-          <div className="panel">
-            {sessionGoal && (
-              <GoalBar label="This session" type={sessionGoal.type} target={sessionGoal.target}
-                       currency={currency}
-                       value={sessionGoal.type === "money"
-                         ? (current ? whole(current) : 0) / 100
-                         : shownMs / 60000} />
-            )}
-            {overallGoal && (
-              <GoalBar
-                label={overallGoal.period === "lifetime" ? "All time"
-                     : overallGoal.period === "week" ? "This week" : "This month"}
-                type={overallGoal.type} target={overallGoal.target} currency={project.currency}
-                value={overallValue} pace={paceGoal(overallGoal, overallValue, now)} />
-            )}
-          </div>
-        </div>
+        <Goals
+          project={project} sessionGoal={sessionGoal} overallGoal={overallGoal}
+          currency={currency} current={current} whole={whole} shownMs={shownMs}
+          overallValue={overallValue} now={now}
+        />
       )}
 
       {!offClock && (
@@ -468,30 +216,8 @@ export default function ProjectView({
       )}
 
       {share !== null && idleMs > 0 && !offClock && (
-        <div className="sec">
-          <div className="sec-head"><span className="eyebrow">Time at the desk</span></div>
-          <div className="panel">
-            <div className="util">
-              <span className="eyebrow">Billed</span>
-              <span className="util-pct">{Math.round(share * 100)}%</span>
-            </div>
-            <div className="split">
-              <div className="split-billed" style={{ width: `${share * 100}%` }} />
-              <div className="split-idle" style={{ width: `${(1 - share) * 100}%` }} />
-            </div>
-            <div className="split-legend">
-              <span className="legend-item">
-                <span className="swatch" style={{ background: "var(--jade)" }} />
-                {formatShortDuration(totalMs)} billed
-              </span>
-              <span className="legend-item">
-                <span className="swatch" style={{ background: "var(--amber)" }} />
-                {formatShortDuration(idleMs)} idle ·{" "}
-                {formatMoney(idleCents, project.currency)} unearned
-              </span>
-            </div>
-          </div>
-        </div>
+        <TimeAtDesk project={project} share={share} totalMs={totalMs} idleMs={idleMs}
+                    idleCents={idleCents} />
       )}
 
       <Ledger
@@ -507,26 +233,11 @@ export default function ProjectView({
         onAddManual={onAddManual}
       />
 
-      <div className="sec">
-        <div className="sec-head">
-          <span className="eyebrow">
-            Settings
-            {/* A draft outlives the closed panel, so the closed panel says it
-                is holding one. Nothing else on the page would. */}
-            {!settingsOpen && unsavedSettings(project.id) && <span className="tag">Unsaved</span>}
-          </span>
-          <button className="linkbtn" onClick={() => setSettingsOpen((v) => !v)}>
-            {settingsOpen ? "Close" : "Open"}
-          </button>
-        </div>
-        {settingsOpen && (
-          <Settings project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
-                    onDeleteProject={onDeleteProject} onSetStatus={onSetStatus}
-                    payPeriod={payPeriod} companies={companies}
-                    onSetPayPeriod={onSetPayPeriod} now={now}
-                    hasRunningSession={!!running} />
-        )}
-      </div>
+      <SettingsSection
+        project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
+        onDeleteProject={onDeleteProject} onSetStatus={onSetStatus} payPeriod={payPeriod}
+        companies={companies} onSetPayPeriod={onSetPayPeriod} now={now} running={running}
+      />
     </>
   );
 }
