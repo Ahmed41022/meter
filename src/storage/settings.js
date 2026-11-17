@@ -29,6 +29,9 @@ export const SETTING = {
    *  and the answers it leads to ARE in the ledger and do travel. A second
    *  device that has not been asked yet can be asked once, which is correct. */
   PAYOUTS_ASKED: "meter:payouts-asked",
+  /** The day the notice about a passed payday was last put off with Later, as
+   *  this device's calendar day. A reminder snoozed, so per device. */
+  PAYOUT_LATER: "meter:payout-later",
 };
 
 export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };

@@ -312,7 +312,8 @@ export const upcomingPay = (state, now) => {
           row.cents += cents;
           row.tasks.push({
             key: `task:${task.id}:${part}`, kind: "task", part,
-            taskId: task.id, label: task.label, project: project.name, cents, status,
+            taskId: task.id, label: task.label, project: project.name, projectId: project.id,
+            cents, status,
           });
         }
       }
@@ -354,7 +355,7 @@ export const upcomingPay = (state, now) => {
       row.tasks.push({
         key: `reward:${earning.id}`, kind: "reward",
         label: earning.note || "Reward", covers: tasksOf(earning).length,
-        project: project.name, cents: earning.cents,
+        project: project.name, projectId: project.id, cents: earning.cents,
       });
     }
 
@@ -383,7 +384,7 @@ export const upcomingPay = (state, now) => {
       row.tasks.push({
         key: `extra:${earning.id}`, kind: "extra", part: earning.kind || "other",
         earningId: earning.id, label: earning.note || "", project: project.name,
-        cents: earning.cents,
+        projectId: project.id, cents: earning.cents,
         ...(task ? { taskId: task.id, taskLabel: task.label } : {}),
       });
     }
@@ -408,11 +409,21 @@ export const upcomingPay = (state, now) => {
   for (const row of rows(due, "due")) {
     const { rule, today } = clocks.get(row.client);
     const answer = answers.get(payoutKey(row.client, row.currency, row.date));
-    if (answer?.outcome === OUTCOME.PAID) continue;
-    const moved = answer?.outcome === OUTCOME.MOVED ? paydayOn(rule, answer.movedTo) : null;
-    const listed = moved
+    // Closed, whatever came: the money is in the earnings, or never will be.
+    if (answer?.outcome === OUTCOME.PAID || answer?.outcome === OUTCOME.CANCELLED) continue;
+    const away = answer?.outcome === OUTCOME.MOVED || answer?.outcome === OUTCOME.PARTIAL;
+    const moved = away ? paydayOn(rule, answer.movedTo) : null;
+    let listed = moved
       ? { ...row, scheduled: row.date, moved: true, date: moved.date, at: moved.at }
       : { ...row, scheduled: row.date };
+    // Partly received: only the rest is still coming, and the row says so. The
+    // figure is worked from what was expected on the day it was first
+    // answered, which is what the amount received was measured against.
+    if (moved && answer.outcome === OUTCOME.PARTIAL) {
+      const expected = answer.expectedCents ?? row.cents;
+      const got = answer.receivedCents ?? 0;
+      listed = { ...listed, cents: Math.max(0, expected - got), partial: { expectedCents: expected, receivedCents: got } };
+    }
     (listed.date < today ? late : upcoming).push(listed);
   }
   const byDay = (a, b) => a.at - b.at || a.company.localeCompare(b.company);

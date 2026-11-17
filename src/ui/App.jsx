@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
 import { isOpen, isRunning, isStale, startedAt } from "../domain/time.js";
-import { formatShortDuration } from "../domain/money.js";
+import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
   overlappingSessions, revertCorrection, heartbeat, idleSessionsFor, isBilled,
@@ -25,8 +25,10 @@ import {
 import { answerTasks, reopenTasks, repriceHourlyRewards, submitTasks } from "../domain/settle.js";
 import { setPayPeriod, storedPeriodFor } from "../domain/payPeriod.js";
 import {
-  OUTCOME, answerPayout, answerPayouts, answersByPayment, payoutKey, removePayout,
+  OUTCOME, answerPayouts, clockFor, largestProject, payoutKey, restorePayment, snapshotPayment,
 } from "../domain/payouts.js";
+import { upcomingPay } from "../domain/payout.js";
+import PaymentAnswer, { payDay } from "./PaymentAnswer.jsx";
 import { backupState, recordBackup } from "../domain/backup.js";
 import { toCsv } from "../domain/csv.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -222,25 +224,32 @@ export default function App({ store: injectedStore }) {
    * old copy of the list back instead would drop records without a stamp, and
    * the next sync would bring them back from the other device.
    */
-  const answerPayments = (rows, outcome, movedTo, message) => {
-    const answers = rows.map((row) => ({
-      client: row.company, currency: row.currency, scheduled: row.scheduled, outcome, movedTo,
-    }));
+  const recordAnswers = (answers, message) => {
     const keyOf = (a) => payoutKey(a.client, a.currency, a.scheduled);
-    const had = answersByPayment(stateRef.current);
-    const previous = answers.map((a) => had.get(keyOf(a)) ?? null);
+    // What each payment's answer, and the adjustment it wrote, were before.
+    const before = answers.map((a) => snapshotPayment(stateRef.current, a));
     commit((s) => answerPayouts(s, answers, Date.now(), uid));
     flash(message, "Undo", () => commit((s) => {
       const at = Date.now();
-      const current = answersByPayment(s);
-      return answers.reduce((acc, a, i) => {
-        const prev = previous[i];
-        if (prev) return answerPayout(acc, prev, prev.answeredAt ?? at, prev.id);
-        const made = current.get(keyOf(a));
-        return made ? removePayout(acc, made.id, at) : acc;
-      }, s);
+      return answers.reduce((acc, a, i) => restorePayment(acc, keyOf(a), before[i], at), s);
     }));
   };
+  /** One row's answer, with the row's own figures: what it said was coming,
+   *  and the project a difference is booked to. */
+  const answerFor = (row, fields) => ({
+    client: row.company, currency: row.currency, scheduled: row.scheduled,
+    expectedCents: row.cents, projectId: largestProject(row), ...fields,
+  });
+  const answerPayment = (row, fields) => {
+    const money = (c) => formatMoney(c, row.currency);
+    const message = fields.outcome === OUTCOME.CANCELLED ? `Cancelled. ${money(row.cents)} off your earnings.`
+      : fields.outcome === OUTCOME.PARTIAL ? `Received ${money(fields.receivedNow)}. The rest is on ${payDay(fields.movedTo)}.`
+        : fields.receivedNow !== undefined && fields.receivedNow !== row.cents
+          ? `Recorded ${money(fields.receivedNow)} received.` : "Marked as paid.";
+    recordAnswers([answerFor(row, fields)], message);
+  };
+  const answerPayments = (rows, outcome, movedTo, message) =>
+    recordAnswers(rows.map((row) => answerFor(row, { outcome, movedTo })), message);
 
   const booted = useRef(false);
 
@@ -288,6 +297,29 @@ export default function App({ store: injectedStore }) {
     [state.sessions, device],
   );
   const backup = useMemo(() => backupState(state, now), [state, now]);
+
+  /**
+   * What is coming in, and when, once a minute rather than on every tick of
+   * `now`: the "not before" date on work under review is the payday of the
+   * period the clock is in, and a period shuts at a minute, not at midnight —
+   * a cutoff is set to the minute, so no finer key is needed. Here, not in the
+   * Overview, because the notice that follows a passed payday shows on every
+   * tab. Read from the stored lists, which are stable between changes, so it
+   * is not worked out again by a re-render.
+   */
+  const minute = Math.floor(now / 60_000);
+  const pay = useMemo(
+    () => upcomingPay({
+      projects: state.projects, sessions: state.sessions, earnings: state.earnings,
+      companies: state.companies, payouts: state.payouts,
+    }, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the minute, not the second
+    [state.projects, state.sessions, state.earnings, state.companies, state.payouts, minute],
+  );
+  // The one-time question about every past payday, and the day the notice
+  // about the oldest was last put off. Both per device; see settings.js.
+  const [payoutsAsked, setPayoutsAsked] = useState(() => loadSetting(SETTING.PAYOUTS_ASKED) === "1");
+  const [laterDay, setLaterDay] = useState(() => loadSetting(SETTING.PAYOUT_LATER));
 
   /**
    * Where the running meter's task crosses its time limit, if it has one.
@@ -694,6 +726,31 @@ export default function App({ store: injectedStore }) {
           </Notice>
         )}
 
+        {/* A payday has passed and nobody has said what came. The oldest first,
+            and the next when it is answered. Not while the Overview's one-time
+            question about every past payday is still waiting, which is the
+            kinder way to deal with years of them, and not on a day it was put
+            off. On every tab, because money that did not arrive is worth
+            knowing about wherever you are. */}
+        {ready && payoutsAsked && pay.overdue.length > 0 && laterDay !== dayKey(now) && (
+          <div className="banner" role="status">
+            <span className="eyebrow">A payday has passed</span>
+            <p>
+              {pay.overdue[0].company}&apos;s payday on {payDay(pay.overdue[0].date)}
+              {" "}({formatMoney(pay.overdue[0].cents, pay.overdue[0].currency)}) has passed.
+              What happened?
+            </p>
+            <PaymentAnswer key={pay.overdue[0].key} row={pay.overdue[0]}
+                           clock={clockFor(state, pay.overdue[0], now)}
+                           choices={["paid", "partial", "cancelled"]} dismissLabel="Later"
+                           onSave={(fields) => answerPayment(pay.overdue[0], fields)}
+                           onCancel={() => {
+                             saveSetting(SETTING.PAYOUT_LATER, dayKey(now));
+                             setLaterDay(dayKey(now));
+                           }} />
+          </div>
+        )}
+
         {/* Last of the banners, deliberately. A meter left running overnight or
             a second tab overwriting this one need answering now; a missing
             backup is important but not urgent, and putting it above them buries
@@ -1017,7 +1074,10 @@ export default function App({ store: injectedStore }) {
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
             companyRules={state.companies ?? []}
-            payouts={state.payouts ?? []}
+            pay={pay}
+            asked={payoutsAsked}
+            onSettleAsk={() => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setPayoutsAsked(true); }}
+            onAnswer={answerPayment}
             onPaid={(rows) => answerPayments(rows, OUTCOME.PAID, undefined,
               rows.length === 1 ? "Marked as paid." : `${rows.length} payments marked as paid.`)}
             onMovePayment={(row, date) => answerPayments([row], OUTCOME.MOVED, date, "Date changed.")}

@@ -9,6 +9,13 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **After a payday, say what happened to the payment.** A notice asks, for the
+  oldest payday that has passed, whether it was paid in full, cancelled, or not
+  yet or only partly received (with the new date for the rest). Type what
+  actually came and a difference, $101 for an expected $100, is recorded as an
+  adjustment; a cancelled payment comes off your earnings. A payment still to
+  come can be marked paid the same way, from its row in Upcoming payments.
+
 - **Mark a payment paid, or give it another date, in Upcoming payments.** Open a
   payday and choose Already paid or Change date; both have an Undo. A payday
   that passes with no answer now stays listed as overdue instead of vanishing,

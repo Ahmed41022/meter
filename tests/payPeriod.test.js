@@ -1049,8 +1049,9 @@ describe("docs/payments-seed.json", () => {
 
   it("leaves its negative adjustments off the paydays, whose rows still add up", () => {
     // Two deductions sit in the ledger, and neither makes a line.
-    expect(seed.earnings.filter((e) => e.kind === "adjust" && e.cents < 0)).toHaveLength(2);
-    for (const row of [...due, ...waiting]) {
+    expect(seed.earnings.filter((e) => e.kind === "adjust" && e.cents < 0 && !e.received)).toHaveLength(2);
+    // A partly received row lists only what is left, so its lines are more.
+    for (const row of [...due, ...waiting].filter((r) => !r.partial)) {
       expect(row.cents).toBe(row.tasks.reduce((sum, l) => sum + l.cents, 0));
       expect(row.tasks.every((l) => l.cents > 0)).toBe(true);
     }
@@ -1082,12 +1083,44 @@ describe("docs/payments-seed.json", () => {
     expect(earningTotals([bonus]).settled).toEqual({ USD: 4_000 });
   });
 
-  it("has three past paydays nobody answered, listed oldest first as overdue", () => {
+  it("has two past paydays nobody answered, kept as overdue to show, oldest first", () => {
     expect(overdue.map((r) => [r.date, r.company, r.currency])).toEqual([
-      ["2026-11-04", "Larkspur Data", "USD"],
       ["2026-11-10", "Meridian Lingua", "EUR"],
       ["2026-11-11", "Larkspur Data", "USD"],
     ]);
+  });
+
+  it("has the older past paydays answered, so only those two are left to answer", () => {
+    const answered = seed.payouts.filter((p) => ["paid", "cancelled"].includes(p.outcome))
+      .map((p) => p.scheduled).sort();
+    expect(answered).toEqual(["2026-10-07", "2026-10-14", "2026-10-28", "2026-11-04"]);
+  });
+
+  it("has a payment paid a dollar over, with the adjustment that records it", () => {
+    const over = seed.payouts.find((p) => p.scheduled === "2026-10-14");
+    expect(over).toMatchObject({ outcome: "paid", expectedCents: 10_000, receivedCents: 10_100 });
+    const adjust = seed.earnings.find((e) => e.id === over.adjustmentId);
+    expect(adjust).toMatchObject({ kind: "adjust", cents: 100, received: true });
+    // What the forecast would have said, were it not answered, is what was expected.
+    const unanswered = upcomingPay({ ...seed, payouts: [] }, NOW);
+    expect(unanswered.overdue.find((r) => r.scheduled === "2026-10-14").cents).toBe(10_000);
+  });
+
+  it("has a cancelled payment whose money is taken off the earnings", () => {
+    const gone = seed.payouts.find((p) => p.outcome === "cancelled");
+    const adjust = seed.earnings.find((e) => e.id === gone.adjustmentId);
+    expect(adjust.cents).toBe(-gone.expectedCents);
+    expect([...due, ...waiting, ...overdue].some((r) => r.scheduled === gone.scheduled)).toBe(false);
+    // The hours stay in the ledger: only money was taken off.
+    expect(JSON.stringify(seed.sessions)).toContain("pl1h");
+  });
+
+  it("has a partly received payment listed at its new date with only the rest owed", () => {
+    const partly = due.find((r) => r.partial);
+    expect(partly).toMatchObject({
+      scheduled: "2026-11-25", date: "2026-12-09", currency: "EUR", cents: 1_200,
+      partial: { expectedCents: 2_000, receivedCents: 800 },
+    });
   });
 
   it("has a past payday answered paid, which is not listed anywhere", () => {
@@ -1098,7 +1131,7 @@ describe("docs/payments-seed.json", () => {
   });
 
   it("has a future payment moved to another date, and says where it came from", () => {
-    const moved = due.filter((r) => r.moved);
+    const moved = due.filter((r) => r.moved && !r.partial);
     expect(moved.map((r) => [r.scheduled, r.date, r.currency])).toEqual([["2026-12-10", "2026-12-17", "EUR"]]);
   });
 
@@ -1172,7 +1205,7 @@ describe("money with no task, in what is coming in", () => {
     expect(due[0]).toMatchObject({ date: "2026-11-18", cents: 2_500, items: 0, rewards: 0, extras: 1 });
     expect(due[0].tasks).toEqual([{
       key: "extra:e1", kind: "extra", part: "bonus", earningId: "e1", label: "Milestone",
-      project: "Gateway", cents: 2_500,
+      project: "Gateway", projectId: "p", cents: 2_500,
     }]);
   });
 

@@ -62,6 +62,22 @@
           "state": "submitted",
           "stateAt": 1793890800000,
           "submittedAt": 1793890800000
+        },
+        {
+          "id": "pl1h",
+          "label": "batch 5",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1790780400000,
+          "submittedAt": 1790780400000
+        },
+        {
+          "id": "pl1i",
+          "label": "batch 6",
+          "createdAt": 1790845200000,
+          "state": "submitted",
+          "stateAt": 1791385200000,
+          "submittedAt": 1791385200000
         }
       ]
     },
@@ -365,6 +381,40 @@
           "endedAt": 1792497600000
         }
       ]
+    },
+    {
+      "id": "s14",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1h",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1790758800000,
+      "closedAt": 1790764200000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1790758800000,
+          "endedAt": 1790764200000
+        }
+      ]
+    },
+    {
+      "id": "s15",
+      "projectId": "pl1",
+      "kind": "billed",
+      "taskId": "pl1i",
+      "rate": 28,
+      "currency": "USD",
+      "createdAt": 1791363600000,
+      "closedAt": 1791367200000,
+      "deletedAt": null,
+      "segments": [
+        {
+          "startedAt": 1791363600000,
+          "endedAt": 1791367200000
+        }
+      ]
     }
   ],
   "objectives": [],
@@ -644,6 +694,45 @@
       "note": "speed bonus",
       "createdAt": 1793892600000,
       "deletedAt": null
+    },
+    {
+      "id": "e22",
+      "projectId": "pl1",
+      "taskId": "pl1i",
+      "kind": "bonus",
+      "cents": 7200,
+      "units": 1,
+      "currency": "USD",
+      "at": 1791387000000,
+      "note": "batch bonus",
+      "createdAt": 1791387000000,
+      "deletedAt": null
+    },
+    {
+      "id": "e23",
+      "projectId": "pl1",
+      "kind": "adjust",
+      "cents": 100,
+      "units": 1,
+      "currency": "USD",
+      "at": 1792058400000,
+      "note": "Received $101.00 of $100.00 \u00b7 Larkspur Data, Wed 14 Oct",
+      "createdAt": 1792058400000,
+      "deletedAt": null,
+      "received": true
+    },
+    {
+      "id": "e24",
+      "projectId": "pl1",
+      "kind": "adjust",
+      "cents": -4200,
+      "units": 1,
+      "currency": "USD",
+      "at": 1791453600000,
+      "note": "Cancelled: received $0.00 of $42.00 \u00b7 Larkspur Data, Wed 7 Oct",
+      "createdAt": 1791453600000,
+      "deletedAt": null,
+      "received": true
     }
   ],
   "todos": [],
@@ -689,6 +778,43 @@
       "deletedAt": null
     },
     {
+      "id": "po3",
+      "client": "Larkspur Data",
+      "currency": "USD",
+      "scheduled": "2026-11-04",
+      "outcome": "paid",
+      "expectedCents": 5600,
+      "answeredAt": 1793872800000,
+      "createdAt": 1793872800000,
+      "deletedAt": null
+    },
+    {
+      "id": "po4",
+      "client": "Larkspur Data",
+      "currency": "USD",
+      "scheduled": "2026-10-14",
+      "outcome": "paid",
+      "expectedCents": 10000,
+      "receivedCents": 10100,
+      "adjustmentId": "e23",
+      "answeredAt": 1792058400000,
+      "createdAt": 1792058400000,
+      "deletedAt": null
+    },
+    {
+      "id": "po5",
+      "client": "Larkspur Data",
+      "currency": "USD",
+      "scheduled": "2026-10-07",
+      "outcome": "cancelled",
+      "expectedCents": 4200,
+      "receivedCents": 0,
+      "adjustmentId": "e24",
+      "answeredAt": 1791453600000,
+      "createdAt": 1791453600000,
+      "deletedAt": null
+    },
+    {
       "id": "po2",
       "client": "Meridian Lingua",
       "currency": "EUR",
@@ -697,6 +823,19 @@
       "movedTo": "2026-12-17",
       "answeredAt": 1794823200000,
       "createdAt": 1794823200000,
+      "deletedAt": null
+    },
+    {
+      "id": "po6",
+      "client": "Larkspur Data",
+      "currency": "EUR",
+      "scheduled": "2026-11-25",
+      "outcome": "partial",
+      "movedTo": "2026-12-09",
+      "expectedCents": 2000,
+      "receivedCents": 800,
+      "answeredAt": 1794826800000,
+      "createdAt": 1794826800000,
       "deletedAt": null
     }
   ]

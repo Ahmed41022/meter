@@ -256,7 +256,7 @@ export const sessionEarnedCents = (state, sessionId) =>
 export const earningsIn = (earnings, from, to) =>
   earnings.filter((e) => e.at >= from && e.at < to);
 
-export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null, payday = null, received = false }, now, id) => {
+export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, note = "", status, taskIds = [], units = null, sessionId = null, payday = null, received = false, currency = null }, now, id) => {
   const amount = Math.round(cents);
   if (!Number.isFinite(amount) || amount === 0) return state;
   // An earning has no span, only this instant, so without one it belongs to
@@ -279,7 +279,10 @@ export const addEarning = (state, project, { cents, kind = EARNING.BONUS, at, no
         ...(tasks.length ? { taskIds: tasks } : {}),
         kind,
         cents: amount,
-        currency: project.currency,
+        // A row of Upcoming payments can be in another currency than the
+        // project its money is booked to (a EUR bonus on a USD task), and an
+        // adjustment to that payment is in the payment's.
+        currency: currency || project.currency,
         at: when,
         note: note.trim(),
         // How many accepted items this covers, when that is what it is. Kept

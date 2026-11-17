@@ -17,8 +17,8 @@ import {
 } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
-import { upcomingPay } from "../domain/payout.js";
-import { dayOnClock, findCompany, paydayFor } from "../domain/payPeriod.js";
+import { clockFor } from "../domain/payouts.js";
+import PaymentAnswer, { payDay } from "./PaymentAnswer.jsx";
 import { KIND_WORD } from "./Earnings.jsx";
 
 // "All" rather than "All time" in the control: five tabs have to fit a phone,
@@ -152,27 +152,11 @@ const targetsFor = (projects, work, now, rateOf, earnings) =>
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], companyRules = [], payouts = [], now, today,
-  onOpenProject, onToggleObjective, onPaid, onMovePayment,
+  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, asked, onSettleAsk, now, today,
+  onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment,
 }) {
-  /**
-   * What is coming in, and when.
-   *
-   * Recomputed once a minute rather than on every tick of `now`. Once a day
-   * was too seldom: the "not before" date on work under review is the payday
-   * of the period the clock is in now, and a period shuts at a minute, not at
-   * midnight — with the week closing at 02:00 on Monday, opening the Overview
-   * at 00:30 fixed "not before Wednesday the 7th" for the whole of Monday,
-   * though anything answered after 02:00 is paid on the 14th. A cutoff is set
-   * to the minute, so no finer key is needed; and every session read here is
-   * filed under a task already handed in, so nothing in it accrues between.
-   */
-  const minute = Math.floor(now / 60_000);
-  const pay = useMemo(
-    () => upcomingPay({ projects, sessions, earnings, companies: companyRules, payouts }, now),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the minute, not the second
-    [projects, sessions, earnings, companyRules, payouts, minute],
-  );
+  /* What is coming in, and when, is worked out once a minute by the App, which
+     needs it for the notice that follows a passed payday on every tab. */
   /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
   const totalOf = (rows) => currenciesByValue(
     rows.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
@@ -186,24 +170,15 @@ export default function DashboardView({
    * any the owner is asked once whether to mark the lot as received. Either
    * answer is remembered on this device and the question does not come back.
    */
-  const [asked, setAsked] = useState(() => loadSetting(SETTING.PAYOUTS_ASKED) === "1");
-  const settleAsk = () => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setAsked(true); };
+  const settleAsk = onSettleAsk;
 
   /** The row being given another date, and the date typed. One at a time. */
   const [moving, setMoving] = useState(null);
-  /** A row's client clock: today on it, and the next payday from now, which is
-   *  what a new date starts at. Both are the client's, not this device's. */
-  const clientClock = (row) => {
-    const rule = findCompany({ companies: companyRules }, row.company)?.payPeriod ?? null;
-    return { today: dayOnClock(rule, now), next: paydayFor(rule, now)?.date ?? dayOnClock(rule, now) };
-  };
-  /** A payday is a date on the client's clock, "2026-10-07", and is printed
-   *  as exactly that date. Read through UTC, which no device is ever off by:
-   *  read through this device's clock, a Wednesday in Kolkata came out as
-   *  Tuesday in Cairo. */
-  const payDay = (date) => new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
-    timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
-  });
+  /** The row whose "Already paid" form is open: a future payment marked paid
+   *  asks what came, as an overdue one does. */
+  const [paying, setPaying] = useState(null);
+  /** A row's client clock: today on it, and the next payday from now. */
+  const clientClock = (row) => clockFor({ companies: companyRules }, row, now);
   /** What a payday row is made of: its tasks, and any reward shared across a
    *  batch, which is one payment however many tasks it names. */
   const payParts = (row, soft) => [
@@ -590,6 +565,7 @@ export default function DashboardView({
                       </div>
                       <div className={"trow-sub" + (soft ? " owed" : late ? " late" : "")}>
                         {row.company || "No company"} · {payParts(row, soft)}
+                        {row.partial && ` · partly received: ${formatMoney(row.partial.receivedCents, row.currency)} of ${formatMoney(row.partial.expectedCents, row.currency)}`}
                         {row.moved && ` · moved from ${payDay(row.scheduled)}`}
                       </div>
                     </div>
@@ -626,9 +602,20 @@ export default function DashboardView({
                           one line of it: a payout either came or did not. Not
                           on money still waiting on a review, which has no date
                           to have moved or arrived on. */}
-                      {!soft && (
+                      {!soft && late && (
+                        <PaymentAnswer row={row} clock={clientClock(row)}
+                                       choices={["paid", "partial", "cancelled"]}
+                                       onSave={(fields) => onAnswer(row, fields)} />
+                      )}
+                      {!soft && !late && paying === row.key && (
+                        <PaymentAnswer row={row} clock={clientClock(row)} choices={["paid"]}
+                                       onSave={(fields) => { onAnswer(row, fields); setPaying(null); }}
+                                       onCancel={() => setPaying(null)} />
+                      )}
+                      {!soft && !late && paying !== row.key && (
                         <div className="payact">
-                          <button className="btn ghost" onClick={() => onPaid([row])}>Already paid</button>
+                          <button className="btn ghost"
+                                  onClick={() => { setMoving(null); setPaying(row.key); }}>Already paid</button>
                           {moving?.key === row.key ? (() => {
                             const from = clientClock(row).today;
                             const ok = moving.date >= from;

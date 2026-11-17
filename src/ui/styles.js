@@ -376,6 +376,9 @@ export const CSS = `
   font-family:var(--sans);}
 .payact .inp{width:auto;min-width:0;flex:1 1 150px;}
 .payact .btn{padding-top:8px;padding-bottom:8px;}
+.payform{display:flex;flex-direction:column;gap:10px;margin-top:10px;font-family:var(--sans);}
+.payform .field{margin:0;}
+.banner .payform{margin-top:12px;}
 .trow-sub.late{color:var(--amber);}
 .payline-amt{font-variant-numeric:tabular-nums;white-space:nowrap;}
 
