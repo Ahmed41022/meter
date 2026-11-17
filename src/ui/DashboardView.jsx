@@ -1,146 +1,28 @@
-import { Fragment, useMemo, useState } from "react";
-import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { useMemo, useState } from "react";
 import { utilisation } from "../domain/sessions.js";
-import { activeProjects, offClockProjects, workProjects } from "../domain/projects.js";
+import { offClockProjects, workProjects } from "../domain/projects.js";
 import { pricer } from "../domain/terms.js";
 import {
-  PERIODS, activeBuckets, byProject, currenciesByValue, dailyTotals, deltaRatio,
-  heatGrid, heatRange, heatThresholds, performanceIn, periodRange, splitByClock, trendFor,
-  byCompany, comparisonRanges, concentration, currenciesByWork, firstRecord, goalValue,
-  heatDepth, hourlyRates, revenueShare, soleCurrency, streaks, worthPerHour,
+  PERIODS, activeBuckets, byProject, currenciesByValue, deltaRatio, performanceIn, periodRange,
+  splitByClock, trendFor, byCompany, comparisonRanges, concentration, currenciesByWork,
+  firstRecord, heatDepth, hourlyRates, revenueShare, soleCurrency, worthPerHour,
 } from "../domain/performance.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
-import { normaliseGoal, pace, paceState, periodBoundary } from "../domain/goals.js";
-import { Delta, Heatmap, Rhythm, SplitBar, StatTile, TrendChart } from "./charts.jsx";
-import {
-  busiestStretch, byHourOfDay, byWeekday, shareOf, standsOut, timedOnly,
-} from "../domain/rhythm.js";
+import { byHourOfDay, byWeekday, timedOnly } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
-import { SETTING, loadSetting, saveSetting } from "../storage/settings.js";
-import { clockFor } from "../domain/payouts.js";
-import PaymentAnswer, { payDay } from "./PaymentAnswer.jsx";
-import { KIND_WORD } from "./Earnings.jsx";
-
-// "All" rather than "All time" in the control: five tabs have to fit a phone,
-// and the heading directly under it says "All time" in full.
-const NAMES = { day: "Day", week: "Week", month: "Month", year: "Year", all: "All" };
-// What each comparison figure is measured against, in the words beside it.
-// The period still going is set against the same point in the one before it,
-// and one that is over against the whole one before it — see
-// `comparisonRanges`. All time has neither, and draws no comparison at all.
-const SO_FAR = {
-  day: "this time yesterday", week: "this point last week",
-  month: "this point last month", year: "this point last year",
-};
-const BEFORE = {
-  day: "the day before", week: "the week before", month: "the month before", year: "the year before",
-};
-
-/** The task-less money on a row, counted by kind and named in lower case. */
-const extraParts = (row) => {
-  const counts = new Map();
-  for (const line of row.tasks) {
-    if (line.kind === "extra") counts.set(line.part, (counts.get(line.part) ?? 0) + 1);
-  }
-  const names = { bonus: "bonus", adjust: "adjustment", piece: "per-item payment" };
-  return [...counts].map(([part, n]) => `${n} ${names[part] ?? "payment"}${n === 1 ? "" : "s"}`);
-};
-
-const day = (t, opts) => new Date(t).toLocaleDateString(undefined, opts);
-
-/** Monday first, named by the reader's own locale rather than hardcoded. Built
- *  from a known Monday so the list cannot drift with the current date. */
-const DAY_NAMES = Array.from({ length: 7 }, (_, i) =>
-  new Date(2024, 0, 1 + i).toLocaleDateString(undefined, { weekday: "long" }));
-
-/**
- * What the reader is looking at, in words. Relative names for the periods
- * people actually name — "today", "last week" — and dates beyond that, because
- * "3 periods ago" is not how anyone thinks about their own week.
- */
-const periodLabel = (period, offset, from, to) => {
-  if (period === "all") return "All time";
-  if (offset === 0) {
-    return { day: "Today", week: "This week", month: "This month", year: "This year" }[period];
-  }
-  if (offset === -1) {
-    return { day: "Yesterday", week: "Last week", month: "Last month", year: "Last year" }[period];
-  }
-  if (period === "day") return day(from, { weekday: "long", day: "numeric", month: "long" });
-  if (period === "month") return day(from, { month: "long", year: "numeric" });
-  if (period === "year") return String(new Date(from).getFullYear());
-  return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short" })}`;
-};
-
-/** The exact window, always shown under the name — a reader should never have
- *  to guess where a week was cut. */
-const rangeNote = (period, from, to) => {
-  if (period === "day") {
-    return day(from, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  }
-  if (period === "year") return `Jan – Dec ${new Date(from).getFullYear()}`;
-  // Months, not days: the span of a whole working history reads as "Jun 2024 –
-  // Sep 2026", and a reader who sees no years cannot tell what they are looking
-  // at. Collapsed when it begins and ends in the same month.
-  if (period === "all") {
-    const opts = { month: "short", year: "numeric" };
-    const first = day(from, opts);
-    const last = day(to - 1, opts);
-    return first === last ? first : `${first} – ${last}`;
-  }
-  return `${day(from, { day: "numeric", month: "short" })} – ${day(to - 1, { day: "numeric", month: "short", year: "numeric" })}`;
-};
-
-/** A year of days for one register, ready to shade. */
-const calendarFor = (sessions, now, back = 0) => {
-  const { from, to } = heatRange(now, 53, back);
-  const byDay = dailyTotals(sessions, from, to, now);
-  return { from, to, byDay };
-};
-
-/** The first instant anything was recorded, so the calendar knows how far
- *  back there is anything to look at. */
-const earliestOf = (sessions) => Math.min(
-  ...sessions.flatMap((s) => (s.segments ?? []).map((g) => g.startedAt)), Infinity);
-
-
-/**
- * Every work goal that has a deadline, paced against its own period.
- *
- * Deliberately NOT tied to the period control above it. A goal resets when it
- * resets — asking "am I on for this week?" is a question about now, and the
- * answer must not change because the reader stepped the report back to look at
- * last month. Each row therefore says which period it is measuring.
- *
- * Lifetime goals are absent for the same reason they have no pacing: a target
- * with no end cannot be late. Off-clock goals are absent because sleep is not
- * a work target, and they are paced on their own page instead. Paused and
- * finished projects are absent because a target you are not working towards
- * is not news — it is a number that can only ever get worse.
- *
- * Ordered by how many days' worth off the line each one is — unit-free, so a
- * money goal and an hours goal can be compared, and the one needing attention
- * is at the top.
- *
- * A money goal counts what the headline counts, the settled money no clock
- * measured included; `goalValue` is the one place that says so, shared with
- * the project page's own goal.
- */
-const targetsFor = (projects, work, now, rateOf, earnings) =>
-  activeProjects(projects)
-    .map((project) => {
-      const goal = normaliseGoal(project.overallGoal);
-      if (!goal || goal.period === "lifetime") return null;
-      const from = periodBoundary(goal.period, now, 0);
-      const to = periodBoundary(goal.period, now, 1);
-      const value = goalValue(goal, project,
-        work.filter((s) => s.projectId === project.id),
-        earnings.filter((e) => e.projectId === project.id), from, to, now, rateOf);
-      const pacing = pace({ target: goal.target, from, to }, value, now);
-      return { project, goal, value, pacing, state: paceState(pacing) };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.pacing.drift / a.pacing.flatPerDay - b.pacing.drift / b.pacing.flatPerDay);
+import { SETTING, loadSetting } from "../storage/settings.js";
+import PeriodHeader from "./dashboard/PeriodHeader.jsx";
+import Headline from "./dashboard/Headline.jsx";
+import TodayFocus from "./dashboard/TodayFocus.jsx";
+import StatTiles from "./dashboard/StatTiles.jsx";
+import Trend from "./dashboard/Trend.jsx";
+import DeskTime from "./dashboard/DeskTime.jsx";
+import OffClockList from "./dashboard/OffClockList.jsx";
+import UpcomingPayments from "./dashboard/UpcomingPayments.jsx";
+import Activity from "./dashboard/Activity.jsx";
+import WhenYouWork from "./dashboard/WhenYouWork.jsx";
+import { BEFORE, SO_FAR } from "./dashboard/labels.js";
+import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
 
 /**
  * The overall view: what a chosen day, week or month was worth across every
@@ -155,40 +37,11 @@ export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], companyRules = [], pay, asked, onSettleAsk, now, today,
   onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment,
 }) {
-  /* What is coming in, and when, is worked out once a minute by the App, which
-     needs it for the notice that follows a passed payday on every tab. */
-  /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
-  const totalOf = (rows) => currenciesByValue(
-    rows.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
-  ).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
-  const payTotal = totalOf(pay.due);
-  const lateTotal = totalOf(pay.overdue);
-
-  /*
-   * Past paydays nobody has answered. A ledger with years of them, every one
-   * received, would open on a wall of "overdue", so the first time there are
-   * any the owner is asked once whether to mark the lot as received. Either
-   * answer is remembered on this device and the question does not come back.
-   */
-  const settleAsk = onSettleAsk;
-
   /** The row being given another date, and the date typed. One at a time. */
   const [moving, setMoving] = useState(null);
   /** The row whose "Already paid" form is open: a future payment marked paid
    *  asks what came, as an overdue one does. */
   const [paying, setPaying] = useState(null);
-  /** A row's client clock: today on it, and the next payday from now. */
-  const clientClock = (row) => clockFor({ companies: companyRules }, row, now);
-  /** What a payday row is made of: its tasks, and any reward shared across a
-   *  batch, which is one payment however many tasks it names. */
-  const payParts = (row, soft) => [
-    row.items > 0 && (soft
-      ? `${row.items} waiting on a review`
-      : `${row.items} task${row.items === 1 ? "" : "s"}`),
-    row.rewards > 0 && `${row.rewards} shared reward${row.rewards === 1 ? "" : "s"}`,
-    // Money named for no task, said by what it is: "1 bonus", "2 adjustments".
-    ...extraParts(row),
-  ].filter(Boolean).join(" · ");
   // Which payday is open, by its own key. One at a time: these are read one
   // at a time, and all of them open at once is a wall of task names.
   const [openPay, setOpenPay] = useState(null);
@@ -274,26 +127,7 @@ export default function DashboardView({
   const showCompanies = named.length > 1
     || (named.length === 1 && named[0].projects.length > 1);
   const shares = showCompanies ? revenueShare(companies) : null;
-  // Off the clock has no billable half, so its calendar shades every tracked
-  // minute; work shades the billed ones, which is what the goals count.
-  const scale = view.hasOffClock ? heatScale : "work";
-  const heat = view.calendar[scale];
-  const heatValue = scale === "work" ? (d) => d.billedMs : (d) => d.billedMs + d.idleMs;
-  const heatWeeks = heatGrid(heat.from, heat.to, heat.byDay, periodBoundary("day", now, 0));
-  const heatDays = heatWeeks.flatMap((w) => w.days).filter((d) => !d.future);
-  const heatCuts = heatThresholds(heatDays.map(heatValue));
-  const streak = streaks(heatDays, (d) => heatValue(d) > 0);
-  // `standsOut` rather than `busiest`: seven bars within a fifth of each other
-  // is a flat week, and naming a winner from it states noise as a habit.
-  const peak = standsOut(view.rhythm.weekdays);
-  const peakDay = peak ? peak.weekday : null;
-  // A dozen measured sessions is not a working pattern, so below that the
-  // hourly half is not drawn at all.
-  const enoughTimed = view.rhythm.timed >= 12;
-  const stretch = enoughTimed ? busiestStretch(view.rhythm.hours, 4) : null;
-  const stretchShare = stretch ? shareOf(view.rhythm.hours, stretch.billedMs) : null;
   const behind = targets.filter((t) => t.state === "behind").length;
-  const offMs = offRows.reduce((a, r) => a + r.billedMs + r.idleMs, 0);
   // The currency most of the period's hours were worked in leads, rather than
   // whichever figure is the bigger number: EGP 300 is not more than $70.
   const earned = currenciesByWork(current);
@@ -338,142 +172,31 @@ export default function DashboardView({
 
   return (
     <>
-      <div className="dash-head">
-        <div className="segmented" role="tablist" aria-label="Reporting period">
-          {PERIODS.map((p) => (
-            <button key={p} role="tab" aria-selected={period === p}
-                    className={"seg" + (period === p ? " on" : "")}
-                    onClick={() => {
-                      setPeriod(p);
-                      setOffset(0);
-                      saveSetting(SETTING.PERIOD, p);
-                    }}>
-              {NAMES[p]}
-            </button>
-          ))}
-        </div>
-        {/* All time cannot be stepped: there is exactly one of it. */}
-        {period !== "all" && (
-          <div className="stepper">
-            <button className="step" aria-label={`Previous ${period}`}
-                    onClick={() => setOffset((o) => o - 1)}>‹</button>
-            {/* Forward is disabled at the present period — there is no data
-                ahead of now, and an empty "next week" reads as a bug. */}
-            <button className="step" aria-label={`Next ${period}`} disabled={offset >= 0}
-                    onClick={() => setOffset((o) => Math.min(0, o + 1))}>›</button>
-          </div>
-        )}
-      </div>
+      <PeriodHeader period={period} setPeriod={setPeriod} setOffset={setOffset} offset={offset} />
 
-      <div className="grand">
-        <span className="eyebrow">{periodLabel(period, offset, from, to)} · earned</span>
-        {earned.length === 0
-          ? <div className="grand-amt">—</div>
-          : earned.map(([cur, cents], i) => (
-              <div className={i === 0 ? "grand-amt" : "grand-alt"} key={cur}>
-                {formatMoney(cents, cur)}
-              </div>
-            ))}
-        <div className="dash-sub">
-          {rangeNote(period, from, to)}
-          {/* One currency reads as it always has. Several are each named, and
-              the comparison is said once, after the last of them. */}
-          {moneyDeltas.length === 1 && <> · <Delta ratio={moneyDeltas[0][1]} label={vs} /></>}
-          {moneyDeltas.length > 1 && moneyDeltas.map(([cur, ratio], i) => (
-            <Fragment key={cur}> · <Delta ratio={ratio} unit={cur} label={vs}
-                                          bare={i < moneyDeltas.length - 1} /></Fragment>
-          ))}
-        </div>
-        {/* Money still waiting on someone else's decision. Below the headline
-            rather than inside it: the figure you glance at should be what has
-            actually landed, or a rejected week reads as a good one. */}
-        {pending.length > 0 && (
-          <div className="grand-pending">
-            + {pending.map(([cur, c]) => formatMoney(c, cur)).join(" · ")} pending
-          </div>
-        )}
-      </div>
+      <Headline
+        period={period} offset={offset} from={from} to={to} earned={earned}
+        moneyDeltas={moneyDeltas} vs={vs} pending={pending}
+      />
 
       {(focus.length > 0 || finished.length > 0) && (
-        <div className="sec" style={{ marginTop: 0, marginBottom: 26 }}>
-          <div className="sec-head">
-            <span className="eyebrow">Today</span>
-            <span className="eyebrow">
-              {finished.length > 0 && `${finished.length} done`}
-              {finished.length > 0 && focus.length > 0 && " · "}
-              {focus.length > 0 && `${focus.length} left`}
-            </span>
-          </div>
-          <div className="panel">
-            {focus.length === 0 ? (
-              <div className="empty">Everything you picked for today is done.</div>
-            ) : focus.map((o) => (
-              <div className="obj" key={o.id}>
-                <label className="obj-check">
-                  <input type="checkbox" checked={false}
-                         onChange={() => onToggleObjective(o.id)}
-                         aria-label={`Mark ${o.text} done`} />
-                  <span className="obj-text">{o.text}</span>
-                </label>
-                <div className="obj-meta">
-                  <button className="linkish" onClick={() => onOpenProject(o.projectId)}>
-                    {nameOf(o.projectId)}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <TodayFocus
+          focus={focus} finished={finished} onToggleObjective={onToggleObjective}
+          onOpenProject={onOpenProject} nameOf={nameOf}
+        />
       )}
 
       <TargetsPanel targets={targets} behind={behind} onOpenProject={onOpenProject} />
 
-      <div className="tiles">
-        <StatTile label="Billed" value={formatShortDuration(current.billedMs)}
-                  sub={previous
-                    ? <Delta ratio={deltaRatio(base.billedMs, previous.billedMs)} label={vs} />
-                    : null} />
-        <StatTile label="Idle" value={formatShortDuration(current.idleMs)}
-                  sub={previous
-                    ? <Delta ratio={deltaRatio(base.idleMs, previous.idleMs)}
-                             goodWhenUp={false} label={vs} />
-                    : null} />
-        <StatTile label="Billed share"
-                  value={share === null ? "—" : `${Math.round(share * 100)}%`}
-                  sub={share === null ? "no time recorded" : "of time at the desk"} />
-        <StatTile
-          label={{ day: "Active hours", year: "Active months", all: "Active months" }[period]
-            ?? "Active days"}
-          value={active} sub={`of ${trend.length}`} />
-        {/* Both rates, because they answer different questions and only one of
-            them is about the clock. Where nothing untimed was earned they are
-            the same number, so the second line would be noise and is dropped.
-            A tile for each currency the period was worked or paid in, since
-            no one figure can be an hour of two. */}
-        {rates.map(({ currency, rateCents, timedRateCents, untimed }) => (
-          <StatTile key={currency} label="An hour came to"
-                    value={`${formatMoney(rateCents, currency)}/hr`}
-                    sub={untimed > 0.005
-                      ? `${formatMoney(timedRateCents, currency)}/hr on timed work · ${Math.round(untimed * 100)}% earned no tracked time`
-                      : "across billed time"} />
-        ))}
-      </div>
+      <StatTiles
+        current={current} previous={previous} base={base} vs={vs} share={share} period={period}
+        active={active} trend={trend} rates={rates}
+      />
 
-      <div className="sec">
-        <div className="sec-head"><span className="eyebrow">Trend</span></div>
-        <div className="panel">
-          <TrendChart trend={trend} period={period} currencies={earned.map(([cur]) => cur)}
-                      emptyNote={offset === 0 ? "Nothing recorded yet." : "Nothing recorded in this period."} />
-        </div>
-      </div>
+      <Trend trend={trend} period={period} earned={earned} offset={offset} />
 
       {current.idleMs > 0 && (
-        <div className="sec">
-          <div className="sec-head"><span className="eyebrow">Time at the desk</span></div>
-          <div className="panel">
-            <SplitBar billedMs={current.billedMs} idleMs={current.idleMs} share={share} />
-          </div>
-        </div>
+        <DeskTime current={current} share={share} />
       )}
 
       <ByCompanyPanel show={showCompanies} companies={companies} named={named}
@@ -484,237 +207,26 @@ export default function DashboardView({
                       setProjectSort={setProjectSort} onOpenProject={onOpenProject} />
 
       {offRows.length > 0 && (
-        <div className="sec">
-          <div className="sec-head">
-            <span className="eyebrow">Off the clock</span>
-            <span className="eyebrow">{formatShortDuration(offMs)}</span>
-          </div>
-          <div className="panel">
-            <div className="hint" style={{ marginTop: 0, marginBottom: 14 }}>
-              Tracked, but counted as neither work nor earnings.
-            </div>
-            {offRows.map(({ project, billedMs, idleMs }) => {
-              const total = billedMs + idleMs;
-              return (
-                <button className="prow off" key={project.id}
-                        onClick={() => onOpenProject(project.id)}>
-                  <span className="prow-top">
-                    <span className="prow-name">{project.name}</span>
-                    <span className="prow-amt">{formatShortDuration(total)}</span>
-                  </span>
-                  <span className="prow-bar">
-                    <span className="prow-off" style={{ width: `${(total / offMs) * 100}%` }} />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <OffClockList offRows={offRows} onOpenProject={onOpenProject} />
       )}
 
       {(pay.due.length > 0 || pay.waiting.length > 0 || pay.overdue.length > 0) && (
-        <div className="sec">
-          <div className="sec-head">
-            <span className="eyebrow">Upcoming payments</span>
-            {/* Only the answered money, and it says so. The rows below carry
-                dates of their own now, so a bare figure here would read as
-                their total and be short by everything still under review. */}
-            <span className="eyebrow">
-              {pay.overdue.length > 0 && `${lateTotal} overdue · `}
-              {pay.due.length === 0 ? "nothing confirmed yet" : `${payTotal} confirmed`}
-            </span>
-          </div>
-          <div className="panel">
-            {/* Here rather than with the app's own notices: those say something
-                is wrong with the app or the data, and this is a question about
-                the list it sits on, which is where it can be read and acted on. */}
-            {pay.overdue.length > 0 && !asked && (
-              <div className="banner" role="status" style={{ marginBottom: 14 }}>
-                <span className="eyebrow">Past paydays</span>
-                <p>
-                  {pay.overdue.length} past payday{pay.overdue.length === 1 ? " has" : "s have"} no
-                  answer. Mark {pay.overdue.length === 1 ? "it" : "them all"} as received?
-                </p>
-                <div className="controls">
-                  <button className="btn primary"
-                          onClick={() => { onPaid(pay.overdue); settleAsk(); }}>
-                    Mark all received
-                  </button>
-                  <button className="btn ghost" onClick={settleAsk}>Keep them listed</button>
-                </div>
-              </div>
-            )}
-            {/* Every row opens. A payday is a number you are about to plan
-                around, and "which tasks make that up, and which of them
-                somebody still has to approve" is the first thing you want to
-                know about one — especially when the two kinds of row carry
-                dates that look alike. */}
-            {[...pay.overdue.map((r) => [r, false, true]), ...pay.due.map((r) => [r, false, false]),
-              ...pay.waiting.map((r) => [r, true, false])]
-              .map(([row, soft, late]) => (
-                <div className="payrow" key={row.key}>
-                  <div className={"trow clickable" + (openPay === row.key ? " on" : "")}
-                       role="button" tabIndex={0}
-                       aria-expanded={openPay === row.key}
-                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") togglePay(row.key); }}
-                       onClick={() => togglePay(row.key)}>
-                    <div>
-                      <div className="trow-label">
-                        {soft ? `Not before ${payDay(row.date)}`
-                          : late ? `Overdue · ${payDay(row.date)}` : payDay(row.date)}
-                      </div>
-                      <div className={"trow-sub" + (soft ? " owed" : late ? " late" : "")}>
-                        {row.company || "No company"} · {payParts(row, soft)}
-                        {row.partial && ` · partly received: ${formatMoney(row.partial.receivedCents, row.currency)} of ${formatMoney(row.partial.expectedCents, row.currency)}`}
-                        {row.moved && ` · moved from ${payDay(row.scheduled)}`}
-                      </div>
-                    </div>
-                    <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
-                  </div>
-                  {openPay === row.key && (
-                    <div className="paylist">
-                      {row.tasks.map((t) => (
-                        <div className="payline" key={t.key}>
-                          <span>
-                            {/* A task's money is a line for each kind of it, so
-                                the kind leads and the task follows: "Bonus ·
-                                batch 4417". A shared reward says how many tasks
-                                it covers, because that is what tells it from a
-                                task. */}
-                            {t.kind === "reward" ? `${t.label} · ${t.covers} tasks` : (
-                              <>
-                                <span className="payline-kind">
-                                  {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
-                                </span>
-                                {t.kind === "extra"
-                                  ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
-                                  : ` · ${t.label}`}
-                              </>
-                            )}
-                            <span className="payline-of"> · {t.project}</span>
-                          </span>
-                          <span className="payline-amt">
-                            {formatMoney(t.cents, row.currency)}
-                          </span>
-                        </div>
-                      ))}
-                      {/* What was said about the payment as a whole, not about
-                          one line of it: a payout either came or did not. Not
-                          on money still waiting on a review, which has no date
-                          to have moved or arrived on. */}
-                      {!soft && late && (
-                        <PaymentAnswer row={row} clock={clientClock(row)}
-                                       choices={["paid", "partial", "cancelled"]}
-                                       onSave={(fields) => onAnswer(row, fields)} />
-                      )}
-                      {!soft && !late && paying === row.key && (
-                        <PaymentAnswer row={row} clock={clientClock(row)} choices={["paid"]}
-                                       onSave={(fields) => { onAnswer(row, fields); setPaying(null); }}
-                                       onCancel={() => setPaying(null)} />
-                      )}
-                      {!soft && !late && paying !== row.key && (
-                        <div className="payact">
-                          <button className="btn ghost"
-                                  onClick={() => { setMoving(null); setPaying(row.key); }}>Already paid</button>
-                          {moving?.key === row.key ? (() => {
-                            const from = clientClock(row).today;
-                            const ok = moving.date >= from;
-                            return (
-                              <>
-                                <input className="inp" type="date" aria-label="New payday" min={from}
-                                       value={moving.date}
-                                       onChange={(e) => setMoving({ ...moving, date: e.target.value })} />
-                                <button className="btn primary" disabled={!ok}
-                                        onClick={() => { onMovePayment(row, moving.date); setMoving(null); }}>
-                                  Save
-                                </button>
-                                <button className="btn ghost" onClick={() => setMoving(null)}>Cancel</button>
-                                {!ok && (
-                                  <span className="hint warn" role="alert">Pick today or a later day.</span>
-                                )}
-                              </>
-                            );
-                          })() : (
-                            <button className="btn ghost"
-                                    onClick={() => setMoving({ key: row.key, date: clientClock(row).next })}>
-                              Change date
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            <div className="hint" style={{ marginBottom: 0 }}>
-              Dates come from each client&apos;s payday, set in a project&apos;s settings.
-              Where a project pays as worked, a task is paid in the run for the period it
-              was handed in. Where it pays once accepted, it is paid in the run for the
-              period its answer fell in — accepted after its own period shut, it rides the
-              next run — and work nobody has reviewed yet has no date, only the soonest it
-              could arrive. A payday that has passed stays listed, as overdue, until you say
-              it was paid or give it a new date. A reward shared by several tasks is paid with the last of them
-              to get there, and waits like unreviewed work until then. Open a row to see
-              what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
-              on lines of their own. A bonus tied to no task is paid on the next payday
-              after the day it was added, unless a payday was chosen for it or it was
-              marked as already paid. A negative adjustment is not taken off the day, only
-              the money coming in is listed. Anything whose payday has passed has dropped off.
-            </div>
-          </div>
-        </div>
+        <UpcomingPayments
+          pay={pay} asked={asked} onSettleAsk={onSettleAsk} onPaid={onPaid} onAnswer={onAnswer}
+          onMovePayment={onMovePayment} companyRules={companyRules} now={now} openPay={openPay}
+          togglePay={togglePay} moving={moving} setMoving={setMoving} paying={paying}
+          setPaying={setPaying}
+        />
       )}
 
-      <div className="sec">
-        <div className="sec-head">
-          <span className="eyebrow">Activity</span>
-          <span className="hm-head">
-            {view.hasOffClock && (
-            // Named for the section above it, not for the tabs at the top of the
-            // page: a Work/Life pair here would look like navigation and go
-            // nowhere.
-            <div className="segmented small" role="tablist" aria-label="Which time to show">
-              {[["work", "Work"], ["life", "Off the clock"]].map(([key, label]) => (
-                <button key={key} role="tab" aria-selected={scale === key}
-                        className={"seg" + (scale === key ? " on" : "")}
-                        onClick={() => setHeatScale(key)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            )}
-            {/* Steps a whole grid at a time, so a week belongs to exactly one
-                view rather than straddling two. Stops where the records do. */}
-            {view.depth[scale] > 0 && (
-              <span className="stepper">
-                <button className="step" aria-label="Earlier years"
-                        disabled={heatBack >= view.depth[scale]}
-                        onClick={() => setHeatBack((b) => b + 1)}>‹</button>
-                <button className="step" aria-label="Later years"
-                        disabled={heatBack <= 0}
-                        onClick={() => setHeatBack((b) => Math.max(0, b - 1))}>›</button>
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="panel">
-          <Heatmap weeks={heatWeeks} thresholds={heatCuts} scale={scale} streak={streak}
-                   valueOf={heatValue} noun={scale === "work" ? "Billed" : "Tracked"} />
-        </div>
-      </div>
+      <Activity
+        view={view} now={now} heatScale={heatScale} setHeatScale={setHeatScale}
+        heatBack={heatBack} setHeatBack={setHeatBack}
+      />
 
       {/* Only once there is enough of a record for a shape to mean anything. */}
       {view.rhythm.weekdays.some((r) => r.billedMs > 0) && (
-        <div className="sec">
-          <div className="sec-head"><span className="eyebrow">When you work</span></div>
-          <div className="panel">
-            <Rhythm weekdays={view.rhythm.weekdays} hours={stretch ? view.rhythm.hours : null}
-                    dayNames={DAY_NAMES} peakDay={peakDay}
-                    stretch={stretch} stretchShare={stretchShare}
-                    span={`Across everything recorded, from ${day(view.rhythm.from, { month: "short", year: "numeric" })}`
-                      + (stretch ? " · hours from timed sessions only" : "")} />
-          </div>
-        </div>
+        <WhenYouWork view={view} />
       )}
     </>
   );
