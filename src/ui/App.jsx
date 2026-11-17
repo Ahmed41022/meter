@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
-import { isOpen, isRunning, isStale, startedAt } from "../domain/time.js";
+import { isOpen, isRunning, startedAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   addManualSession, assignTaskToMany, correctSession, currentSession, deleteSession,
-  overlappingSessions, revertCorrection, heartbeat, idleSessionsFor, isBilled,
+  overlappingSessions, revertCorrection, idleSessionsFor, isBilled,
   KIND, liveSessions, ownedBy, pauseSession, recoverSession, restoreSession,
   resumeSession, sessionsFor, startSession, stopSession,
 } from "../domain/sessions.js";
@@ -36,7 +36,7 @@ import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync, { SyncPip } from "./Sync.jsx";
-import { askToNotify, notify } from "./notify.js";
+import { askToNotify } from "./notify.js";
 import { pricer, SCOPE, setOwnLimit, setProjectRate, setTaskLimit } from "../domain/terms.js";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
@@ -57,23 +57,19 @@ import { closedTaskNote } from "./TaskPrompt.jsx";
 import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
 
-const TICK_MS = 1_000;
-/**
- * How often the clock moves while no meter is running.
- *
- * Nothing on screen changes faster than the minute then, but the day and the
- * week do turn over, and every "today" and "this week" in the app reads this
- * clock. Twice a minute crosses midnight on time without re-rendering the
- * whole app every second for a figure that has not moved.
- */
-const IDLE_TICK_MS = 30_000;
+import { EMPTY, useStartup } from "./app/useStartup.js";
+import { useOverLimit } from "./app/useOverLimit.js";
+import { useClock } from "./app/useClock.js";
+import { useWakeCatchUp } from "./app/useWakeCatchUp.js";
+import { useHeartbeat } from "./app/useHeartbeat.js";
+import UnreadableBanner from "./app/UnreadableBanner.jsx";
+import AlreadyRunning from "./app/AlreadyRunning.jsx";
+
 /** A burst of edits should be one upload, not one per keystroke. */
 const PUSH_DELAY_MS = 8_000;
 
 /** Replaced at build time; the fallback is what a dev server would show. */
 const VERSION = typeof __METER_VERSION__ === "string" ? __METER_VERSION__ : "dev";
-const HEARTBEAT_MS = 60_000;
-const STALE_MS = 150_000;
 /**
  * How often to look for news while a meter is going.
  *
@@ -118,7 +114,6 @@ const payFields = (project, pay) => {
   // `!= null`, not truthiness: zero is a rate somebody meant to type.
   return { ...(rate != null ? { rate } : {}), ...(factor != null ? { factor } : {}) };
 };
-const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 
 const clockTime = (t) =>
   new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -251,44 +246,10 @@ export default function App({ store: injectedStore }) {
   const answerPayments = (rows, outcome, movedTo, message) =>
     recordAnswers(rows.map((row) => answerFor(row, { outcome, movedTo })), message);
 
-  const booted = useRef(false);
-
-  /** Startup only. Guarded independently of the dependency array so that no
-   *  future change to these deps can resurrect the startup banners after the
-   *  user has already answered them. */
-  useEffect(() => {
-    if (booted.current) return;
-    booted.current = true;
-    let alive = true;
-    store.load().then((loaded) => {
-      if (!alive) return;
-      const data = loaded ?? EMPTY;
-      stateRef.current = data;
-      setState(data);
-      // Empty because what was stored could not be read, not because nothing
-      // was. The store has already made it safe; the banner says how.
-      setUnreadable(store.unreadable);
-      setReady(true);
-
-      const t = Date.now();
-      /**
-       * Only meters this device opened are ours to judge.
-       *
-       * A session running on another device stopped syncing its heartbeat the
-       * moment it started — proof of life is deliberately local — so from here
-       * it always looks stale, and offering to close it at its last tick would
-       * cut hours off work that is still being done. It is not a crash and it
-       * is not a second tab: it is the other machine, and the running bar
-       * already offers to stop it.
-       */
-      const running = liveSessions(data.sessions)
-        .filter((s) => isRunning(s) && ownedBy(s, device));
-      const stale = running.find((s) => isStale(s, t, STALE_MS));
-      if (stale) setRecoveryId(stale.id);
-      else if (running.length) setConflict(true); // fresh heartbeat: another tab
-    });
-    return () => { alive = false; clearTimeout(toastTimer.current); };
-  }, [store, device]);
+  useStartup({
+    store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryId,
+    setConflict,
+  });
 
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
   /** A meter THIS device is holding. Only it may write proof of life. */
@@ -321,31 +282,11 @@ export default function App({ store: injectedStore }) {
   const [payoutsAsked, setPayoutsAsked] = useState(() => loadSetting(SETTING.PAYOUTS_ASKED) === "1");
   const [laterDay, setLaterDay] = useState(() => loadSetting(SETTING.PAYOUT_LATER));
 
-  /**
-   * Where the running meter's task crosses its time limit, if it has one.
-   * Known before it happens — the sitting is going, so the moment the limit
-   * is reached is already fixed — which is what the strip counts down to.
-   */
   const price = useMemo(
     () => pricer(liveProjects(state.projects), liveSessions(state.sessions)),
     [state.projects, state.sessions],
   );
-  const runningHere = liveSessions(state.sessions).find((s) => isRunning(s) && ownedBy(s, device));
-  const limitAt = runningHere ? price.terms(runningHere)?.at ?? null : null;
-  // Said once, as the line is crossed, and only by the device running the
-  // meter. A window opened after it was crossed says so in the strip instead.
-  const lastTick = useRef(Date.now());
-  useEffect(() => {
-    const before = lastTick.current;
-    lastTick.current = now;
-    if (limitAt === null || !(before < limitAt && now >= limitAt)) return;
-    const owner = liveProjects(state.projects).find((p) => p.id === runningHere.projectId);
-    const terms = price.terms(runningHere);
-    const task = owner ? taskLabel(owner, runningHere.taskId) : "This task";
-    const message = `${task} is past its ${formatShortDuration(terms.ms)} limit. Time from now pays ${Math.round(terms.factor * 100)}%.`;
-    notify("Over the time limit", message, `limit-${runningHere.taskId}`);
-    flash(message);
-  }, [now, limitAt]); // eslint-disable-line react-hooks/exhaustive-deps -- fires on the tick that crosses the line
+  useOverLimit({ state, now, price, device, flash });
 
   // ------------------------------------------------------------------ syncing
   const [clientId, setClientId] = useState(() => loadSetting(SETTING.CLIENT_ID));
@@ -419,55 +360,11 @@ export default function App({ store: injectedStore }) {
     return () => document.removeEventListener("visibilitychange", onShow);
   }, [ready, clientId, runSync]);
 
-  /**
-   * Drives rendering only. Stop this interval and the stored data is still
-   * correct — elapsed time is derived, never accumulated here.
-   *
-   * It runs whether or not a meter does. Today's figures, the Overview's
-   * period and the day a goal is paced against all read `now`, and a clock
-   * that only moved with a meter left an app opened on Sunday night still
-   * showing Sunday on Monday morning, with Monday's week reported as last
-   * week's. A running meter needs the second; otherwise the idle tick will do.
-   */
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), anyRunning ? TICK_MS : IDLE_TICK_MS);
-    return () => clearInterval(id);
-  }, [anyRunning]);
+  useClock(anyRunning, setNow);
 
-  /** Catches up the moment the app is looked at again. A tab in the
-   *  background, or a laptop asleep overnight, has its timers held back, so
-   *  without this the first thing on screen after waking would be yesterday
-   *  until the next tick came round. */
-  useEffect(() => {
-    const catchUp = () => { if (!document.hidden) setNow(Date.now()); };
-    document.addEventListener("visibilitychange", catchUp);
-    window.addEventListener("focus", catchUp);
-    return () => {
-      document.removeEventListener("visibilitychange", catchUp);
-      window.removeEventListener("focus", catchUp);
-    };
-  }, []);
+  useWakeCatchUp(setNow);
 
-  /**
-   * Proof of life, so a crash can be closed at the right timestamp.
-   *
-   * Written with `write` rather than `commit`, which is the whole difference
-   * between a meter you can stop from your phone and one you cannot. `commit`
-   * stamps what it touched, and the merge takes the later stamp — so a laptop
-   * ticking once a minute would out-stamp the stop your phone made, and the
-   * session would quietly reopen with the hours the laptop kept counting.
-   *
-   * A heartbeat is not news about the ledger. It is this device saying it is
-   * still here, to itself.
-   */
-  useEffect(() => {
-    if (!meterHere || recoveryId) return;
-    const id = setInterval(
-      () => write(heartbeat(stateRef.current, Date.now(), device)),
-      HEARTBEAT_MS,
-    );
-    return () => clearInterval(id);
-  }, [meterHere, recoveryId, write, device]);
+  useHeartbeat({ meterHere, recoveryId, write, device, stateRef });
 
   /** While something is going, look for news on a timer — a stop made on the
    *  other device has to reach the one that is still counting. */
@@ -642,25 +539,11 @@ export default function App({ store: injectedStore }) {
             a word is how the original used to get saved over: nothing looked
             wrong until the first change had already replaced it. */}
         {unreadable && (
-          <Notice title="Your saved ledger couldn't be read">
-            What was stored here is damaged or isn&apos;t a Meter ledger, so Meter has opened an
-            empty one instead of guessing.{" "}
-            {unreadable.keptAs
-              ? <>The original is untouched, kept aside in this browser as “{unreadable.keptAs}”.</>
-              : unreadable.downloaded
-                ? <>The original is in the file you downloaded, so saving has started again.</>
-                : <>There is no room to keep a copy of it here, so nothing will be saved over it
-                  until you download it.</>}
-            {" "}<button className="linkish" onClick={downloadUnreadable}>Download it</button>
-            {" "}to keep a copy you can repair, or{" "}
-            <button className="linkish"
-                    onClick={() => { setOpenProjectId(null); setFocusSession(null); setTab("work"); }}>
-              restore a backup
-            </button>.
-            {!store.held && (
-              <>{" "}<button className="linkish" onClick={() => setUnreadable(null)}>Dismiss</button></>
-            )}
-          </Notice>
+          <UnreadableBanner
+            unreadable={unreadable} store={store} downloadUnreadable={downloadUnreadable}
+            setUnreadable={setUnreadable} setOpenProjectId={setOpenProjectId}
+            setFocusSession={setFocusSession} setTab={setTab}
+          />
         )}
 
         {store.volatile && (
@@ -690,15 +573,7 @@ export default function App({ store: injectedStore }) {
         )}
 
         {conflict && !recovering && (
-          <>
-            <Notice title="Already running">
-              A session was ticking seconds ago. If you have Meter open in another tab, close one —
-              two tabs writing the same record will overwrite each other.
-            </Notice>
-            <div className="controls" style={{ marginTop: -10, marginBottom: 20 }}>
-              <button className="btn ghost" onClick={() => setConflict(false)}>This tab only</button>
-            </div>
-          </>
+          <AlreadyRunning setConflict={setConflict} />
         )}
 
         {/* Only a merge can produce this: the app refuses to CREATE overlapping
