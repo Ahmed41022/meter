@@ -7,11 +7,18 @@
  * stop a web app being installable or updatable — a manifest that cannot
  * resolve its own start_url, a worker that pins one build forever.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { JSDOM } from "jsdom";
+import { JSDOM as RealJSDOM } from "jsdom";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+/** Pages built by a test, closed after it so their timers stop. */
+const pages = [];
+class JSDOM extends RealJSDOM {
+  constructor(...args) { super(...args); pages.push(this); }
+}
+afterEach(() => { for (const dom of pages.splice(0)) dom.window.close(); });
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const web = (p) => join(root, "dist/web", p);

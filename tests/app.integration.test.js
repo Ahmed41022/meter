@@ -4,22 +4,37 @@
  * and CSS that silently fails (an inline element ignoring margin-top, say).
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { JSDOM as RealJSDOM } from "jsdom";
 
-/** Counts DOM mutations in every window built, so `settle` can tell when the
- *  page has stopped changing. */
-let mutations = 0;
+/**
+ * Every page a test builds goes through this class, so each one is tracked:
+ * `settle` watches the live ones for DOM mutations, and `afterEach` closes
+ * them all. Closing stops the page's timers (the app ticks every second while a
+ * meter runs) and frees it; without it every window of the run stays alive.
+ */
+const live = new Set();
 class JSDOM extends RealJSDOM {
   constructor(...args) {
     super(...args);
     const { window } = this;
-    new window.MutationObserver(() => { mutations++; }).observe(window.document, {
+    this.mutations = 0;
+    this.observer = new window.MutationObserver(() => { this.mutations++; });
+    this.observer.observe(window.document, {
       subtree: true, childList: true, attributes: true, characterData: true,
     });
+    live.add(this);
   }
 }
+const liveMutations = () => { let n = 0; for (const dom of live) n += dom.mutations; return n; };
+afterEach(() => {
+  for (const dom of live) {
+    dom.observer.disconnect();
+    dom.window.close();
+  }
+  live.clear();
+});
 
 const DIST = new URL("../dist/meter.html", import.meta.url);
 /** A real, fixed stretch of time. Only for tests whose subject IS time passing
@@ -50,11 +65,11 @@ const until = async (cond, { timeout = 5000, what = "the condition" } = {}) => {
  */
 const settle = async (cap = 2000) => {
   const t0 = Date.now();
-  let last = mutations, stable = 0, turns = 0;
+  let last = liveMutations(), stable = 0, turns = 0;
   while (Date.now() - t0 < cap && (stable < 3 || turns < 3)) {
     await new Promise((r) => setTimeout(r, 4));
     turns++;
-    const now = mutations;
+    const now = liveMutations();
     stable = now === last ? stable + 1 : 0;
     last = now;
   }
