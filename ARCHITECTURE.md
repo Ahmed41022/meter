@@ -101,7 +101,7 @@ tests/backup.test.js       knowing when the ledger was last written to a file
 tests/storage.test.js      backends, round trips, a stored ledger that cannot be read
 tests/desktop.test.js      the Electron shell: quit guard, loopback server, a second launch
 tests/web.test.js          the published web app and its service worker
-tests/app.integration.test.js   the built HTML, driven in jsdom
+tests/app.integration.*.test.js   the built HTML, driven in jsdom, split by area (shared helpers in tests/app.integration.helpers.js)
 ```
 
 The unit tests are fast because the domain layer is pure. The integration tests are slower but catch what unit tests structurally can't: bundling mistakes, event wiring, and CSS that fails silently. They refuse to run against a `dist/` older than `src/` — a failed build leaves the previous bundle in place, and without that check they pass happily against code that doesn't compile. One of them is a regression test for exactly that — project card text was rendering inline because the elements were `<span>`s, so `margin-top` was dropped without any error anywhere.
