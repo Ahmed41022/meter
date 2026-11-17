@@ -6,10 +6,65 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
-import { JSDOM } from "jsdom";
+import { JSDOM as RealJSDOM } from "jsdom";
+
+/** Counts DOM mutations in every window built, so `settle` can tell when the
+ *  page has stopped changing. */
+let mutations = 0;
+class JSDOM extends RealJSDOM {
+  constructor(...args) {
+    super(...args);
+    const { window } = this;
+    new window.MutationObserver(() => { mutations++; }).observe(window.document, {
+      subtree: true, childList: true, attributes: true, characterData: true,
+    });
+  }
+}
 
 const DIST = new URL("../dist/meter.html", import.meta.url);
+/** A real, fixed stretch of time. Only for tests whose subject IS time passing
+ *  (nothing may happen in a window at least as long as the app's tick). */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Polls until `cond` returns something truthy, and returns it. Timers and
+ * React keep running between polls. On timeout it THROWS, naming `what`, so a
+ * thing that never happens fails the test instead of passing quietly.
+ */
+const until = async (cond, { timeout = 5000, what = "the condition" } = {}) => {
+  const t0 = Date.now();
+  for (;;) {
+    let value;
+    try { value = cond(); } catch { value = null; }
+    if (value) return value;
+    if (Date.now() - t0 > timeout) throw new Error(`Timed out after ${timeout} ms waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 4));
+  }
+};
+
+/**
+ * For a step that only needs React to flush after a click or an input: resolves
+ * once the page has stopped changing for a few polls (and at least a couple of
+ * macrotask turns have gone by). Capped; if the page is still moving at the cap
+ * it just returns, and the assertion that follows is what decides.
+ */
+const settle = async (cap = 2000) => {
+  const t0 = Date.now();
+  let last = mutations, stable = 0, turns = 0;
+  while (Date.now() - t0 < cap && (stable < 3 || turns < 3)) {
+    await new Promise((r) => setTimeout(r, 4));
+    turns++;
+    const now = mutations;
+    stable = now === last ? stable + 1 : 0;
+    last = now;
+  }
+};
+
+/** The app has mounted and loaded its ledger (the "Loading" placeholder is gone). */
+const appReady = (dom) => until(() => {
+  const root = dom.window.document.getElementById("root");
+  return root && root.querySelector(".mtr") && !/Loading your ledger/.test(root.textContent);
+}, { what: "the app to finish loading" });
 
 /**
  * Instruments localStorage before the bundle runs, so tests can assert that
@@ -45,7 +100,7 @@ const boot = async (seed, settings = null) => {
   const preamble = sets.length ? `<script>${sets.join("")}</script>${COUNTER}` : COUNTER;
   html = html.replace('<div id="root"></div>', `<div id="root"></div>${preamble}`);
   const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
-  await wait(700);
+  await appReady(dom);
   return dom;
 };
 
@@ -83,7 +138,7 @@ const ALL_TIME = { "meter:period": "all" };
 
 const bootDash = async (seed, settings = null) => {
   const dom = await boot(seed, settings);
-  await wait(150);
+  await settle();
   await toProjects(dom.window.document, "Overview");
   return dom;
 };
@@ -98,7 +153,7 @@ const toProjects = async (d, name = "Work") => {
   const tab = [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === name);
   if (tab && tab.getAttribute("aria-selected") !== "true") {
     tab.click();
-    await wait(150);
+    await settle();
   }
 };
 const setValue = (win, el, value) => {
@@ -116,20 +171,22 @@ const startMeter = async (dom, { idle = false, task = null, existing = null } = 
   const { window } = dom, d = window.document;
   const label = idle ? /Start idle/i : /Start the meter/i;
   btn(d, label).click();
-  await wait(160);
+  await settle();
   if (task !== null) {
     btn(d, /New task/i).click();
-    await wait(120);
+    await settle();
     setValue(window, d.querySelector(".prompt input"), task);
   } else if (existing !== null) {
     btn(d, /^Existing/i).click();
-    await wait(120);
+    await settle();
     const select = d.querySelector(".prompt select");
     const option = [...select.options].find((o) => o.textContent === existing);
     setValue(window, select, option.value);
   }
   btn(d, label).click();
-  await wait(300);
+  await until(() => /^(Running|Idling)$/.test(d.querySelector(".state")?.textContent.trim() ?? ""),
+    { what: "the meter to start" });
+  await settle();
 };
 
 /** Walks a directory for the newest mtime. */
@@ -242,35 +299,37 @@ describe("a full session, end to end", () => {
 
     await toProjects(d);
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [name, rate] = d.querySelectorAll("input");
     setValue(window, name, "Acme");
     setValue(window, rate, "450");
     btn(d, /Add project/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelector(".card-name").textContent).toContain("Acme");
 
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(150);
+    await settle();
     expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
 
     await startMeter(dom);
-    await wait(1300);
+    // The clock really has to tick: a stuck clock never reaches 1-2 seconds.
+    await until(() => /00:00:0[12]/.test(d.querySelector(".clock-main")?.textContent ?? ""),
+      { what: "the clock to read 00:00:01 or 00:00:02" });
     expect(d.querySelector(".state").textContent.trim()).toBe("Running");
     expect(d.querySelector(".clock-main").textContent).toMatch(/00:00:0[12]/);
 
     btn(d, /^Pause$/i).click();
-    await wait(150);
+    await settle();
     expect(d.querySelector(".state").textContent.trim()).toBe("Paused");
     expect(btn(d, /Resume/i)).toBeTruthy();
 
     btn(d, /Resume/i).click();
-    await wait(150);
+    await settle();
     expect(d.querySelector(".state").textContent.trim()).toBe("Running");
 
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
     expect(d.querySelector(".row-meta").textContent).toContain("2 blocks");
 
@@ -284,27 +343,27 @@ describe("a full session, end to end", () => {
     const { window } = dom, d = window.document;
     await toProjects(d);
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [name, rate] = d.querySelectorAll("input");
     setValue(window, name, "Acme");
     setValue(window, rate, "500");
     btn(d, /Add project/i).click();
-    await wait(180);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(150);
+    await settle();
     await startMeter(dom);
-    await wait(1200);
+    await until(() => d.querySelector(".state")?.textContent.trim() === "Running", { what: "the face to read Running" }); // nothing here depends on elapsed time, only on a running session
 
     btn(d, /^Open$/i).click();
-    await wait(150);
+    await settle();
     const rateInput = d.querySelectorAll("input[type=number]")[0];
     setValue(window, rateInput, "900");
-    await wait(120);
+    await settle();
     // Settings are staged and saved on request; leaving the box is not the
     // act of changing a rate any more.
     btn(d, /Save changes/).click();
-    await wait(220);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].currentRate).toBe(900);
@@ -317,28 +376,30 @@ describe("a full session, end to end", () => {
     const { window } = dom, d = window.document;
     await toProjects(d);
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [name, rate] = d.querySelectorAll("input");
     setValue(window, name, "Acme");
     setValue(window, rate, "450");
     btn(d, /Add project/i).click();
-    await wait(180);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(150);
+    await settle();
     await startMeter(dom);
-    await wait(1100);
+    // Keeps the original intent (a session that has really run): until the clock moves off zero.
+    await until(() => d.querySelector(".clock-main")?.textContent !== "00:00:00",
+      { what: "the clock to move off 00:00:00" });
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
 
     d.querySelector(".x").click();
-    await wait(180);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(0);
     expect(d.querySelector(".toast")).not.toBeNull();
 
     btn(d, /Undo/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
   }, 20_000);
 });
@@ -363,7 +424,7 @@ describe("crash recovery in the real UI", () => {
     expect(banner.textContent).toMatch(/2h 00m/);   // what it should cost
 
     btn(d, /Stop at/i).click();
-    await wait(250);
+    await settle();
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     const billed = saved.sessions[0].segments.reduce((a, s) => a + (s.endedAt - s.startedAt), 0);
     expect(billed / 3_600_000).toBeCloseTo(2, 5);
@@ -376,15 +437,15 @@ describe("idle time in the real UI", () => {
     const { window } = dom, d = window.document;
     await toProjects(d);
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [name, r] = d.querySelectorAll("input");
     setValue(window, name, "Acme");
     setValue(window, r, rate);
     btn(d, /Add project/i).click();
-    await wait(180);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(150);
+    await settle();
   };
 
   it("repaints the face so idle can never be mistaken for earnings", async () => {
@@ -393,7 +454,7 @@ describe("idle time in the real UI", () => {
     await makeProject(dom);
 
     await startMeter(dom, { idle: true });
-    await wait(1200);
+    await until(() => d.querySelector(".state")?.textContent.trim() === "Idling", { what: "the face to read Idling" });
     expect(d.querySelector(".face").className).toContain("idle");
     expect(d.querySelector(".state").textContent.trim()).toBe("Idling");
     expect(d.querySelector(".money-label").textContent).toMatch(/not billed/i);
@@ -405,15 +466,17 @@ describe("idle time in the real UI", () => {
     await makeProject(dom);
 
     await startMeter(dom, { idle: true });
-    await wait(1300);
+    // "One idle second recorded": wait until the idle clock has really moved.
+    await until(() => d.querySelector(".clock-main")?.textContent !== "00:00:00",
+      { what: "the idle clock to move off 00:00:00" });
     btn(d, /Stop idling/i).click();
-    await wait(200);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.sessions[0].kind).toBe("idle");
 
     btn(d, /All projects/i).click();
-    await wait(200);
+    await settle();
     // One idle second recorded, zero billed: the headline total must be empty.
     await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent.trim()).toBe("—");
@@ -424,9 +487,9 @@ describe("idle time in the real UI", () => {
     const d = dom.window.document;
     await makeProject(dom);
     await startMeter(dom, { idle: true });
-    await wait(1200);
+    await until(() => d.querySelector(".state")?.textContent.trim() === "Idling", { what: "the face to read Idling" });
     btn(d, /Stop idling/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".row.is-idle")).not.toBeNull();
     expect(d.querySelector(".tag").textContent.trim()).toBe("Idle");
   }, 20_000);
@@ -437,9 +500,9 @@ describe("idle time in the real UI", () => {
     await makeProject(dom);
 
     await startMeter(dom);
-    await wait(1200);
+    await until(() => d.querySelector(".state")?.textContent.trim() === "Running", { what: "the face to read Running" });
     btn(d, /Switch to idle/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".state").textContent.trim()).toBe("Idling");
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
@@ -468,7 +531,7 @@ describe("idle time in the real UI", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
 
     expect(d.querySelector(".util-pct").textContent.trim()).toBe("75%");
     const legend = d.querySelector(".split-legend").textContent;
@@ -494,7 +557,7 @@ describe("idle time in the real UI", () => {
     expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".row.is-idle")).toBeNull();
     expect(d.querySelector(".util-pct")).toBeNull(); // no idle time, no split shown
   }, 20_000);
@@ -515,7 +578,9 @@ describe("startup is bounded", () => {
     expect(window.__reads).toBe(1);
 
     const before = window.__reads;
-    await wait(1200); // several render ticks while the meter runs
+    // A real window, longer than the app's 1 s render tick (TICK_MS): a shorter
+    // or conditional wait would let this pass without a tick ever happening.
+    await wait(1200);
     expect(window.__reads - before).toBe(0);
   }, 20_000);
 
@@ -523,6 +588,7 @@ describe("startup is bounded", () => {
     const dom = await boot(runningSeed(5_000));
     const { window } = dom;
     const before = window.__writes;
+    // Real window, longer than the 1 s render tick (see above).
     await wait(1200);
     expect(window.__writes - before).toBe(0);
   }, 20_000);
@@ -534,9 +600,10 @@ describe("startup is bounded", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     const first = d.querySelector(".clock-main").textContent;
-    await wait(1300);
+    await until(() => d.querySelector(".clock-main").textContent !== first,
+      { what: "the live clock to change from " + first });
     expect(d.querySelector(".clock-main").textContent).not.toBe(first);
   }, 20_000);
 });
@@ -559,10 +626,11 @@ describe("the tab-conflict notice", () => {
     const d = dom.window.document;
     expect(conflict(d)).toBeTruthy();
     btn(d, /This tab only/i).click();
-    await wait(200);
+    await settle();
     expect(conflict(d)).toBeUndefined();
 
-    // The bug re-armed it on the very next render. Give it many.
+    // The bug re-armed it on the very next render. Give it many: a real window,
+    // longer than the 1 s render tick.
     await wait(1500);
     expect(conflict(d)).toBeUndefined();
   }, 20_000);
@@ -571,7 +639,7 @@ describe("the tab-conflict notice", () => {
     const dom = await boot(runningSeed(5_000));
     const { window } = dom, d = window.document;
     btn(d, /This tab only/i).click();
-    await wait(200);
+    await settle();
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.sessions[0].closedAt).toBeNull();
     expect(saved.sessions[0].segments[0].endedAt).toBeNull();
@@ -589,15 +657,15 @@ describe("tasks", () => {
     const { window } = dom, d = window.document;
     await toProjects(d);
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [name, r] = d.querySelectorAll("input");
     setValue(window, name, "Acme");
     setValue(window, r, rate);
     btn(d, /Add project/i).click();
-    await wait(180);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(150);
+    await settle();
   };
 
   it("asks which task before it starts counting", async () => {
@@ -606,7 +674,7 @@ describe("tasks", () => {
     await makeProject(dom);
 
     btn(d, /Start the meter/i).click();
-    await wait(180);
+    await settle();
     // The prompt is up and nothing is running yet.
     expect(d.querySelector(".prompt")).not.toBeNull();
     expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
@@ -618,13 +686,13 @@ describe("tasks", () => {
     const { window } = dom, d = window.document;
     await makeProject(dom);
     await startMeter(dom, { task: "1234" });
-    await wait(900);
+    await settle();
 
     expect(d.querySelector(".state").textContent.trim()).toBe("Running");
     expect(d.querySelector(".task-chip").textContent).toContain("1234");
 
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks[0].label).toBe("1234");
     expect(saved.sessions[0].taskId).toBe(saved.projects[0].tasks[0].id);
@@ -635,13 +703,13 @@ describe("tasks", () => {
     const { window } = dom, d = window.document;
     await makeProject(dom);
     await startMeter(dom, { task: "Task-A" });
-    await wait(400);
+    await settle();
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
     await startMeter(dom, { task: "  task-a  " });
-    await wait(400);
+    await settle();
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks).toHaveLength(1);
@@ -653,12 +721,12 @@ describe("tasks", () => {
     const d = dom.window.document;
     await makeProject(dom);
     await startMeter(dom, { task: "1234" });
-    await wait(400);
+    await settle();
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
 
     btn(d, /Start the meter/i).click();
-    await wait(180);
+    await settle();
     expect(btn(d, /^Existing/i).textContent).toContain("(1)");
     expect([...d.querySelector(".prompt select").options].map((o) => o.textContent))
       .toEqual(["No task", "1234"]);
@@ -684,7 +752,7 @@ describe("tasks", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     const rows = [...d.querySelectorAll(".trow")];
     expect(rows).toHaveLength(2);
@@ -700,9 +768,9 @@ describe("tasks", () => {
     const d = dom.window.document;
     await makeProject(dom);
     await startMeter(dom, { task: "9001" });
-    await wait(700);
+    await settle();
     btn(d, /Stop and save/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".row-meta").textContent).toContain("9001");
   }, 25_000);
 });
@@ -727,7 +795,7 @@ describe("the ledger collapses", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(3);
   }, 25_000);
 
@@ -736,7 +804,7 @@ describe("the ledger collapses", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(0);
     expect(btn(d, /Ledger/i).textContent).toContain("12 sessions");
     // The point of collapsing: Settings is still on screen.
@@ -748,18 +816,18 @@ describe("the ledger collapses", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     const header = () => d.querySelectorAll(".sec-head")[
       [...d.querySelectorAll(".sec-head")].findIndex((h) => /Ledger/.test(h.textContent))
     ].textContent;
     expect(header()).toMatch(/5,400\.00/); // 12h at 450
 
     btn(d, /Ledger/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(12);
 
     btn(d, /Ledger/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(0);
     expect(header()).toMatch(/5,400\.00/);
   }, 25_000);
@@ -784,8 +852,8 @@ describe("re-filing old sessions", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
-    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    await settle();
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await settle(); }
     return d;
   };
 
@@ -797,14 +865,14 @@ describe("re-filing old sessions", () => {
     const boxes = [...d.querySelectorAll(".row .row-check")];
     boxes[0].click();
     boxes[2].click();
-    await wait(180);
+    await settle();
     expect(d.querySelector(".selbar-count").textContent).toBe("2 selected");
 
     btn(d, /Assign to task/i).click();
-    await wait(180);
+    await settle();
     setValue(window, d.querySelector(".prompt input"), "REPORT-7");
     btn(d, /Move 2 sessions/i).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     const task = saved.projects[0].tasks.find((t) => t.label === "REPORT-7");
@@ -823,12 +891,12 @@ describe("re-filing old sessions", () => {
     const before = JSON.parse(window.localStorage.getItem("meter:v1")).sessions[0];
 
     d.querySelectorAll(".row .row-check")[0].click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/i).click();
-    await wait(180);
+    await settle();
     setValue(window, d.querySelector(".prompt input"), "X-1");
     btn(d, /Move 1 session/i).click();
-    await wait(300);
+    await settle();
 
     const after = JSON.parse(window.localStorage.getItem("meter:v1")).sessions.find((s) => s.id === before.id);
     expect(after.segments).toEqual(before.segments);
@@ -854,16 +922,16 @@ describe("re-filing old sessions", () => {
     const d = await open(dom);
 
     d.querySelector(".trow .row-check").click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 1$/).click();
-    await wait(300);
+    await settle();
     expect(JSON.parse(window.localStorage.getItem("meter:v1"))
       .projects[0].tasks[0].state).toBe("submitted");
 
     d.querySelector(".trow .row-check").click();
-    await wait(200);
+    await settle();
     btn(d, /^Rejected 1$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks[0].state).toBe("cancelled");
@@ -881,15 +949,15 @@ describe("re-filing old sessions", () => {
     const d = await open(dom);
 
     d.querySelectorAll(".row .row-check")[1].click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/i).click();
-    await wait(180);
+    await settle();
     btn(d, /^Existing/i).click();
-    await wait(150);
+    await settle();
     const select = d.querySelector(".prompt select");
     setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
     btn(d, /Move 1 session/i).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.sessions.filter((s) => s.taskId === "t2").map((s) => s.id)).toEqual(["s1"]);
@@ -910,15 +978,15 @@ describe("re-filing old sessions", () => {
     expect(amounts()["5678"]).toMatch(/900\.00/);
 
     d.querySelectorAll(".row .row-check")[0].click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/i).click();
-    await wait(180);
+    await settle();
     btn(d, /^Existing/i).click();
-    await wait(150);
+    await settle();
     const select = d.querySelector(".prompt select");
     setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
     btn(d, /Move 1 session/i).click();
-    await wait(350);
+    await settle();
 
     expect(amounts()["1234"]).toMatch(/450\.00/);   // 1h
     expect(amounts()["5678"]).toMatch(/1,350\.00/); // 3h
@@ -931,12 +999,12 @@ describe("re-filing old sessions", () => {
     const d = await open(dom);
 
     [...d.querySelectorAll(".trow")].find((r) => r.textContent.includes("5678")).click();
-    await wait(250);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
     expect(d.querySelector(".chip").textContent).toContain("5678");
 
     d.querySelector(".chip").click();
-    await wait(200);
+    await settle();
     expect(d.querySelectorAll(".row")).toHaveLength(4);
   }, 30_000);
 
@@ -944,10 +1012,10 @@ describe("re-filing old sessions", () => {
     const dom = await boot(seed());
     const d = await open(dom);
     btn(d, /Select all 4/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelector(".selbar-count").textContent).toBe("4 selected");
     btn(d, /Deselect all/i).click();
-    await wait(180);
+    await settle();
     expect(d.querySelector(".selbar")).toBeNull();
   }, 30_000);
 
@@ -965,18 +1033,18 @@ describe("re-filing old sessions", () => {
     });
     const { window } = dom, d = window.document;
     btn(d, /This tab only/i).click();
-    await wait(200);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".task-chip").textContent).toContain("1234");
     d.querySelector(".task-chip").click();
-    await wait(200);
+    await settle();
     const select = d.querySelector(".prompt select");
     setValue(window, select, [...select.options].find((o) => o.textContent === "5678").value);
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".task-chip").textContent).toContain("5678");
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
@@ -1010,13 +1078,13 @@ describe("managing tasks", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return d;
   };
   const editTask = async (d, label) => {
     const row = [...d.querySelectorAll(".trow")].find((r) => r.textContent.includes(label));
     [...row.querySelectorAll("button")].find((b) => b.textContent === "edit").click();
-    await wait(200);
+    await settle();
   };
 
   it("renames a task everywhere at once", async () => {
@@ -1028,7 +1096,7 @@ describe("managing tasks", () => {
     const [name] = d.querySelectorAll(".prompt input");
     setValue(window, name, "PR review");
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".trow-label").textContent).toBe("PR review");
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
@@ -1050,7 +1118,7 @@ describe("managing tasks", () => {
     const [, rate] = d.querySelectorAll(".prompt input");
     setValue(window, rate, "90");
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
 
     expect(amount("1234")).toMatch(/180\.00/); // 2h at 90
     expect(amount("5678")).toMatch(/100\.00/); // untouched
@@ -1065,7 +1133,7 @@ describe("managing tasks", () => {
     await editTask(d, "1234");
     setValue(window, d.querySelectorAll(".prompt input")[1], "90");
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     const after = saved.sessions.find((s) => s.id === before.id);
@@ -1077,7 +1145,7 @@ describe("managing tasks", () => {
   it("marks a repriced session in the ledger", async () => {
     const dom = await boot(seed({ rate: 90 }));
     const d = await open(dom);
-    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await settle(); }
     const rows = [...d.querySelectorAll(".row-meta")].map((r) => r.textContent);
     expect(rows.find((r) => r.includes("1234"))).toContain("task rate");
     expect(rows.find((r) => r.includes("5678"))).not.toContain("task rate");
@@ -1090,7 +1158,7 @@ describe("managing tasks", () => {
     await editTask(d, "1234");
     setValue(window, d.querySelectorAll(".prompt input")[1], "");
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
     expect([...d.querySelectorAll(".trow")]
       .find((r) => r.textContent.includes("1234")).querySelector(".trow-amt").textContent)
       .toMatch(/200\.00/);
@@ -1103,11 +1171,11 @@ describe("managing tasks", () => {
     await editTask(d, "1234");
 
     btn(d, /^Delete$/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".prompt").textContent).toContain("1 session");
 
     btn(d, /Yes, delete it/i).click();
-    await wait(350);
+    await settle();
 
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks.map((t) => t.id)).toEqual(["t2"]);
@@ -1124,13 +1192,13 @@ describe("managing tasks", () => {
     const d = await open(dom);
     await editTask(d, "1234");
     btn(d, /^Delete$/i).click();
-    await wait(200);
+    await settle();
     btn(d, /Yes, delete it/i).click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".toast")).not.toBeNull();
 
     btn(d, /Undo/i).click();
-    await wait(300);
+    await settle();
     const saved = JSON.parse(window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks).toHaveLength(2);
     expect(saved.sessions.find((s) => s.id === "s1").taskId).toBe("t1");
@@ -1158,8 +1226,8 @@ describe("correcting a forgotten timer", () => {
     const d = dom.window.document;
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
-    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await wait(180); }
+    await settle();
+    if (!d.querySelectorAll(".row").length) { btn(d, /Ledger/i).click(); await settle(); }
     return d;
   };
   const stamp = (epoch) => {
@@ -1176,15 +1244,15 @@ describe("correcting a forgotten timer", () => {
     expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/); // 9h
 
     btn(d, /^edit$/i).click();
-    await wait(200);
+    await settle();
     setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
-    await wait(150);
+    await settle();
     // The preview shows the new figure before anything is committed.
     expect(d.querySelector(".preview-now").textContent).toContain("2h 00m");
     expect(d.querySelector(".preview-was").textContent).toContain("9h 00m");
 
     btn(d, /Save correction/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".row-amt").textContent).toMatch(/900\.00/); // 2h at 450
     expect(d.querySelector(".row-when").textContent).toContain("Edited");
@@ -1199,16 +1267,16 @@ describe("correcting a forgotten timer", () => {
     const d = await open(dom);
 
     btn(d, /^edit$/i).click();
-    await wait(200);
+    await settle();
     setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
     btn(d, /Save correction/i).click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".row-amt").textContent).toMatch(/900\.00/);
 
     btn(d, /^edit$/i).click();
-    await wait(200);
+    await settle();
     btn(d, /Undo correction/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/);
     expect(d.querySelector(".row-when").textContent).not.toContain("Edited");
@@ -1222,14 +1290,14 @@ describe("correcting a forgotten timer", () => {
     const { window } = dom;
     const d = await open(dom);
     btn(d, /^edit$/i).click();
-    await wait(200);
+    await settle();
     setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
     btn(d, /Save correction/i).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".toast")).not.toBeNull();
     btn(d, /Undo/i).click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".row-amt").textContent).toMatch(/4,050\.00/);
   }, 30_000);
 
@@ -1239,13 +1307,13 @@ describe("correcting a forgotten timer", () => {
     const { window } = dom;
     const d = await open(dom);
     btn(d, /^edit$/i).click();
-    await wait(200);
+    await settle();
     setValue(window, d.querySelectorAll(".prompt input")[1], stamp(data.__start + 2 * HOUR));
     btn(d, /Save correction/i).click();
-    await wait(300);
+    await settle();
 
     btn(d, /All projects/i).click();
-    await wait(250);
+    await settle();
     await toProjects(d);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/900\.00/);
   }, 30_000);
@@ -1262,10 +1330,10 @@ describe("correcting a forgotten timer", () => {
     });
     const { document: d } = dom.window;
     btn(d, /This tab only/i).click();
-    await wait(200);
+    await settle();
     await toProjects(d);
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     expect(btn(d, /^edit$/i)).toBeUndefined(); // stop it first
   }, 30_000);
 });
@@ -1324,7 +1392,7 @@ describe("the overall view", () => {
     expect(d.querySelector('[aria-label="Reporting period"]')).toBeNull();
 
     [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Overview").click();
-    await wait(170);
+    await settle();
     expect(d.querySelector('[aria-label="Reporting period"]')).not.toBeNull();
   });
 
@@ -1336,7 +1404,7 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     expect(d.querySelector(".grand-amt").textContent).toMatch(/900\.00/);
     expect(tileValue(d, "Billed")).toBe("2h 00m");
@@ -1354,11 +1422,11 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     expect(tileValue(d, "Billed")).toBe("30m");   // today's half
     d.querySelectorAll(".step")[0].click();        // step back to yesterday
-    await wait(240);
+    await settle();
     expect(tileValue(d, "Billed")).toBe("30m");   // yesterday's half
   }, 20_000);
 
@@ -1369,14 +1437,14 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     const [back, forward] = d.querySelectorAll(".step");
     expect(forward.disabled).toBe(true);   // nothing is recorded ahead of now
     expect(d.querySelector(".grand-amt").textContent).toContain("—");
 
     back.click();
-    await wait(240);
+    await settle();
     expect(d.querySelector(".grand").textContent).toMatch(/Yesterday/);
     expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
     expect(d.querySelectorAll(".step")[1].disabled).toBe(false);
@@ -1392,7 +1460,7 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     // One billed hour only, though two hours were spent at the desk.
     expect(d.querySelector(".grand-amt").textContent).toMatch(/450\.00/);
@@ -1415,9 +1483,9 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
     d.querySelectorAll(".step")[0].click();
-    await wait(240);
+    await settle();
 
     const deltas = [...d.querySelectorAll(".delta")].map((x) => x.textContent);
     expect(deltas.some((t) => /\+100%/.test(t))).toBe(true);
@@ -1431,7 +1499,7 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     expect(d.querySelectorAll(".tcol")).toHaveLength(24);
     expect(d.querySelectorAll(".tseg.billed")).toHaveLength(1);
@@ -1444,7 +1512,7 @@ describe("the overall view", () => {
     const dom = await bootDash({ projects: [project("p1", "Acme")], sessions: [] });
     const { document: d } = dom.window;
     btn(d, /^Week$/).click();
-    await wait(220);
+    await settle();
     expect(d.querySelector(".panel .empty")).not.toBeNull();
     expect(d.querySelectorAll(".tcol")).toHaveLength(0);
   }, 20_000);
@@ -1456,11 +1524,11 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Week$/).click();
-    await wait(220);
+    await settle();
     expect(d.querySelectorAll(".tcol")).toHaveLength(7);
 
     btn(d, /^Month$/).click();
-    await wait(220);
+    await settle();
     const today = new Date();
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
     expect(d.querySelectorAll(".tcol")).toHaveLength(daysInMonth);
@@ -1476,14 +1544,14 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     const rows = [...d.querySelectorAll(".prow")];
     expect(rows.map((r) => r.querySelector(".prow-name").textContent)).toEqual(["Beta", "Acme"]);
     expect(rows[0].querySelector(".prow-amt").textContent).toMatch(/1,350\.00/); // 3h at 450
 
     rows[0].click();
-    await wait(260);
+    await settle();
     // Opening a project from the overall view lands on that project's meter.
     expect(d.querySelector(".plate-name").textContent).toBe("Beta");
   }, 20_000);
@@ -1502,7 +1570,7 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     const rows = [...d.querySelectorAll(".prow")];
     expect(rows.map((r) => r.querySelector(".prow-name").textContent))
@@ -1522,7 +1590,7 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
     expect([...d.querySelectorAll(".prow-name")].map((n) => n.textContent)).toEqual(["Acme"]);
   }, 20_000);
 
@@ -1545,9 +1613,9 @@ describe("the overall view", () => {
     });
     const { document: d } = dom.window;
     btn(d, /This tab only/i).click();
-    await wait(220);
+    await settle();
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     const shown = Number(d.querySelector(".grand-amt").textContent.replace(/[^0-9.]/g, ""));
     const expected = 450 * ((now - started) / HOUR);
@@ -1591,7 +1659,7 @@ describe("off the clock, in the real UI", () => {
     const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     expect(d.querySelector(".grand-amt").textContent).toMatch(/100\.00/); // the one paid hour
     expect(tileValue(d, "Billed")).toBe("1h 00m");
@@ -1605,7 +1673,7 @@ describe("off the clock, in the real UI", () => {
     const dom = await bootDash(seed(false));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     expect(tileValue(d, "Billed")).toBe("9h 00m");
     expect([...d.querySelectorAll(".prow-name")].map((n) => n.textContent))
@@ -1616,7 +1684,7 @@ describe("off the clock, in the real UI", () => {
     const dom = await bootDash(seed(true));
     const { document: d } = dom.window;
     btn(d, /^Day$/).click();
-    await wait(220);
+    await settle();
 
     const heads = [...d.querySelectorAll(".sec-head")].map((h) => h.textContent);
     expect(heads.some((t) => /Off the clock/.test(t))).toBe(true);
@@ -1644,7 +1712,7 @@ describe("off the clock, in the real UI", () => {
     const { document: d } = dom.window;
     await toProjects(d, "Life");
     d.querySelector(".card.off").click();
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".plate-name").textContent).toBe("Life");
     expect(d.querySelector(".plate-rate").textContent).toMatch(/off the clock/i);
@@ -1658,12 +1726,12 @@ describe("off the clock, in the real UI", () => {
     await toProjects(d);
     [...d.querySelectorAll(".card-name")].find((n) => n.textContent.includes("Life"))
       .closest(".card").click();
-    await wait(250);
+    await settle();
 
     btn(d, /^Open$/i).click();
-    await wait(200);
+    await settle();
     btn(d, /Off the clock/i).click();
-    await wait(250);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.projects.find((p) => p.id === "p2").offClock).toBe(true);
@@ -1672,7 +1740,7 @@ describe("off the clock, in the real UI", () => {
       .toEqual(seed(false).sessions[1].segments);
 
     btn(d, /Paid work/i).click();
-    await wait(250);
+    await settle();
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1"))
       .projects.find((p) => p.id === "p2").offClock).toBe(false);
   }, 25_000);
@@ -1701,7 +1769,7 @@ describe("off-clock projects speak a different language", () => {
     const d = dom.window.document;
     await toProjects(d, offClock ? "Life" : "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return { dom, d };
   };
 
@@ -1749,7 +1817,7 @@ describe("off-clock projects speak a different language", () => {
   it("offers a choice rather than two full-width buttons for how it counts", async () => {
     const { d } = await open(true);
     btn(d, /^Open$/i).click();
-    await wait(200);
+    await settle();
     const seg = [...d.querySelectorAll(".seg-btn")]
       .filter((b) => /Paid work|Off the clock/.test(b.textContent));
     expect(seg).toHaveLength(2);
@@ -1760,7 +1828,7 @@ describe("off-clock projects speak a different language", () => {
   it("offers only a time goal, since nothing here can earn", async () => {
     const { d } = await open(true);
     btn(d, /^Open$/i).click();
-    await wait(200);
+    await settle();
     const selects = [...d.querySelectorAll("select")];
     expect(selects.some((s) => [...s.options].some((o) => /Money earned/.test(o.textContent))))
       .toBe(false);
@@ -1812,9 +1880,9 @@ describe("Work and Life as separate tabs", () => {
     const { document: d } = (await boot(seed)).window;
     await toProjects(d, "Life");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     btn(d, /All projects/i).click();
-    await wait(250);
+    await settle();
     // back on Life, not thrown to Work
     expect([...d.querySelectorAll(".card-name")].map((n) => n.textContent)).toEqual(["Sleep"]);
   }, 20_000);
@@ -1825,12 +1893,12 @@ describe("Work and Life as separate tabs", () => {
     const d = dom.window.document;
     await toProjects(d, "Life");
     btn(d, /New area/i).click();
-    await wait(150);
+    await settle();
     expect(d.querySelectorAll("input[type=number]")).toHaveLength(0);
 
     setValue(dom.window, d.querySelector(".panel input"), "Reading");
     btn(d, /Add area/i).click();
-    await wait(250);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     const added = saved.projects.find((p) => p.name === "Reading");
@@ -1875,17 +1943,17 @@ describe("objectives", () => {
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return { dom, d };
   };
 
   it("adds one and keeps it after a reload", async () => {
     const { dom, d } = await openAcme([]);
     btn(d, /New objective/i).click();
-    await wait(150);
+    await settle();
     setValue(dom.window, d.querySelector(".obj-form input"), "Finish the report");
     btn(d, /^Add$/).click();
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".obj-text").textContent).toBe("Finish the report");
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
@@ -1914,7 +1982,7 @@ describe("objectives", () => {
   it("ticks one off and records when", async () => {
     const { dom, d } = await openAcme([objective("o1", "p1", "Ship it")]);
     d.querySelector(".obj-check input").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".obj").className).toMatch(/done/);
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.objectives[0].done).toBe(true);
@@ -1924,14 +1992,14 @@ describe("objectives", () => {
   it("picks one for today and shows it on the Overview", async () => {
     const { dom, d } = await openAcme([objective("o1", "p1", "Ship it")]);
     btn(d, /^today$/).click();
-    await wait(250);
+    await settle();
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0].focusedOn)
       .toBe(todayKey());
 
     btn(d, /All projects/i).click();
-    await wait(200);
+    await settle();
     [...d.querySelectorAll(".tabs [role=tab]")].find((t) => t.textContent === "Overview").click();
-    await wait(250);
+    await settle();
 
     const heads = [...d.querySelectorAll(".sec-head")].map((h) => h.textContent);
     expect(heads.some((t) => /Today/.test(t))).toBe(true);
@@ -1946,7 +2014,7 @@ describe("objectives", () => {
       objective("o3", "p1", "Not today"),
     ]));
     const d = dom.window.document;
-    await wait(150);
+    await settle();
     expect([...d.querySelectorAll(".obj-text")].map((n) => n.textContent))
       .toEqual(["Ship it", "Bed by midnight"]);
   }, 20_000);
@@ -1957,10 +2025,10 @@ describe("objectives", () => {
       objective("o2", "p1", "And this", { focusedOn: todayKey() }),
     ]));
     const d = dom.window.document;
-    await wait(150);
+    await settle();
     expect(d.querySelectorAll(".obj")).toHaveLength(2);
     d.querySelector(".obj-check input").click();
-    await wait(250);
+    await settle();
     expect([...d.querySelectorAll(".obj-text")].map((n) => n.textContent)).toEqual(["And this"]);
   }, 20_000);
 
@@ -1969,7 +2037,7 @@ describe("objectives", () => {
     const d = dom.window.document;
     await toProjects(d, "Life");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     const text = d.querySelector(".mtr").textContent;
     expect(text).toMatch(/To-do/);
     expect(text).not.toMatch(/Objectives/);
@@ -1981,11 +2049,11 @@ describe("objectives", () => {
     ]);
     const editTask = [...d.querySelectorAll(".trow .linkish")].find((b) => /edit/.test(b.textContent));
     editTask.click();
-    await wait(200);
+    await settle();
     btn(d, /^Delete$/).click();
-    await wait(200);
+    await settle();
     btn(d, /Yes, delete it/i).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.objectives[0].text).toBe("Ship it");
@@ -2033,9 +2101,9 @@ describe("adding time you didn't track", () => {
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
 
@@ -2048,12 +2116,12 @@ describe("adding time you didn't track", () => {
   it("records a block that the meter never watched", async () => {
     const { dom, d } = await openForm();
     setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR);
-    await wait(200);
+    await settle();
     expect(d.querySelector(".preview-now").textContent).toMatch(/3h 00m/);
     expect(d.querySelector(".preview-now").textContent).toMatch(/300\.00/);
 
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.sessions).toHaveLength(1);
@@ -2065,9 +2133,9 @@ describe("adding time you didn't track", () => {
     // A block you typed is different evidence from one the clock watched.
     const { dom, d } = await openForm();
     setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR);
-    await wait(200);
+    await settle();
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
     expect([...d.querySelectorAll(".edited")].map((e) => e.textContent)).toContain("Added");
   }, 25_000);
 
@@ -2080,17 +2148,17 @@ describe("adding time you didn't track", () => {
     }]));
     const d = dom.window.document;
     btn(d, /This tab only/i).click();
-    await wait(200);
+    await settle();
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     // a window well clear of the running session
     setWindow(dom, d, dayStart(3) + 9 * HOUR, dayStart(3) + 10 * HOUR);
-    await wait(200);
+    await settle();
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.sessions.find((s) => s.id === "live").closedAt).toBeNull();
@@ -2102,24 +2170,24 @@ describe("adding time you didn't track", () => {
     // so it is named rather than silently accepted.
     const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
     setWindow(dom, d, dayStart(1) + 11 * HOUR, dayStart(1) + 13 * HOUR);
-    await wait(200);
+    await settle();
 
     expect(d.querySelector(".clash")).not.toBeNull();
     expect(d.querySelector(".clash").textContent).toMatch(/overlaps 1 record/);
     expect(btn(d, /^Add time$/).disabled).toBe(true);
 
     d.querySelector(".clash-ok input").click();
-    await wait(200);
+    await settle();
     expect(btn(d, /^Add time$/).disabled).toBe(false);
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions).toHaveLength(2);
   }, 25_000);
 
   it("does not complain about blocks that merely meet end to end", async () => {
     const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
     setWindow(dom, d, dayStart(1) + 12 * HOUR, dayStart(1) + 13 * HOUR);
-    await wait(200);
+    await settle();
     expect(d.querySelector(".clash")).toBeNull();
     expect(btn(d, /^Add time$/).disabled).toBe(false);
   }, 25_000);
@@ -2127,26 +2195,26 @@ describe("adding time you didn't track", () => {
   it("re-arms the warning when the window changes again", async () => {
     const { dom, d } = await openForm([block("old", dayStart(1) + 9 * HOUR, dayStart(1) + 12 * HOUR)]);
     setWindow(dom, d, dayStart(1) + 10 * HOUR, dayStart(1) + 11 * HOUR);
-    await wait(200);
+    await settle();
     d.querySelector(".clash-ok input").click();
-    await wait(150);
+    await settle();
     expect(btn(d, /^Add time$/).disabled).toBe(false);
 
     // moving it somewhere else should not inherit the previous confirmation
     setWindow(dom, d, dayStart(1) + 10 * HOUR, dayStart(1) + 11.5 * HOUR);
-    await wait(200);
+    await settle();
     expect(btn(d, /^Add time$/).disabled).toBe(true);
   }, 25_000);
 
   it("files it under a task and counts it toward that task's total", async () => {
     const { dom, d } = await openForm();
     setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 11 * HOUR);
-    await wait(200);
+    await settle();
     const taskSelect = d.querySelector(".prompt select");
     setValue(dom.window, taskSelect, "t1");
-    await wait(150);
+    await settle();
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
 
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0].taskId).toBe("t1");
     expect(d.querySelector(".trow-time").textContent).toMatch(/2h 00m/);
@@ -2155,14 +2223,14 @@ describe("adding time you didn't track", () => {
   it("can log idle time after the fact too", async () => {
     const { dom, d } = await openForm();
     setWindow(dom, d, dayStart(1) + 9 * HOUR, dayStart(1) + 10 * HOUR);
-    await wait(200);
+    await settle();
     const selects = [...d.querySelectorAll(".prompt select")];
     setValue(dom.window, selects[selects.length - 1], "idle");
-    await wait(200);
+    await settle();
     // idle earns nothing, so the preview drops the money
     expect(d.querySelector(".preview-now").textContent).not.toMatch(/\$/);
     btn(d, /^Add time$/).click();
-    await wait(300);
+    await settle();
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0].kind).toBe("idle");
   }, 25_000);
 });
@@ -2197,7 +2265,7 @@ describe("linking an objective to a task", () => {
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return { dom, d };
   };
 
@@ -2208,12 +2276,12 @@ describe("linking an objective to a task", () => {
     expect(d.querySelector(".obj-meta").textContent).toMatch(/not timed/);
 
     btn(d, /^edit$/).click();
-    await wait(200);
+    await settle();
     const select = [...d.querySelectorAll(".obj-form select")][0];
     setValue(dom.window, select, "t1");
-    await wait(150);
+    await settle();
     btn(d, /^Save$/).click();
-    await wait(250);
+    await settle();
 
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0].taskId)
       .toBe("t1");
@@ -2224,10 +2292,10 @@ describe("linking an objective to a task", () => {
   it("adds an estimate later, turning a plain item into a measured one", async () => {
     const { dom, d } = await open([task], [objective({ taskId: "t1" })]);
     btn(d, /^edit$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, d.querySelector('.obj-form input[type="number"]'), "1");
     btn(d, /^Save$/).click();
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".obj-meta").textContent).toMatch(/est 1h 00m/);
     expect(d.querySelector(".obj-verdict").textContent).toMatch(/200% of estimate/);
@@ -2236,10 +2304,10 @@ describe("linking an objective to a task", () => {
   it("unlinks again without touching the recorded hours", async () => {
     const { dom, d } = await open([task], [objective({ taskId: "t1" })]);
     btn(d, /^edit$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, [...d.querySelectorAll(".obj-form select")][0], "");
     btn(d, /^Save$/).click();
-    await wait(250);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.objectives[0].taskId).toBeNull();
@@ -2249,10 +2317,10 @@ describe("linking an objective to a task", () => {
   it("renames it without losing the link or the estimate", async () => {
     const { dom, d } = await open([task], [objective({ taskId: "t1", estimateMs: HOUR })]);
     btn(d, /^edit$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, d.querySelector('.obj-form input[type="text"], .obj-form .inp'), "Ship it properly");
     btn(d, /^Save$/).click();
-    await wait(250);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1")).objectives[0];
     expect(saved.text).toBe("Ship it properly");
@@ -2264,7 +2332,7 @@ describe("linking an objective to a task", () => {
     // Rather than hiding the field, so it is somewhere you have already looked.
     const { d } = await open([], [objective()]);
     btn(d, /^edit$/).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".obj-form").textContent).toMatch(/No tasks on this project yet/);
   }, 25_000);
 });
@@ -2298,7 +2366,7 @@ describe("pacing a target", () => {
 
   const overview = async (seed) => {
     const dom = await bootDash(seed);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
 
@@ -2370,9 +2438,9 @@ describe("pacing a target", () => {
     const before = d.querySelector(".trg .goal-pace").textContent;
 
     btn(d, /^Month$/).click();
-    await wait(200);
+    await settle();
     d.querySelector(".step").click(); // step back a month
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".trg")).not.toBeNull();
     expect(d.querySelector(".trg .goal-pace").textContent).toBe(before);
@@ -2391,7 +2459,7 @@ describe("pacing a target", () => {
     // and the project's own goal bar must agree, which is where it did not
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".goal .goal-val").textContent).toBe("30m / 10h 00m");
   }, 30_000);
 
@@ -2407,7 +2475,7 @@ describe("pacing a target", () => {
 
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     expect(d.querySelector(".goal .goal-val").textContent).toBe(fromDash.value);
     expect(d.querySelector(".goal .goal-pace").textContent).toBe(fromDash.pace);
@@ -2421,7 +2489,7 @@ describe("pacing a target", () => {
     });
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".goal")).not.toBeNull();
     expect(d.querySelector(".goal .goal-pace")).toBeNull();
   }, 30_000);
@@ -2444,7 +2512,7 @@ describe("the activity calendar", () => {
   });
   const open = async (seed) => {
     const dom = await bootDash(seed);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
   const cell = (d, at) => d.querySelector(`.hm-cell[data-at="${at}"]`);
@@ -2519,18 +2587,18 @@ describe("the activity calendar", () => {
     expect(read()).toMatch(/1 active day/);
 
     cell(d, dayStart(3)).dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
-    await wait(150);
+    await settle();
     expect(read()).toMatch(/4h 00m/);
     expect(read()).toMatch(new RegExp(String(new Date(dayStart(3)).getDate())));
 
     // an empty day says so, rather than reading as nothing at all
     cell(d, dayStart(4)).dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
-    await wait(150);
+    await settle();
     expect(read()).toMatch(/no billed/);
 
     // and the summary comes back when the pointer leaves
     d.querySelector(".hm-grid").dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true }));
-    await wait(150);
+    await settle();
   }, 25_000);
 
   it("keeps work and off-clock time on separate calendars", async () => {
@@ -2548,7 +2616,7 @@ describe("the activity calendar", () => {
     expect(d.querySelector(".hm-top").textContent).toMatch(/Billed per day/);
 
     register(d, "Off the clock").click();
-    await wait(250);
+    await settle();
     expect(cell(d, dayStart(3)).dataset.level).not.toBe("0");
     expect(cell(d, dayStart(5)).dataset.level).toBe("0");
     expect(d.querySelector(".hm-top").textContent).toMatch(/Tracked per day/);
@@ -2577,9 +2645,9 @@ describe("the activity calendar", () => {
     const { d } = await open({ projects: [project()], sessions: spread() });
     const before = d.querySelector(".hm-top").textContent;
     btn(d, /^Day$/).click();
-    await wait(200);
+    await settle();
     d.querySelector(".step").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".hm-top").textContent).toBe(before);
     expect(cell(d, dayStart(5)).dataset.level).toBe("4");
   }, 25_000);
@@ -2610,7 +2678,7 @@ describe("companies, and projects that have stopped", () => {
   });
   const open = async (seed) => {
     const dom = await bootDash(seed, ALL_TIME);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
   const crows = (d) => [...d.querySelectorAll(".crow")].map((r) => r.textContent);
@@ -2722,7 +2790,7 @@ describe("companies, and projects that have stopped", () => {
     expect(d.querySelector(".done-head").textContent).toMatch(/Done · 1/);
 
     d.querySelector(".done-head").click();
-    await wait(200);
+    await settle();
     expect([...d.querySelectorAll(".card")].some((c) => /Finished/.test(c.textContent))).toBe(true);
   }, 30_000);
 
@@ -2733,16 +2801,16 @@ describe("companies, and projects that have stopped", () => {
     });
     await toProjects(d, "Work");
     d.querySelector(".done-head").click();
-    await wait(200);
+    await settle();
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     expect(btn(d, /Start the meter/i)).toBeUndefined();
     expect(btn(d, /add time/i)).toBeUndefined();
     expect(d.querySelector(".face").textContent).toMatch(/take new time/);
 
     btn(d, /Reopen this project/i).click();
-    await wait(300);
+    await settle();
     expect(btn(d, /Start the meter/i)).toBeDefined();
     expect(btn(d, /add time/i)).toBeDefined();
   }, 30_000);
@@ -2757,9 +2825,9 @@ describe("companies, and projects that have stopped", () => {
     });
     await toProjects(d, "Work");
     d.querySelector(".done-head").click();
-    await wait(200);
+    await settle();
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     const tiles = [...d.querySelectorAll(".tiles.closing .tile")].map((t) => t.textContent);
     expect(tiles[0]).toMatch(/\$300\.00/);      // earned
@@ -2814,7 +2882,7 @@ describe("money the clock never measured", () => {
   });
   const open = async (seed) => {
     const dom = await bootDash(seed, ALL_TIME);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
 
@@ -2899,7 +2967,7 @@ describe("money the clock never measured", () => {
     });
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     const rows = [...d.querySelectorAll(".ern")].map((r) => r.textContent);
     expect(rows[0]).toMatch(/6 × \$500\.00/);       // the fact, not just the total
@@ -2914,14 +2982,14 @@ describe("money the clock never measured", () => {
     const { dom, d } = await open({ projects: [project("a")], sessions: [block("s1", "a", 2)] });
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
 
     btn(d, /Add earnings/i).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, d.querySelector('.ern-form input[type="number"]'), "250");
-    await wait(150);
+    await settle();
     btn(d, /^Add$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings).toHaveLength(1);
@@ -2937,7 +3005,7 @@ describe("money the clock never measured", () => {
     });
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     await startMeter(dom, { task: "Batch 1" });
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
@@ -2970,11 +3038,11 @@ describe("money the clock never measured", () => {
 
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     btn(d, /Select all/i).click();
-    await wait(200);
+    await settle();
     btn(d, /^Mark paid$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.sessions.every((s) => s.status === undefined)).toBe(true);
@@ -3045,12 +3113,12 @@ describe("a year on the overview", () => {
   });
   const open = async (seed) => {
     const dom = await bootDash(seed);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
   const toYear = async (d) => {
     [...d.querySelectorAll(".dash-head .seg")].find((b) => b.textContent === "Year").click();
-    await wait(250);
+    await settle();
   };
 
   it("offers a year beside the day, week and month", async () => {
@@ -3097,7 +3165,7 @@ describe("a year on the overview", () => {
     expect(d.querySelector(".dash-sub").textContent).toMatch(new RegExp(`Jan – Dec ${thisYear}`));
 
     d.querySelector(".stepper .step").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".grand .eyebrow").textContent).toMatch(/Last year/);
     expect(d.querySelector(".grand-amt").textContent).toBe("$200.00");
   }, 30_000);
@@ -3120,7 +3188,7 @@ describe("the company panel showing up at all", () => {
   });
   const open = async (seed) => {
     const dom = await bootDash(seed, ALL_TIME);
-    await wait(150);
+    await settle();
     return dom.window.document;
   };
 
@@ -3168,14 +3236,14 @@ describe("reaching further back on the calendar", () => {
 
   it("offers no stepper when everything fits in one calendar", async () => {
     const dom = await bootDash(seedWith([1, 2, 3]));
-    await wait(150);
+    await settle();
     expect(dom.window.document.querySelector(".hm-head .step")).toBeNull();
   }, 25_000);
 
   it("steps back a whole calendar at a time and stops at the oldest record", async () => {
     const dom = await bootDash(seedWith([1, 400]));
     const d = dom.window.document;
-    await wait(150);
+    await settle();
     const steps = () => [...d.querySelectorAll(".hm-head .step")];
     expect(steps()).toHaveLength(2);
     expect(steps()[1].disabled).toBe(true);           // nothing later than now
@@ -3184,7 +3252,7 @@ describe("reaching further back on the calendar", () => {
     expect(d.querySelector(".hm-read").textContent).toMatch(/1 active day/);
 
     steps()[0].click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".hm-span").textContent).not.toBe(firstSpan);
     expect(d.querySelector(".hm-read").textContent).toMatch(/1 active day/);
     expect(steps()[0].disabled).toBe(true);           // nothing older than that
@@ -3221,12 +3289,12 @@ describe("all time on the overview", () => {
   };
   const open = async (seed) => {
     const dom = await bootDash(seed);
-    await wait(150);
+    await settle();
     return { dom, d: dom.window.document };
   };
   const toAll = async (d) => {
     [...d.querySelectorAll(".dash-head .seg")].find((b) => b.textContent === "All").click();
-    await wait(300);
+    await settle();
   };
 
   it("offers All as a fifth period, after the ones that repeat", async () => {
@@ -3304,7 +3372,7 @@ describe("nudging the user to keep a copy they hold", () => {
   });
   const open = async (seed) => {
     const dom = await boot(seed);
-    await wait(200);
+    await settle();
     return { dom, d: dom.window.document };
   };
   const banner = (d) => [...d.querySelectorAll(".banner")]
@@ -3352,7 +3420,7 @@ describe("nudging the user to keep a copy they hold", () => {
     dom.window.URL.createObjectURL = (blob) => { handed = blob; return "blob:x"; };
     dom.window.URL.revokeObjectURL = () => {};
     btn(d, /Export backup/i).click();
-    await wait(300);
+    await settle();
     expect(handed).not.toBeNull();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
@@ -3394,13 +3462,13 @@ describe("finding one project among forty", () => {
   const find = (d) => d.querySelector(".find");
   const open = async (seed) => {
     const dom = await boot(seed);
-    await wait(200);
+    await settle();
     await toProjects(dom.window.document, "Work");
     return { dom, d: dom.window.document };
   };
   const type = async (dom, d, text) => {
     setValue(dom.window, find(d), text);
-    await wait(250);
+    await settle();
   };
 
   it("offers no box on a short list, where nothing can get lost", async () => {
@@ -3463,7 +3531,7 @@ describe("finding one project among forty", () => {
     await type(dom, d, "songbird");
     expect(names(d)).toHaveLength(1);
     btn(d, /^Clear$/).click();
-    await wait(250);
+    await settle();
     expect(names(d).length).toBeGreaterThan(1);
   }, 30_000);
 });
@@ -3500,7 +3568,7 @@ describe("handing the numbers to a spreadsheet", () => {
     dom.window.URL.createObjectURL = () => "blob:x";
     dom.window.URL.revokeObjectURL = () => {};
     btn(d, label).click();
-    await wait(300);
+    await settle();
     dom.window.Blob = RealBlob;
     return written[0];
   };
@@ -3508,7 +3576,7 @@ describe("handing the numbers to a spreadsheet", () => {
   it("writes a CSV a spreadsheet can open, with both kinds of income", async () => {
     const dom = await boot(seed);
     const d = dom.window.document;
-    await wait(200);
+    await settle();
     await toProjects(d, "Work");
     const csv = await grab(dom, d, /Export CSV/i);
 
@@ -3528,7 +3596,7 @@ describe("handing the numbers to a spreadsheet", () => {
     // back. Clearing the nudge would leave the user believing otherwise.
     const dom = await boot({ ...seed, lastBackupAt: undefined });
     const d = dom.window.document;
-    await wait(200);
+    await settle();
     await toProjects(d, "Work");
     await grab(dom, d, /Export CSV/i);
 
@@ -3541,7 +3609,7 @@ describe("handing the numbers to a spreadsheet", () => {
   it("offers no CSV on the Life tab, where there is no money", async () => {
     const dom = await boot(seed);
     const d = dom.window.document;
-    await wait(200);
+    await settle();
     await toProjects(d, "Life");
     expect(btn(d, /Export CSV/i)).toBeUndefined();
   }, 25_000);
@@ -3582,7 +3650,7 @@ describe("telling the user when they work", () => {
   const read = (d) => panel(d)?.querySelector(".rhy-read")?.textContent.replace(/\s+/g, " ") ?? "";
   const open = async (s) => {
     const dom = await bootDash(s);
-    await wait(250);
+    await settle();
     return dom.window.document;
   };
 
@@ -3659,10 +3727,10 @@ describe("which work was worth the time, and how much rides on one project", () 
   const named = (d) => [...d.querySelectorAll(".prow-name")].map((e) => e.textContent);
   const open = async () => {
     const dom = await bootDash(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     [...d.querySelectorAll(".dash-head .segmented .seg")].find((b) => b.textContent === "All").click();
-    await wait(300);
+    await settle();
     return d;
   };
 
@@ -3675,7 +3743,7 @@ describe("which work was worth the time, and how much rides on one project", () 
   it("reorders by what an hour actually paid, and says the figure", async () => {
     const d = await open();
     sorters(d).find((b) => b.textContent === "An hour").click();
-    await wait(300);
+    await settle();
     expect(named(d)[0]).toBe("good");
     const row = [...d.querySelectorAll(".prow")].find((r) => /good/.test(r.textContent));
     expect(row.textContent).toMatch(/\$90\.00\/hr/);
@@ -3685,11 +3753,11 @@ describe("which work was worth the time, and how much rides on one project", () 
     // $300/hr across a single hour would sit at the top, where the eye goes.
     const d = await open();
     sorters(d).find((b) => b.textContent === "An hour").click();
-    await wait(300);
+    await settle();
     expect(named(d)).not.toContain("blip");
     // it is still there when ordered by time — only the RANKING excludes it
     sorters(d).find((b) => b.textContent === "Time").click();
-    await wait(300);
+    await settle();
     expect(named(d)).toContain("blip");
   }, 30_000);
 
@@ -3707,13 +3775,13 @@ describe("which work was worth the time, and how much rides on one project", () 
         work("s3", "c", 10, 250), work("s4", "d", 10, 250),
       ],
     });
-    await wait(250);
+    await settle();
     expect(dom.window.document.querySelector(".concentration")).toBeNull();
   }, 30_000);
 
   it("offers no ordering choice when there is nothing to reorder", async () => {
     const dom = await bootDash({ projects: [project("a")], sessions: [work("s1", "a", 10, 100)] });
-    await wait(250);
+    await settle();
     expect(sorters(dom.window.document)).toHaveLength(0);
   }, 25_000);
 });
@@ -3730,21 +3798,21 @@ describe("seeing what is running from anywhere", () => {
 
   const startAndLeave = async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     await startMeter(dom);
     // Back out to the list, then over to the Overview.
     btn(d, /All projects/i).click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
 
   it("shows nothing at all while nothing is running", async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     // Furniture that says "not tracking" earns nothing, and this sits above
     // every screen in the app.
     expect(bar(dom.window.document)).toBeNull();
@@ -3756,7 +3824,7 @@ describe("seeing what is running from anywhere", () => {
     expect(bar(d).textContent).toMatch(/Acme/);
 
     [...d.querySelectorAll("[role=tab]")].find((t) => t.textContent === "Overview").click();
-    await wait(200);
+    await settle();
     expect(bar(d)).not.toBeNull();
   }, 30_000);
 
@@ -3769,7 +3837,7 @@ describe("seeing what is running from anywhere", () => {
   it("stops the meter from wherever you are", async () => {
     const { dom, d } = await startAndLeave();
     bar(d).querySelector(".runbar-stop").click();
-    await wait(350);
+    await settle();
     expect(bar(d)).toBeNull();
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.sessions[0].closedAt).not.toBeNull();
@@ -3778,20 +3846,20 @@ describe("seeing what is running from anywhere", () => {
   it("takes you to the project it belongs to", async () => {
     const { d } = await startAndLeave();
     bar(d).querySelector(".runbar-what").click();
-    await wait(250);
+    await settle();
     expect(btn(d, /All projects/i)).toBeTruthy();
   }, 30_000);
 
   it("quotes no money on idle time, which is not earnings", async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     await startMeter(dom, { idle: true });
     btn(d, /All projects/i).click();
-    await wait(200);
+    await settle();
     expect(bar(d).querySelector(".runbar-amt")).toBeNull();
     expect(bar(d).textContent).toMatch(/idle/i);
   }, 30_000);
@@ -3809,22 +3877,22 @@ describe("the span the Overview opens on", () => {
 
   it("opens on the week when nothing has been chosen", async () => {
     const dom = await bootDash(seed);
-    await wait(250);
+    await settle();
     expect(chosen(dom.window.document)).toBe("Week");
   }, 25_000);
 
   it("remembers the one you picked", async () => {
     const dom = await bootDash(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     btn(d, /^Month$/).click();
-    await wait(200);
+    await settle();
     expect(dom.window.localStorage.getItem("meter:period")).toBe("month");
   }, 25_000);
 
   it("opens on it next time", async () => {
     const dom = await bootDash(seed, { "meter:period": "year" });
-    await wait(250);
+    await settle();
     expect(chosen(dom.window.document)).toBe("Year");
   }, 25_000);
 
@@ -3832,13 +3900,13 @@ describe("the span the Overview opens on", () => {
     // A span from a future version, or a hand-edited one, must not leave the
     // Overview showing nothing at all.
     const dom = await bootDash(seed, { "meter:period": "fortnight" });
-    await wait(250);
+    await settle();
     expect(chosen(dom.window.document)).toBe("Week");
   }, 25_000);
 
   it("keeps it out of the ledger, where it would have to be merged", async () => {
     const dom = await bootDash(seed, { "meter:period": "month" });
-    await wait(250);
+    await settle();
     const saved = dom.window.localStorage.getItem("meter:v1");
     expect(saved === null || !saved.includes("\"period\"")).toBe(true);
   }, 25_000);
@@ -3859,14 +3927,14 @@ describe("choosing a theme", () => {
 
   it("follows the system until told otherwise", async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     // No attribute at all, which is what lets the media query decide.
     expect(root(dom.window.document).hasAttribute("data-theme")).toBe(false);
   }, 25_000);
 
   it("names each icon for anyone who cannot see it", async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     for (const label of ["Light", "Dark", "Match system"]) {
       expect(themeBtn(d, label), label).not.toBeNull();
@@ -3877,17 +3945,17 @@ describe("choosing a theme", () => {
     // The case that stranded someone: the OS said dark and the app had no way
     // back, because the palette shipped before the switch did.
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     themeBtn(d, "Light").click();
-    await wait(250);
+    await settle();
     expect(root(d).getAttribute("data-theme")).toBe("light");
     expect(dom.window.localStorage.getItem("meter:theme")).toBe("light");
   }, 25_000);
 
   it("remembers the choice, and is not in the synced ledger", async () => {
     const dom = await boot(seed, { "meter:theme": "dark" });
-    await wait(250);
+    await settle();
     expect(root(dom.window.document).getAttribute("data-theme")).toBe("dark");
     const saved = dom.window.localStorage.getItem("meter:v1");
     expect(saved === null || !JSON.stringify(JSON.parse(saved)).includes("theme")).toBe(true);
@@ -3895,10 +3963,10 @@ describe("choosing a theme", () => {
 
   it("goes back to following the system", async () => {
     const dom = await boot(seed, { "meter:theme": "dark" });
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     themeBtn(d, "Match system").click();
-    await wait(250);
+    await settle();
     expect(root(d).hasAttribute("data-theme")).toBe(false);
     expect(dom.window.localStorage.getItem("meter:theme")).toBeNull();
   }, 25_000);
@@ -3918,23 +3986,23 @@ describe("pricing a task when you create it", () => {
 
   const startWith = async (seed, label, pay) => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     btn(d, /Start the meter/i).click();
-    await wait(200);
+    await settle();
     btn(d, /New task/i).click();
-    await wait(150);
+    await settle();
     setValue(dom.window, field(d, "Name it"), label);
-    await wait(120);
+    await settle();
     if (pay !== null) {
       setValue(dom.window, field(d, "^Rate$|Per accepted item"), pay);
-      await wait(120);
+      await settle();
     }
     btn(d, /Start the meter/i).click();
-    await wait(300);
+    await settle();
     return { dom, d };
   };
 
@@ -3976,18 +4044,18 @@ describe("what a piece-rate session produced", () => {
   };
   const openProject = async () => {
     const dom = await boot(piece);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   const settleRows = (d) => [...d.querySelectorAll(".settle-row")];
 
   it("shows the price per task on the card, not an hourly zero", async () => {
     const dom = await boot(piece);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     expect(d.querySelector(".card-meta").textContent).toMatch(/\$1,500\.00 per task/);
@@ -4026,7 +4094,7 @@ describe("what a piece-rate session produced", () => {
     const { dom, d } = await openProject();
     await startMeter(dom, { existing: "task" });
     btn(d, /Stop and save/i).click();
-    await wait(400);
+    await settle();
     expect(d.querySelector(".settle-row")).not.toBeNull();
     expect(d.querySelector(".wrap").textContent).toMatch(/What did this earn/i);
   }, 30_000);
@@ -4037,9 +4105,9 @@ describe("what a piece-rate session produced", () => {
     const { dom, d } = await openProject();
     await startMeter(dom, { existing: "task" });
     btn(d, /Stop and save/i).click();
-    await wait(400);
+    await settle();
     btn(d, /Record it/i).click();
-    await wait(400);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings).toHaveLength(1);
@@ -4054,14 +4122,14 @@ describe("what a piece-rate session produced", () => {
     const { dom, d } = await openProject();
     await startMeter(dom, { existing: "task" });
     btn(d, /Stop and save/i).click();
-    await wait(400);
+    await settle();
     btn(d, /Add another/i).click();
-    await wait(200);
+    await settle();
     expect(settleRows(d)).toHaveLength(2);
     setValue(dom.window, settleRows(d)[1].querySelector("select"), "t2");
-    await wait(200);
+    await settle();
     btn(d, /Record it/i).click();
-    await wait(400);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings.map((e) => e.cents).sort((a, b) => a - b)).toEqual([30_000, 150_000]);
@@ -4072,17 +4140,17 @@ describe("what a piece-rate session produced", () => {
 describe("creating a project that is paid per task", () => {
   const open = async () => {
     const dom = await boot({ projects: [], sessions: [] });
-    await wait(200);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     btn(d, /New project/i).click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   const pick = async (d, label) => {
     [...d.querySelectorAll('[aria-label="How this project pays"] .seg-btn')]
       .find((b) => b.textContent.trim() === label).click();
-    await wait(150);
+    await settle();
   };
   const field = (d, label) => [...d.querySelectorAll(".field")]
     .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
@@ -4102,7 +4170,7 @@ describe("creating a project that is paid per task", () => {
     await pick(d, "Per task");
     setValue(dom.window, field(d, "Name"), "Batch work");
     btn(d, /^Add project$/i).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".err").textContent).toMatch(/one task pay/i);
   }, 25_000);
 
@@ -4111,9 +4179,9 @@ describe("creating a project that is paid per task", () => {
     await pick(d, "Per task");
     setValue(dom.window, field(d, "Name"), "Batch work");
     setValue(dom.window, field(d, "Per accepted task"), "250");
-    await wait(100);
+    await settle();
     btn(d, /^Add project$/i).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.projects).toHaveLength(1);
@@ -4129,9 +4197,9 @@ describe("creating a project that is paid per task", () => {
     const { dom, d } = await open();
     setValue(dom.window, field(d, "Name"), "Hourly work");
     setValue(dom.window, field(d, "Hourly rate"), "20.5");
-    await wait(100);
+    await settle();
     btn(d, /^Add project$/i).click();
-    await wait(300);
+    await settle();
 
     const p = JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0];
     expect(p.currentRate).toBe(20.5);
@@ -4149,25 +4217,25 @@ describe("creating a project that is paid per task", () => {
       sessions: [],
     });
     const d = dom.window.document;
-    await wait(200);
+    await settle();
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     btn(d, /Add earnings/i).click();
-    await wait(200);
+    await settle();
 
     const units = [...d.querySelectorAll(".ern-form input")]
       .find((i) => i.step === "1");
     setValue(dom.window, units, "6");
-    await wait(200);
+    await settle();
     const amount = d.querySelector('.ern-form input[type="number"]');
     expect(amount.value).toBe("1500"); // 6 x $250
 
     // overruling it stands: a capped or part-paid batch is exactly that case
     setValue(dom.window, amount, "1200");
-    await wait(150);
+    await settle();
     btn(d, /^Add$/).click();
-    await wait(300);
+    await settle();
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.earnings[0]).toMatchObject({ cents: 120_000, units: 6 });
   }, 30_000);
@@ -4183,7 +4251,7 @@ describe("the sync panel", () => {
   };
   const open = async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     return { dom, d };
@@ -4209,9 +4277,9 @@ describe("the sync panel", () => {
     // to sync could only arrive by syncing.
     const { dom, d } = await open();
     setValue(dom.window, panel(d).querySelector(".inp"), "abc.apps.googleusercontent.com");
-    await wait(150);
+    await settle();
     btn(d, /^Save$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(JSON.stringify(saved)).not.toContain("googleusercontent");
@@ -4222,13 +4290,13 @@ describe("the sync panel", () => {
   it("offers to sign in once it is configured, and can forget the ID again", async () => {
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
-    await wait(250);
+    await settle();
     await toProjects(d, "Work");
     expect(btn(d, /Sign in with Google/i)).toBeTruthy();
     expect(panel(d).textContent).toMatch(/merges rather than replaces/i);
 
     btn(d, /Change client ID/i).click();
-    await wait(200);
+    await settle();
     expect(dom.window.localStorage.getItem("meter:google-client")).toBeNull();
     expect(panel(d).textContent).toMatch(/client ID/i);
   }, 25_000);
@@ -4238,7 +4306,7 @@ describe("the sync panel", () => {
     // and changing the client ID are each done once; syncing is done daily.
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
-    await wait(250);
+    await settle();
     await toProjects(d, "Work");
     expect(panel(d).querySelectorAll(".btn")).toHaveLength(1);
     expect(panel(d).querySelector(".btn").textContent).toMatch(/Sign in with Google/i);
@@ -4253,10 +4321,10 @@ describe("the sync panel", () => {
     // where the timeout can be made short.
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
-    await wait(250);
+    await settle();
     await toProjects(d, "Work");
     btn(d, /Sign in with Google/i).click();
-    await wait(400);
+    await settle();
     expect(panel(d).textContent).toMatch(/Syncing/i);
     expect(btn(d, /Sync now|Sign in with Google/i).disabled).toBe(true);
   }, 25_000);
@@ -4264,7 +4332,7 @@ describe("the sync panel", () => {
   it("stamps what a change touched, so two devices can be merged later", async () => {
     const { dom, d } = await open();
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     // No task: naming one adds it to the PROJECT, which is a real change to the
     // project and would be stamped correctly.
     await startMeter(dom);
@@ -4278,7 +4346,7 @@ describe("the sync panel", () => {
   it("shows no sync panel on the Life tab, which has no ledger of its own", async () => {
     const dom = await boot(seed);
     const d = dom.window.document;
-    await wait(250);
+    await settle();
     await toProjects(d, "Life");
     expect(panel(d)).toBeUndefined();
   }, 25_000);
@@ -4307,11 +4375,11 @@ describe("settling a batch of tasks", () => {
   };
   const open = async () => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
@@ -4325,9 +4393,9 @@ describe("settling a batch of tasks", () => {
   it("submits every selected task at its own price, pending", async () => {
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
 
     const { earnings } = stored(dom);
     expect(earnings).toHaveLength(2);
@@ -4341,13 +4409,13 @@ describe("settling a batch of tasks", () => {
     // is in, the second that it was taken.
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
     expect(stored(dom).projects[0].tasks.map((t) => t.state))
@@ -4374,19 +4442,19 @@ describe("settling a batch of tasks", () => {
     // different pay periods. A day alone could never tell them apart.
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
 
     const when = d.querySelector(".selbar-when input");
     expect(when.type).toBe("datetime-local");
     const at = yesterdayAt(1, 30);
     setValue(dom.window, when, stamp(at));
-    await wait(100);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).projects[0].tasks.map((t) => t.stateAt)).toEqual([at, at]);
   }, 30_000);
@@ -4394,22 +4462,22 @@ describe("settling a batch of tasks", () => {
   it("lets the time of an answer be corrected afterwards, to the minute", async () => {
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
 
     const row = taskRows(d).find((r) => r.textContent.includes("1234"));
     [...row.querySelectorAll("button")].find((b) => b.textContent === "edit").click();
-    await wait(200);
+    await settle();
     const [, back] = d.querySelectorAll('.prompt input[type="datetime-local"]');
     const late = yesterdayAt(23, 45);
     setValue(dom.window, back, stamp(late));
     btn(d, /^Save$/i).click();
-    await wait(300);
+    await settle();
 
     const [t1, t2] = stored(dom).projects[0].tasks;
     expect(t1.stateAt).toBe(late);
@@ -4421,14 +4489,14 @@ describe("settling a batch of tasks", () => {
     // worth a fiftieth of it — that price was never quoted.
     const { dom, d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^One reward$/).click();
-    await wait(200);
+    await settle();
     const amount = [...d.querySelectorAll(".panel input[type=number]")].at(-1);
     setValue(dom.window, amount, "100");
-    await wait(150);
+    await settle();
     btn(d, /Record for 2 tasks/).click();
-    await wait(300);
+    await settle();
 
     const { earnings } = stored(dom);
     expect(earnings).toHaveLength(1);
@@ -4442,9 +4510,9 @@ describe("settling a batch of tasks", () => {
   it("names the task on the money, once it has one", async () => {
     const { d } = await open();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
     const meta = [...d.querySelectorAll(".ern-meta")].map((e) => e.textContent);
     expect(meta.some((t) => /1234/.test(t))).toBe(true);
     expect(meta.some((t) => /1235/.test(t))).toBe(true);
@@ -4475,13 +4543,13 @@ describe("a meter running on the other device", () => {
     // Offering to close it at its last tick would cut two hours off work that
     // is still being done on the other machine.
     const d = (await boot(elsewhere())).window.document;
-    await wait(200);
+    await settle();
     expect(recovery(d)).toBeNull();
   }, 20_000);
 
   it("shows in the running bar, and says it is not here", async () => {
     const d = (await boot(elsewhere())).window.document;
-    await wait(200);
+    await settle();
     const bar = d.querySelector(".runbar");
     expect(bar).not.toBeNull();
     expect(bar.textContent).toMatch(/Overnight/);
@@ -4491,10 +4559,10 @@ describe("a meter running on the other device", () => {
   it("stops from here, and the stop is a real edit that will travel", async () => {
     const dom = await boot(elsewhere());
     const d = dom.window.document;
-    await wait(200);
+    await settle();
     const before = Date.now();
     btn(d, /^Stop$/).click();
-    await wait(250);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1")).sessions[0];
     expect(saved.closedAt).not.toBeNull();
@@ -4512,7 +4580,7 @@ describe("a meter running on the other device", () => {
     seed.sessions[0].device = undefined;
     delete seed.sessions[0].device;
     const d = (await boot(seed)).window.document;
-    await wait(200);
+    await settle();
     expect(recovery(d)).not.toBeNull();
     expect(recovery(d).textContent).toMatch(/Overnight/);
     expect(now).toBeGreaterThan(0);
@@ -4530,13 +4598,13 @@ describe("settings wait for Save", () => {
   });
   const openSettings = async () => {
     const dom = await boot(seed());
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   const field = (d, label) => [...d.querySelectorAll(".field")]
@@ -4551,17 +4619,17 @@ describe("settings wait for Save", () => {
     const { dom, d } = await openSettings();
     setValue(dom.window, field(d, "Hourly rate"), "4");
     field(d, "Hourly rate").blur();
-    await wait(250);
+    await settle();
     expect(rateOf(dom)).toBe(80);
   }, 30_000);
 
   it("says so, and writes it when asked", async () => {
     const { dom, d } = await openSettings();
     setValue(dom.window, field(d, "Hourly rate"), "45");
-    await wait(150);
+    await settle();
     expect(d.querySelector(".savebar").textContent).toMatch(/Unsaved changes/);
     btn(d, /Save changes/).click();
-    await wait(250);
+    await settle();
     expect(rateOf(dom)).toBe(45);
     expect(d.querySelector(".savebar").textContent).toMatch(/^Saved$/);
   }, 30_000);
@@ -4569,9 +4637,9 @@ describe("settings wait for Save", () => {
   it("puts everything back when discarded, and writes nothing", async () => {
     const { dom, d } = await openSettings();
     setValue(dom.window, field(d, "Project name"), "Something else");
-    await wait(150);
+    await settle();
     btn(d, /^Discard$/).click();
-    await wait(200);
+    await settle();
     expect(field(d, "Project name").value).toBe("Gateway");
     expect(JSON.parse(dom.window.localStorage.getItem("meter:v1")).projects[0].name)
       .toBe("Gateway");
@@ -4587,23 +4655,23 @@ describe("a note on a task", () => {
       }],
       sessions: [],
     });
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
 
     btn(d, /Start the meter/i).click();
-    await wait(200);
+    await settle();
     const fields = [...d.querySelectorAll(".prompt .field")];
     const input = (label) => fields
       .find((f) => new RegExp(label, "i").test(f.querySelector(".eyebrow")?.textContent ?? ""))
       ?.querySelector("input, textarea");
     setValue(dom.window, input("Name it"), "1234");
     setValue(dom.window, input("^Note$"), "QA-88, rerun weekly");
-    await wait(120);
+    await settle();
     btn(d, /^Start the meter$/).click();
-    await wait(300);
+    await settle();
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     expect(saved.projects[0].tasks[0]).toMatchObject({ label: "1234", note: "QA-88, rerun weekly" });
@@ -4647,7 +4715,7 @@ describe("the Today tab", () => {
   };
   const open = async () => {
     const dom = await boot(seed());
-    await wait(300);
+    await settle();
     return { dom, d: dom.window.document };
   };
 
@@ -4662,7 +4730,7 @@ describe("the Today tab", () => {
   it("starts the meter on that exact project and task in one click", async () => {
     const { dom, d } = await open();
     d.querySelectorAll(".again")[0].click();
-    await wait(300);
+    await settle();
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
     const live = saved.sessions.find((s) => s.segments.some((g) => g.endedAt == null));
     expect(live).toMatchObject({ projectId: "a", taskId: "t1" });
@@ -4673,7 +4741,7 @@ describe("the Today tab", () => {
     // beside a running session is a row of one-click ways to end it.
     const { d } = await open();
     d.querySelectorAll(".again")[0].click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".again")).toBeNull();
     expect(d.querySelector(".runbar")).not.toBeNull();
   }, 20_000);
@@ -4696,7 +4764,7 @@ describe("the Today tab", () => {
     await toProjects(d, "Overview");
     [...d.querySelectorAll(".dash-head .segmented .seg")]
       .find((b) => b.textContent === "Day").click();
-    await wait(250);
+    await settle();
     const overview = d.querySelector(".grand-amt").textContent;
 
     // Past midnight the seeded session falls on yesterday and today really is
@@ -4711,7 +4779,7 @@ describe("the Today tab", () => {
   it("opens the session a row names", async () => {
     const { d } = await open();
     d.querySelector(".day .row").click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".face")).not.toBeNull();
     expect(d.querySelector(".row.focus")).not.toBeNull();
   }, 20_000);
@@ -4754,19 +4822,19 @@ describe("paid more per hour once accepted", () => {
 
   const open = async (state = seed()) => {
     const dom = await boot(state);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
   const submitAll = async (d) => {
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 2$/).click();
-    await wait(300);
+    await settle();
   };
 
   it("prices the reward by the hours worked, not once per task", async () => {
@@ -4791,9 +4859,9 @@ describe("paid more per hour once accepted", () => {
     await submitAll(d);
     expect(stored(dom).sessions.every((x) => x.status === "pending")).toBe(true);
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
     expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
   }, 30_000);
 
@@ -4808,9 +4876,9 @@ describe("paid more per hour once accepted", () => {
     const { dom, d } = await open();
     await submitAll(d);
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
     expect(stored(dom).projects[0].tasks.map((t) => t.state)).toEqual(["accepted", "accepted"]);
@@ -4823,9 +4891,9 @@ describe("paid more per hour once accepted", () => {
     const { dom, d } = await open();
     await submitAll(d);
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Rejected 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).earnings.every((e) => e.status === "cancelled")).toBe(true);
     expect(stored(dom).sessions.every((x) => x.status === "cancelled")).toBe(true);
@@ -4838,13 +4906,13 @@ describe("paid more per hour once accepted", () => {
     const { dom, d } = await open();
     await submitAll(d);
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Rejected 2$/).click();
-    await wait(300);
+    await settle();
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Accepted 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).earnings.every((e) => e.status === undefined)).toBe(true);
     expect(stored(dom).sessions.every((x) => x.status === undefined)).toBe(true);
@@ -4858,7 +4926,7 @@ describe("paid more per hour once accepted", () => {
     const { dom, d } = await open();
     await submitAll(d);
     btn(d, /Start the meter/i).click();
-    await wait(200);
+    await settle();
     const options = [...(d.querySelector(".prompt select")?.options ?? [])]
       .map((o) => o.textContent);
     expect(options).not.toContain("1234");
@@ -4871,9 +4939,9 @@ describe("paid more per hour once accepted", () => {
     await submitAll(d);
     const before = stored(dom).earnings.map((e) => [e.cents, e.status]);
     btn(d, /^Select all 2$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Reopen 2$/).click();
-    await wait(300);
+    await settle();
 
     expect(stored(dom).projects[0].tasks.every((t) => t.state === undefined)).toBe(true);
     expect(stored(dom).earnings.map((e) => [e.cents, e.status])).toEqual(before);
@@ -4887,16 +4955,16 @@ describe("paid more per hour once accepted", () => {
 
     const { dom, d } = await open(flat);
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^More per hour$/).click();
-    await wait(150);
+    await settle();
     const box = [...d.querySelectorAll(".field")]
       .find((f) => /Extra per hour/i.test(f.querySelector(".eyebrow")?.textContent ?? ""))
       .querySelector("input");
     setValue(dom.window, box, "10");
-    await wait(150);
+    await settle();
     btn(d, /Save changes/).click();
-    await wait(300);
+    await settle();
 
     const project = stored(dom).projects[0];
     expect(project.bonusPerHour).toBe(10);
@@ -4924,7 +4992,7 @@ describe("fixes: data, export and layout", () => {
     dom.window.URL.createObjectURL = () => "blob:x";
     dom.window.URL.revokeObjectURL = () => {};
     click();
-    await wait(300);
+    await settle();
     dom.window.Blob = RealBlob;
     return written[0];
   };
@@ -4933,12 +5001,12 @@ describe("fixes: data, export and layout", () => {
     const d = dom.window.document;
     await toProjects(d, "Work");
     btn(d, /New project/i).click();
-    await wait(120);
+    await settle();
     const [nameBox, rateBox] = d.querySelectorAll(".panel input");
     setValue(dom.window, nameBox, name);
     setValue(dom.window, rateBox, "50");
     btn(d, /Add project/i).click();
-    await wait(200);
+    await settle();
   };
 
   describe("a saved ledger that cannot be read", () => {
@@ -4965,7 +5033,7 @@ describe("fixes: data, export and layout", () => {
       const html = readFileSync(DIST, "utf8")
         .replace('<div id="root"></div>', `<div id="root"></div>${full}`);
       const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
-      await wait(700);
+      await appReady(dom);
       return dom;
     };
 
@@ -5000,7 +5068,7 @@ describe("fixes: data, export and layout", () => {
       const dom = await boot(null, { "meter:v1": CUT });
       const d = dom.window.document;
       btn(unreadableBanner(d), /restore a backup/i).click();
-      await wait(200);
+      await settle();
       expect(btn(d, /^Restore$/)).toBeTruthy();
     }, 25_000);
 
@@ -5018,7 +5086,7 @@ describe("fixes: data, export and layout", () => {
       expect(d.querySelector(".card-name").textContent).toContain("Fresh start");
 
       expect(await grab(dom, () => btn(unreadableBanner(d), /^Download it$/).click())).toBe(CUT);
-      await wait(200);
+      await settle();
       // The user holds the original now, so what is on screen is saved.
       expect(JSON.parse(stored(dom)).projects.map((p) => p.name)).toEqual(["Fresh start"]);
       expect(unreadableBanner(d).textContent).toMatch(/saving has started again/i);
@@ -5129,7 +5197,7 @@ describe("fixes: data, export and layout", () => {
       for (let waited = 0; waited < 5000 && !d.querySelector(".restore, .toast"); waited += 50) {
         await wait(50);
       }
-      await wait(100);
+      await settle();
     };
 
     it("asks first, setting what would be replaced beside what the file holds", async () => {
@@ -5150,12 +5218,12 @@ describe("fixes: data, export and layout", () => {
       await pick(dom, JSON.stringify(file));
       const d = dom.window.document;
       btn(d, /^Replace my ledger$/).click();
-      await wait(250);
+      await settle();
       expect(names(dom)).toEqual(["Gateway"]);
       expect(panel(d)).toBeNull();
       expect(d.querySelector(".toast").textContent).toMatch(/Backup restored/);
       btn(d.querySelector(".toast"), /^Undo$/).click();
-      await wait(250);
+      await settle();
       expect(names(dom)).toEqual(["Orion", "Lumen"]);
     }, 25_000);
 
@@ -5165,7 +5233,7 @@ describe("fixes: data, export and layout", () => {
       await pick(dom, JSON.stringify(file));
       const d = dom.window.document;
       btn(panel(d), /^Cancel$/).click();
-      await wait(200);
+      await settle();
       expect(panel(d)).toBeNull();
       expect(stored(dom)).toBe(before);
       expect(btn(d, /^Restore$/)).toBeTruthy();
@@ -5175,11 +5243,11 @@ describe("fixes: data, export and layout", () => {
       const dom = await boot(null, { "meter:v1": "{not json" });
       const d = dom.window.document;
       btn(bannerSaying(d, /couldn.t be read/i), /restore a backup/i).click();
-      await wait(200);
+      await settle();
       await pick(dom, JSON.stringify(file));
       expect(panel(d).querySelector("dd").textContent).toBe("nothing at all");
       btn(panel(d), /^Replace my ledger$/).click();
-      await wait(250);
+      await settle();
       expect(names(dom)).toEqual(["Gateway"]);
     }, 25_000);
 
@@ -5243,7 +5311,7 @@ describe("fixes: clock, Today and Overview", () => {
     html = html.replace('<div id="root"></div>',
       `<div id="root"></div>${clock}<script>${sets.join("")}</script>`);
     const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
-    await wait(700);
+    await appReady(dom);
     return dom;
   };
 
@@ -5277,7 +5345,7 @@ describe("fixes: clock, Today and Overview", () => {
       expect(todayHead(d)).toBe("$60.00 · 1h 00m");
 
       dom.window.__setNow(at(10, 5, 10));
-      await wait(700);
+      await until(() => todayHead(d) === "nothing yet", { what: "Today to turn over to the new day" });
       expect(todayHead(d)).toBe("nothing yet");
       expect(d.querySelector(".panel .empty").textContent).toMatch(/Nothing recorded today/);
     }, 20_000);
@@ -5294,13 +5362,13 @@ describe("fixes: clock, Today and Overview", () => {
 
       dom.window.__setNow(at(10, 5, 10));
       d.dispatchEvent(new dom.window.Event("visibilitychange"));
-      await wait(250);
+      await settle();
       expect(span()).toContain(short(at(10, 5)));
       expect(d.querySelector(".grand-amt").textContent).toBe("—");
 
       dom.window.__setNow(at(10, 12, 10));
       dom.window.dispatchEvent(new dom.window.Event("focus"));
-      await wait(250);
+      await settle();
       expect(span()).toContain(short(at(10, 12)));
     }, 20_000);
   });
@@ -5453,7 +5521,7 @@ describe("fixes: clock, Today and Overview", () => {
       const d = dom.window.document;
       await toProjects(d, "Overview");
       d.querySelectorAll(".step")[0].click();
-      await wait(250);
+      await settle();
       expect(d.querySelector(".grand-amt").textContent).toBe("$900.00");
       expect(d.querySelector(".dash-sub .delta").textContent).toBe("+200% vs the week before");
     }, 20_000);
@@ -5613,7 +5681,7 @@ describe("fixes: clock, Today and Overview", () => {
       const d = dom.window.document;
       await toProjects(d, "Work");
       [...d.querySelectorAll(".card")].find((c) => /Alpha/.test(c.textContent)).click();
-      await wait(250);
+      await settle();
       expect(d.querySelector(".goal .goal-val").textContent).toBe("$280.00 / $500.00");
     }, 20_000);
   });
@@ -5642,11 +5710,11 @@ describe("fixes: editors and entry forms", () => {
   /** Opens one project, by name, from the Work tab. */
   const openProject = async (seed, name) => {
     const dom = await boot(seed);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     [...d.querySelectorAll(".card")].find((c) => c.textContent.includes(name)).click();
-    await wait(250);
+    await settle();
     return { dom, d };
   };
   /** The input under a labelled field, looked for inside `root`. */
@@ -5659,7 +5727,7 @@ describe("fixes: editors and entry forms", () => {
     .find((r) => r.querySelector(".row-meta")?.textContent.startsWith(label));
   const press = async (root, text) => {
     [...root.querySelectorAll("button")].find((b) => b.textContent === text).click();
-    await wait(200);
+    await settle();
   };
 
   /** Two tasks that differ in everything a form holds, so a value carried
@@ -5694,7 +5762,7 @@ describe("fixes: editors and entry forms", () => {
     expect(field(form, "^Note$").value).toBe("the second one's note");
 
     btn(d, /^Save$/).click();
-    await wait(300);
+    await settle();
     const [t1, t2] = stored(dom).projects[0].tasks;
     expect(t2).toMatchObject({ label: "T-2", rate: 35, note: "the second one's note" });
     expect(t1).toMatchObject({ label: "T-1", note: "the first one's note" });
@@ -5714,7 +5782,7 @@ describe("fixes: editors and entry forms", () => {
     expect(boxes()).toEqual([stamp(b.segments[0].startedAt), stamp(b.segments[0].endedAt)]);
 
     btn(d, /Save correction/).click();
-    await wait(300);
+    await settle();
     const saved = stored(dom).sessions;
     expect(saved.find((x) => x.id === "s2").segments).toEqual(b.segments);
     expect(saved.find((x) => x.id === "s1")).toEqual(a);
@@ -5736,23 +5804,23 @@ describe("fixes: editors and entry forms", () => {
     };
     const { dom, d } = await openProject(seed, "Alpha");
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     expect(field(d, "Project name").value).toBe("Alpha");
 
     d.querySelector(".runbar-what").click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".plate-name").textContent).toContain("Beta");
     if (btn(d, /^Open$/)) {
       btn(d, /^Open$/).click();
-      await wait(200);
+      await settle();
     }
     expect(field(d, "Project name").value).toBe("Beta");
     expect(field(d, "Hourly rate").value).toBe("70");
 
     setValue(dom.window, field(d, "Hourly rate"), "75");
-    await wait(150);
+    await settle();
     btn(d, /Save changes/).click();
-    await wait(300);
+    await settle();
     const [alpha, beta] = stored(dom).projects;
     expect(beta).toMatchObject({ name: "Beta", currentRate: 75 });
     expect(alpha).toMatchObject({ name: "Alpha", currentRate: 50 });
@@ -5797,7 +5865,7 @@ describe("fixes: editors and entry forms", () => {
     expect(d.querySelector(".prompt")).not.toBeNull();
 
     ledgerRow(d, "T-1").querySelector(".x").click();
-    await wait(300);
+    await settle();
     expect(d.querySelector(".face")).not.toBeNull();
     expect(d.querySelector(".prompt")).toBeNull();
     expect(d.querySelectorAll(".row")).toHaveLength(1);
@@ -5824,16 +5892,16 @@ describe("fixes: editors and entry forms", () => {
     // meter, no message, and the prompt closed as if it had worked.
     const { dom, d } = await openProject(answered("submitted"), "Acme");
     btn(d, /Start the meter/).click();
-    await wait(200);
+    await settle();
     const name = field(d.querySelector(".prompt"), "Name it");
     setValue(dom.window, name, " t-1 ");
-    await wait(150);
+    await settle();
 
     const warning = d.querySelector(".prompt .hint.warn");
     expect(warning.textContent).toMatch(/“T-1” was submitted, so it takes no more time/);
     expect(btn(d, /^Start the meter$/).disabled).toBe(true);
     name.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await wait(200);
+    await settle();
 
     expect(d.querySelector(".prompt")).not.toBeNull();
     expect(d.querySelector(".state").textContent.trim()).toBe("Stopped");
@@ -5846,11 +5914,11 @@ describe("fixes: editors and entry forms", () => {
     // as earned.
     const { dom, d } = await openProject(answered("cancelled"), "Acme");
     ledgerRow(d, "No task").querySelector(".row-check").click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, field(d.querySelector(".prompt"), "Name it"), "T-1");
-    await wait(150);
+    await settle();
 
     expect(d.querySelector(".prompt .hint.warn").textContent)
       .toMatch(/“T-1” was rejected, so it takes no more time/);
@@ -5864,16 +5932,16 @@ describe("fixes: editors and entry forms", () => {
       seed.sessions[1].closedAt + 2 * HOUR));
     const { dom, d } = await openProject(seed, "Acme");
     ledgerRow(d, "No task").querySelector(".row-check").click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, d.querySelector(".prompt select"), "t2");
-    await wait(150);
+    await settle();
 
     taskRow(d, "T-2").querySelector(".row-check").click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 1$/).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".prompt .hint.warn").textContent)
       .toMatch(/“T-2” was submitted, so it takes no more time/);
@@ -5890,7 +5958,7 @@ describe("fixes: editors and entry forms", () => {
                         submittedAt: t1.createdAt + 3 * HOUR });
     const { d } = await openProject(seed, "Acme");
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     expect([...field(d.querySelector(".prompt"), "^Task$").options].map((o) => o.textContent))
       .toEqual(["No task", "T-2"]);
   }, 30_000);
@@ -5898,20 +5966,20 @@ describe("fixes: editors and entry forms", () => {
   it("says why typed-in time was refused, and keeps what was typed", async () => {
     const { dom, d } = await openProject(twoTasks(), "Acme");
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     const [from, to] = d.querySelectorAll('.prompt input[type="datetime-local"]');
     const at = minute(Date.now()) - 30 * HOUR;
     setValue(dom.window, from, stamp(at));
     setValue(dom.window, to, stamp(at + HOUR));
-    await wait(150);
+    await settle();
     // The project stops taking time while the form is still open.
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Paused$/).click();
-    await wait(250);
+    await settle();
 
     btn(d, /^Add time$/).click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".toast").textContent)
       .toMatch(/Nothing was added\. This project is on hold, so it won't take new time\./);
     expect(d.querySelector(".prompt input[type=\"datetime-local\"]").value).toBe(stamp(at));
@@ -5921,13 +5989,13 @@ describe("fixes: editors and entry forms", () => {
   it("says so in the form when the task picked there is handed in meanwhile", async () => {
     const { dom, d } = await openProject(twoTasks(), "Acme");
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, field(d.querySelector(".prompt"), "^Task$"), "t2");
-    await wait(150);
+    await settle();
     taskRow(d, "T-2").querySelector(".row-check").click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 1$/).click();
-    await wait(300);
+    await settle();
 
     expect(d.querySelector(".prompt .hint.warn").textContent)
       .toMatch(/“T-2” was submitted, so it takes no more time/);
@@ -5943,21 +6011,21 @@ describe("fixes: editors and entry forms", () => {
     const rate = field(form, "Rate for this task");
 
     setValue(dom.window, rate, "-5");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn").textContent).toMatch(/can't be below zero/);
     expect(btn(d, /^Save$/).disabled).toBe(true);
     setValue(dom.window, rate, "abc");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn").textContent).toMatch(/“abc” isn't a rate/);
     rate.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await wait(200);
+    await settle();
     expect(stored(dom).projects[0].tasks[1].rate).toBe(35);
 
     setValue(dom.window, rate, "12,5");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn")).toBeNull();
     btn(d, /^Save$/).click();
-    await wait(300);
+    await settle();
     expect(stored(dom).projects[0].tasks[1].rate).toBe(12.5);
   }, 30_000);
 
@@ -5968,7 +6036,7 @@ describe("fixes: editors and entry forms", () => {
     await press(taskRow(d, "T-2"), "edit");
     const form = d.querySelector(".prompt");
     setValue(dom.window, field(form, "^Name$"), " t-1 ");
-    await wait(150);
+    await settle();
 
     expect(form.querySelector(".hint.warn").textContent)
       .toMatch(/Another task is already called “T-1”/);
@@ -5986,13 +6054,13 @@ describe("fixes: editors and entry forms", () => {
     const [, end] = d.querySelectorAll('.prompt input[type="datetime-local"]');
 
     setValue(dom.window, end, stamp(a.segments[0].startedAt - HOUR));
-    await wait(150);
+    await settle();
     expect(d.querySelector(".prompt .hint.warn").textContent).toMatch(/It ends before it starts/);
     expect(d.querySelector(".preview-now").textContent).toBe("—");
     expect(btn(d, /Save correction/).disabled).toBe(true);
 
     setValue(dom.window, end, stamp(a.segments[0].startedAt));
-    await wait(150);
+    await settle();
     expect(d.querySelector(".prompt .hint.warn").textContent).toMatch(/would record nothing/);
     expect(btn(d, /Save correction/).disabled).toBe(true);
     expect(stored(dom).sessions.find((x) => x.id === "s1")).toEqual(a);
@@ -6010,16 +6078,16 @@ describe("fixes: editors and entry forms", () => {
     const [, end] = d.querySelectorAll('.prompt input[type="datetime-local"]');
     const stretched = b.segments[0].startedAt + 30 * 60_000;
     setValue(dom.window, end, stamp(stretched));
-    await wait(150);
+    await settle();
     expect(d.querySelector(".clash").textContent).toMatch(/overlaps 1 record/);
     expect(d.querySelector(".clash li").textContent).toMatch(/T-2/);
     expect(d.querySelector(".clash-ok").textContent).toMatch(/Save it anyway/);
     expect(btn(d, /Save correction/).disabled).toBe(true);
 
     d.querySelector(".clash-ok input").click();
-    await wait(150);
+    await settle();
     btn(d, /Save correction/).click();
-    await wait(300);
+    await settle();
     expect(stored(dom).sessions.find((x) => x.id === "s1").closedAt).toBe(stretched);
   }, 30_000);
 
@@ -6028,16 +6096,16 @@ describe("fixes: editors and entry forms", () => {
     // it was earned in read $40 short, and the CSV would have dated it 1970.
     const { dom, d } = await openProject(twoTasks(), "Acme");
     btn(d, /Add earnings/).click();
-    await wait(200);
+    await settle();
     const form = d.querySelector(".ern-form");
     setValue(dom.window, field(form, "^Amount"), "40");
     setValue(dom.window, field(form, "^Date$"), "");
-    await wait(150);
+    await settle();
 
     expect(form.querySelector(".hint.warn").textContent).toMatch(/Pick the day it was earned/);
     expect(btn(d, /^Add$/).disabled).toBe(true);
     btn(d, /^Add$/).click();
-    await wait(200);
+    await settle();
     expect(stored(dom).earnings ?? []).toHaveLength(0);
   }, 30_000);
 
@@ -6051,31 +6119,31 @@ describe("fixes: editors and entry forms", () => {
     // easy thing to do.
     const { dom, d } = await openProject(alone(), "Alpha");
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, field(d, "Project name"), "Alpha renamed");
-    await wait(150);
+    await settle();
 
     btn(d, /^Close$/).click();
-    await wait(200);
+    await settle();
     expect(settingsTag(d).textContent).toBe("Unsaved");
 
     btn(d, /All projects/).click();
-    await wait(250);
+    await settle();
     await toProjects(d, "Work");
     [...d.querySelectorAll(".card")].find((c) => c.textContent.includes("Alpha")).click();
-    await wait(250);
+    await settle();
     expect(settingsTag(d).textContent).toBe("Unsaved");
     expect(stored(dom).projects[0].name).toBe("Alpha");
 
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     expect(field(d, "Project name").value).toBe("Alpha renamed");
     expect(d.querySelector(".savebar").textContent).toMatch(/Unsaved changes/);
     btn(d, /Save changes/).click();
-    await wait(250);
+    await settle();
     expect(stored(dom).projects[0].name).toBe("Alpha renamed");
     btn(d, /^Close$/).click();
-    await wait(200);
+    await settle();
     expect(settingsTag(d)).toBeNull();
   }, 30_000);
 
@@ -6089,13 +6157,13 @@ describe("fixes: editors and entry forms", () => {
     expect(closing()).toBe(false);
 
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, field(d, "Hourly rate"), "45");
-    await wait(150);
+    await settle();
     expect(closing()).toBe(true);
 
     btn(d, /^Discard$/).click();
-    await wait(200);
+    await settle();
     expect(closing()).toBe(false);
   }, 30_000);
 
@@ -6121,7 +6189,7 @@ describe("fixes: editors and entry forms", () => {
   };
   const pick = async (d, label) => {
     ledgerRow(d, label).querySelector(".row-check").click();
-    await wait(150);
+    await settle();
   };
   const statusOf = (dom, id) => stored(dom).sessions.find((x) => x.id === id).status;
 
@@ -6129,14 +6197,14 @@ describe("fixes: editors and entry forms", () => {
     const { dom, d } = await openProject(oneOfEach(), "Acme");
     await pick(d, "T-r");
     btn(d, /^Mark paid$/).click();
-    await wait(200);
+    await settle();
 
     expect(d.querySelector(".selbar").textContent).toMatch(
       /1 of the selected sessions is under a rejected task\. Marking it paid says money came in for work that was turned down\./);
     expect(statusOf(dom, "sr")).toBe("cancelled");
 
     btn(d, /^Mark paid anyway$/).click();
-    await wait(250);
+    await settle();
     expect(statusOf(dom, "sr")).toBeUndefined();
     expect(d.querySelector(".selbar")).toBeNull();
   }, 30_000);
@@ -6145,12 +6213,12 @@ describe("fixes: editors and entry forms", () => {
     const { dom, d } = await openProject(oneOfEach(), "Acme");
     await pick(d, "T-a");
     btn(d, /^Mark pending$/).click();
-    await wait(200);
+    await settle();
 
     expect(d.querySelector(".selbar").textContent).toMatch(
       /1 of the selected sessions is under an accepted task\. Marking it pending says work already accepted is still waiting to be paid\./);
     btn(d, /^Cancel$/).click();
-    await wait(200);
+    await settle();
     expect(d.querySelector(".selbar-count").textContent).toBe("1 selected");
     expect(statusOf(dom, "sa")).toBeUndefined();
   }, 30_000);
@@ -6159,14 +6227,14 @@ describe("fixes: editors and entry forms", () => {
     const { dom, d } = await openProject(oneOfEach(), "Acme");
     await pick(d, "T-o");
     btn(d, /^Mark pending$/).click();
-    await wait(250);
+    await settle();
     expect(statusOf(dom, "so")).toBe("pending");
     expect(d.querySelector(".selbar")).toBeNull();
 
     // Paid is what an accepted task's sessions already are, so it says nothing.
     await pick(d, "T-a");
     btn(d, /^Mark paid$/).click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".selbar")).toBeNull();
     expect(statusOf(dom, "sa")).toBeUndefined();
   }, 30_000);
@@ -6196,11 +6264,11 @@ describe("fixes: found in review", () => {
   });
   const open = async (ledger) => {
     const dom = await boot(ledger);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return { dom, d };
   };
   const field = (root, label) => [...root.querySelectorAll(".field")]
@@ -6213,9 +6281,9 @@ describe("fixes: found in review", () => {
   /** Hands T-2 in from the task list, under whatever form is open. */
   const submitT2 = async (d) => {
     taskRow(d, "T-2").querySelector(".row-check").click();
-    await wait(200);
+    await settle();
     btn(d, /^Submit 1$/).click();
-    await wait(300);
+    await settle();
   };
 
   it("keeps a task handed in under the open move prompt in its box", async () => {
@@ -6225,18 +6293,18 @@ describe("fixes: found in review", () => {
     [...d.querySelectorAll(".row")]
       .find((r) => r.querySelector(".row-meta")?.textContent.startsWith("No task"))
       .querySelector(".row-check").click();
-    await wait(150);
+    await settle();
     btn(d, /Assign to task/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, d.querySelector(".prompt select"), "t2");
-    await wait(150);
+    await settle();
     await submitT2(d);
 
     const select = d.querySelector(".prompt select");
     expect(select.selectedOptions[0].textContent).toBe("T-2");
     expect(select.selectedOptions[0].disabled).toBe(true);
     setValue(dom.window, select, "t1");
-    await wait(150);
+    await settle();
     expect(d.querySelector(".prompt .hint.warn")).toBeNull();
     expect(inPrompt(d, /^Move 1 session$/).disabled).toBe(false);
   }, 30_000);
@@ -6244,16 +6312,16 @@ describe("fixes: found in review", () => {
   it("keeps a task handed in under the open Add time form in its box", async () => {
     const { dom, d } = await open(seed());
     btn(d, /add time/i).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, field(d.querySelector(".prompt"), "^Task$"), "t2");
-    await wait(150);
+    await settle();
     await submitT2(d);
 
     const select = field(d.querySelector(".prompt"), "^Task$");
     expect(select.selectedOptions[0].textContent).toBe("T-2");
     expect(select.selectedOptions[0].disabled).toBe(true);
     setValue(dom.window, select, "");
-    await wait(150);
+    await settle();
     expect(d.querySelector(".prompt .hint.warn")).toBeNull();
   }, 30_000);
 
@@ -6264,25 +6332,25 @@ describe("fixes: found in review", () => {
     ledger.projects[0].tasks[1].price = 35;
     const { dom, d } = await open(ledger);
     [...taskRow(d, "T-2").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
-    await wait(200);
+    await settle();
     const form = d.querySelector(".prompt");
     const price = field(form, "Per accepted item");
     expect(price.placeholder).toMatch(/the project's price$/);
 
     setValue(dom.window, price, "30%");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn").textContent).toMatch(/“30%” isn't a price/);
     expect(inPrompt(d, /^Save$/).disabled).toBe(true);
     setValue(dom.window, price, "-5");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn").textContent).toMatch(/price can't be below zero/);
     expect(stored(dom).projects[0].tasks[1].price).toBe(35);
 
     setValue(dom.window, price, "12,5");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn")).toBeNull();
     inPrompt(d, /^Save$/).click();
-    await wait(300);
+    await settle();
     expect(stored(dom).projects[0].tasks[1].price).toBe(12.5);
   }, 30_000);
 
@@ -6292,22 +6360,22 @@ describe("fixes: found in review", () => {
     // the task a $45 item price and no rate.
     const { dom, d } = await open(seed({ perTask: 70 }));
     btn(d, /Start the meter/i).click();
-    await wait(200);
+    await settle();
     btn(d, /New task/i).click();
-    await wait(150);
+    await settle();
     const form = d.querySelector(".prompt");
     setValue(dom.window, field(form, "Name it"), "T-9");
     const pay = field(form, "^Rate$");
     setValue(dom.window, pay, "abc");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn").textContent).toMatch(/“abc” isn't a rate/);
     expect(inPrompt(d, /Start the meter/i).disabled).toBe(true);
 
     setValue(dom.window, pay, "45");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn")).toBeNull();
     inPrompt(d, /Start the meter/i).click();
-    await wait(300);
+    await settle();
     const task = stored(dom).projects[0].tasks.find((t) => t.label === "T-9");
     expect(task.rate).toBe(45);
     expect(task).not.toHaveProperty("price");
@@ -6316,16 +6384,16 @@ describe("fixes: found in review", () => {
   it("reads a decimal comma in a new task's price on work paid per item", async () => {
     const { dom, d } = await open(seed({ currentRate: 0, perTask: 50 }));
     btn(d, /Start the meter/i).click();
-    await wait(200);
+    await settle();
     btn(d, /New task/i).click();
-    await wait(150);
+    await settle();
     const form = d.querySelector(".prompt");
     setValue(dom.window, field(form, "Name it"), "T-9");
     setValue(dom.window, field(form, "Per accepted item"), "12,5");
-    await wait(150);
+    await settle();
     expect(form.querySelector(".hint.warn")).toBeNull();
     inPrompt(d, /Start the meter/i).click();
-    await wait(300);
+    await settle();
     expect(stored(dom).projects[0].tasks.find((t) => t.label === "T-9").price).toBe(12.5);
   }, 30_000);
 });
@@ -6337,11 +6405,11 @@ describe("fixes: paydays and settling", () => {
   /** Boots a ledger and opens its first project. */
   const openFirst = async (seed, settings = null) => {
     const dom = await boot(seed, settings);
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
 
@@ -6350,12 +6418,12 @@ describe("fixes: paydays and settling", () => {
     const row = [...d.querySelectorAll(".trow")]
       .find((r) => r.querySelector(".trow-label")?.textContent.startsWith(label));
     row.querySelector("input.row-check").click();
-    await wait(150);
+    await settle();
   };
 
   const press = async (d, re) => {
     btn(d, re).click();
-    await wait(300);
+    await settle();
   };
 
   /** A project paying $40 an hour plus $50 per accepted item, with one
@@ -6400,7 +6468,7 @@ describe("fixes: paydays and settling", () => {
     expect(live[0].status).toBeUndefined();
 
     btn(d, /All projects/).click();
-    await wait(200);
+    await settle();
     await toProjects(d, "Overview");
     expect(d.querySelector(".grand-amt").textContent).toBe("$90.00");
   }, 30_000);
@@ -6491,10 +6559,10 @@ describe("fixes: paydays and settling", () => {
     const x = new Date(typed);
     setValue(dom.window, box,
       `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`);
-    await wait(150);
+    await settle();
     expect(d.querySelector(".wrap").textContent).toMatch(/Every button records the time in the box/);
     btn(d, /^use the defaults$/).click();
-    await wait(150);
+    await settle();
     expect(d.querySelector(".wrap").textContent).not.toMatch(/Every button records the time in the box/);
     const before = minuteOf(Date.now());
     await press(d, /^Rejected 1$/);
@@ -6554,7 +6622,7 @@ describe("fixes: paydays and settling", () => {
     const html = readFileSync(DIST, "utf8").replace('<div id="root"></div>',
       `<div id="root"></div><script>${clock}${store}</script>${COUNTER}`);
     const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
-    await wait(700);
+    await appReady(dom);
     return dom;
   };
 
@@ -6597,12 +6665,13 @@ describe("fixes: paydays and settling", () => {
     };
     const dom = await bootSkewed(seed, skew);
     const d = dom.window.document;
-    await wait(150);
+    await settle();
     await toProjects(d, "Overview");
     expect(payLabels(d)).toEqual([`Not before ${payday(2)}`]);
 
     dom.window.__skew += 60_000;
-    await wait(1_500);
+    await until(() => payLabels(d).join() === `Not before ${payday(9)}`,
+      { what: "the pay labels to follow the skewed clock" });
     expect(payLabels(d)).toEqual([`Not before ${payday(9)}`]);
   }, 30_000);
 
@@ -6621,7 +6690,7 @@ describe("fixes: paydays and settling", () => {
     const d = (await bootDash(seed)).window.document;
     expect(payRows(d)).toEqual(["Northwind · 2 tasks · 1 shared reward"]);
     d.querySelector(".payrow .trow").click();
-    await wait(150);
+    await settle();
     const lines = [...d.querySelectorAll(".payline")].map((e) => e.textContent);
     expect(lines).toContain("Two-task bonus · 2 tasks · Gateway$60.00");
   }, 30_000);
@@ -6645,7 +6714,7 @@ describe("fixes: paydays and settling", () => {
   const openSettings = async (seed) => {
     const { dom, d } = await openFirst(seed);
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     return { dom, d };
   };
   /** The box or select under a field's label. */
@@ -6656,7 +6725,7 @@ describe("fixes: paydays and settling", () => {
     .find((c) => c.name.toLowerCase() === name.toLowerCase())?.payPeriod;
   const save = async (d) => {
     btn(d, /Save changes/).click();
-    await wait(300);
+    await settle();
   };
   const MONDAY_WEDNESDAY = { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: null };
   const MONDAY_FRIDAY = { ...MONDAY_WEDNESDAY, payday: 5 };
@@ -6674,7 +6743,7 @@ describe("fixes: paydays and settling", () => {
     }));
     setValue(dom.window, control(d, "Company"), "Outlier");
     setValue(dom.window, control(d, "Closing at"), "19:00");
-    await wait(150);
+    await settle();
     await save(d);
 
     expect(stored(dom).projects[0].company).toBe("Outlier");
@@ -6682,7 +6751,7 @@ describe("fixes: paydays and settling", () => {
     // Northwind keeps its own, for whatever other projects it has.
     expect(ruleOf(dom, "Northwind")).toEqual(MONDAY_WEDNESDAY);
     btn(d, /All projects/).click();
-    await wait(200);
+    await settle();
     await toProjects(d, "Overview");
     expect(payRows(d)).toEqual(["Outlier · 1 task"]);
   }, 30_000);
@@ -6694,17 +6763,17 @@ describe("fixes: paydays and settling", () => {
     }));
     const warned = () => /Outlier already has a payday of its own/.test(d.querySelector(".wrap").textContent);
     setValue(dom.window, control(d, "Company"), "Outlier");
-    await wait(150);
+    await settle();
     // Untouched, the payday follows the company named: joining Outlier means
     // Outlier's Friday, and there is nothing to warn about.
     expect(control(d, "Is paid on").value).toBe("5");
     expect(warned()).toBe(false);
 
     setValue(dom.window, control(d, "Is paid on"), "4");
-    await wait(150);
+    await settle();
     expect(warned()).toBe(true);
     btn(d, /Use Outlier's instead/).click();
-    await wait(150);
+    await settle();
     expect(control(d, "Is paid on").value).toBe("5");
     expect(warned()).toBe(false);
 
@@ -6718,7 +6787,7 @@ describe("fixes: paydays and settling", () => {
       company: "", rules: { Outlier: MONDAY_FRIDAY }, tasks: [acceptedTask()],
     }));
     setValue(dom.window, control(d, "Company"), "outlier");
-    await wait(150);
+    await settle();
     await save(d);
     expect(stored(dom).projects[0].company).toBe("outlier");
     expect(ruleOf(dom, "Outlier").payday).toBe(5);
@@ -6735,13 +6804,13 @@ describe("fixes: paydays and settling", () => {
     expect(control(d, "By which clock").value).toBe("Mars/Olympus_Mons");
 
     setValue(dom.window, control(d, "Project name"), "Gateway 2");
-    await wait(150);
+    await settle();
     await save(d);
     expect(ruleOf(dom, "Northwind").zone).toBe("Mars/Olympus_Mons");
 
     // Picking another clock is what changes it.
     setValue(dom.window, control(d, "By which clock"), "UTC");
-    await wait(150);
+    await settle();
     await save(d);
     expect(ruleOf(dom, "Northwind").zone).toBe("UTC");
   }, 30_000);
@@ -6762,7 +6831,7 @@ describe("fixes: paydays and settling", () => {
     expect(d.querySelector(".toast").textContent).toMatch(/count as earned, unless it is rejected/);
 
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     expect(page()).toMatch(/Work handed in right now would be paid on/);
     expect(page()).toMatch(/paid in the run for the period it was handed in, answered or not/);
     expect(page()).not.toMatch(/accepted right now/);
@@ -6778,15 +6847,15 @@ describe("fixes: paydays and settling", () => {
       company: "Northwind", rules: { Northwind: MONDAY_WEDNESDAY }, tasks: [acceptedTask()],
     }));
     setValue(dom.window, control(d, "Is paid on"), "4");
-    await wait(150);
+    await settle();
     btn(d, /^Close$/).click();
-    await wait(200);
+    await settle();
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     expect(control(d, "Is paid on").value).toBe("4");
 
     setValue(dom.window, control(d, "Company"), "Outlier");
-    await wait(150);
+    await settle();
     expect(control(d, "Is paid on").value).toBe("4");
     await save(d);
     expect(ruleOf(dom, "Outlier")).toMatchObject({ kind: "weekly", payday: 4 });
@@ -6814,7 +6883,7 @@ describe("fixes: paydays and settling", () => {
         tasks: [] }],
     }));
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     const page = d.querySelector(".wrap").textContent;
     expect(page).toMatch(/A task accepted right now would be paid on/);
     expect(page).toMatch(/paid in the run for the period its answer fell in/);
@@ -6871,7 +6940,7 @@ describe("the to-do list on Today", () => {
   };
   const open = async () => {
     const dom = await boot(seed());
-    await wait(300);
+    await settle();
     return { dom, d: dom.window.document, saved: () => JSON.parse(dom.window.localStorage.getItem("meter:v1")) };
   };
   const rowOf = (d, text) => [...d.querySelectorAll(".todo")].find((r) => r.textContent.includes(text));
@@ -6888,12 +6957,12 @@ describe("the to-do list on Today", () => {
   it("adds a to-do and keeps the form open for the next one", async () => {
     const { dom, d, saved } = await open();
     btn(d, /^\+ Add a to-do$/).click();
-    await wait(150);
+    await settle();
     const box = d.querySelector(".todos .obj-form input");
     setValue(dom.window, box, "  Pay the rent  ");
     setValue(dom.window, d.querySelector(".todos .obj-form select"), "a");
     btn(d, /^Add$/).click();
-    await wait(200);
+    await settle();
     const added = saved().todos.find((t) => t.text === "Pay the rent");
     expect(added).toMatchObject({ projectId: "a", done: false, deletedAt: null });
     expect(d.querySelector(".todos .obj-form input").value).toBe("");
@@ -6903,31 +6972,31 @@ describe("the to-do list on Today", () => {
   it("folds a ticked to-do under Done, where it can be unticked", async () => {
     const { d, saved } = await open();
     rowOf(d, "Renew the domain").querySelector("input[type=checkbox]").click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d1").done).toBe(true);
     expect(d.querySelector(".todos > .todo .obj-text")?.textContent).not.toBe("Renew the domain");
     const fold = btn(d, /Done · 2/);
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     fold.click();
-    await wait(150);
+    await settle();
     // The latest finished first.
     expect([...d.querySelectorAll(".todo-done .obj-text")].map((e) => e.textContent))
       .toEqual(["Renew the domain", "Call the bank"]);
     d.querySelector(".todo-done input[aria-label='Mark Renew the domain not done']").click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d1")).toMatchObject({ done: false, doneAt: null });
   }, 20_000);
 
   it("clears what is done, and Undo puts it back", async () => {
     const { d, saved } = await open();
     btn(d, /Done · 1/).click();
-    await wait(150);
+    await settle();
     btn(d, /^Clear done$/).click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d5").deletedAt).toBeTruthy();
     expect(d.querySelector(".todo-done")).toBeNull();
     btn(d, /^Undo$/).click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d5").deletedAt).toBeNull();
   }, 20_000);
 
@@ -6940,7 +7009,7 @@ describe("the to-do list on Today", () => {
     expect(rowOf(d, "Old client call").querySelector(".obj-meta")).toBeNull();
     expect(rowOf(d, "Old client call").querySelector(".todo-go")).toBeNull();
     rowOf(d, "Finish the review").querySelector(".todo-go").click();
-    await wait(300);
+    await settle();
     const live = saved().sessions.find((s) => s.segments.some((g) => g.endedAt == null));
     expect(live).toMatchObject({ projectId: "a", taskId: null, kind: "billed" });
   }, 20_000);
@@ -6950,10 +7019,10 @@ describe("the to-do list on Today", () => {
     // one-click way to end it.
     const { d } = await open();
     rowOf(d, "Finish the review").querySelector(".todo-go").click();
-    await wait(300);
+    await settle();
     // Starting opens the project; back out of it to Today.
     btn(d, /All projects/).click();
-    await wait(150);
+    await settle();
     await toProjects(d, "Today");
     expect(d.querySelectorAll(".todo").length).toBe(4);
     expect(d.querySelector(".todo-go")).toBeNull();
@@ -6962,19 +7031,19 @@ describe("the to-do list on Today", () => {
   it("edits from the to-do as it is, and removes with an Undo", async () => {
     const { dom, d, saved } = await open();
     [...rowOf(d, "Renew the domain").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
-    await wait(150);
+    await settle();
     const box = d.querySelector(".todos .obj-form input");
     expect(box.value).toBe("Renew the domain");
     setValue(dom.window, box, "Renew both domains");
     btn(d, /^Save$/).click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d1").text).toBe("Renew both domains");
 
     rowOf(d, "Renew both domains").querySelector("button[aria-label='Remove Renew both domains']").click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d1").deletedAt).toBeTruthy();
     btn(d, /^Undo$/).click();
-    await wait(200);
+    await settle();
     expect(saved().todos.find((t) => t.id === "d1").deletedAt).toBeNull();
   }, 20_000);
 });
@@ -7013,11 +7082,11 @@ describe("a time limit per task", () => {
   };
   const open = async (opts) => {
     const dom = await boot(seed(opts));
-    await wait(250);
+    await settle();
     const d = dom.window.document;
     await toProjects(d, "Work");
     d.querySelector(".card").click();
-    await wait(250);
+    await settle();
     return { dom, d, saved: () => JSON.parse(dom.window.localStorage.getItem("meter:v1")) };
   };
   const row = (d, name) => [...d.querySelectorAll(".trow")].find((r) => r.textContent.startsWith(name));
@@ -7037,22 +7106,22 @@ describe("a time limit per task", () => {
   it("agrees with the Overview about what the time came to", async () => {
     const { d } = await open();
     btn(d, /All projects/).click();
-    await wait(150);
+    await settle();
     await toProjects(d, "Overview");
     [...d.querySelectorAll(".dash-head .segmented .seg")].find((b) => b.textContent === "All").click();
-    await wait(250);
+    await settle();
     expect(d.querySelector(".grand-amt").textContent).toBe("$64.00");
   }, 20_000);
 
   it("shows the limit in Settings and asks how far a change reaches", async () => {
     const { dom, d } = await open();
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     expect(input(d, "^Time limit per task").value).toBe("2");
     expect(input(d, "^Time over it pays").value).toBe("30");
     expect(d.querySelector("[aria-label='How far the change reaches']")).toBeNull();
     setValue(dom.window, input(d, "^Time limit per task"), "3");
-    await wait(150);
+    await settle();
     const tabs = [...d.querySelectorAll("[aria-label='How far the change reaches'] button")];
     expect(tabs.map((b) => b.textContent)).toEqual(["From now on", "Past included"]);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
@@ -7061,11 +7130,11 @@ describe("a time limit per task", () => {
   it("from now on, leaves a task already handed in on its old limit", async () => {
     const { dom, d, saved } = await open({ handedIn: true });
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, input(d, "^Time limit per task"), "3");
-    await wait(150);
+    await settle();
     btn(d, /^Save changes$/).click();
-    await wait(250);
+    await settle();
     expect(saved().projects[0].taskLimits).toHaveLength(2);
     expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$44.00");
   }, 20_000);
@@ -7073,17 +7142,17 @@ describe("a time limit per task", () => {
   it("with the past included, reprices a task already handed in, and Undo puts it back", async () => {
     const { dom, d, saved } = await open({ handedIn: true });
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, input(d, "^Time limit per task"), "3");
-    await wait(150);
+    await settle();
     btn(d, /^Past included$/).click();
-    await wait(100);
+    await settle();
     btn(d, /^Save changes$/).click();
-    await wait(250);
+    await settle();
     expect(saved().projects[0].taskLimits).toEqual([{ from: null, ms: 3 * H, factor: 0.3 }]);
     expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$53.33");
     btn(d, /^Undo$/).click();
-    await wait(250);
+    await settle();
     expect(row(d, "T-1").querySelector(".trow-amt").textContent).toBe("$44.00");
     // The panel follows the ledger back rather than calling the undone limit saved.
     expect(input(d, "^Time limit per task").value).toBe("2");
@@ -7092,11 +7161,11 @@ describe("a time limit per task", () => {
   it("from now on, moves an open task to a new rate and keeps a handed-in one on its old", async () => {
     const { dom, d, saved } = await open({ handedIn: true });
     btn(d, /^Open$/).click();
-    await wait(200);
+    await settle();
     setValue(dom.window, input(d, "^Hourly rate"), "25");
-    await wait(150);
+    await settle();
     btn(d, /^Save changes$/).click();
-    await wait(250);
+    await settle();
     const rates = Object.fromEntries(saved().sessions.map((s) => [s.id, s.rate]));
     expect(rates).toEqual({ a: 20, b: 20, c: 25 });
     expect(saved().projects[0].currentRate).toBe(25);
@@ -7105,13 +7174,13 @@ describe("a time limit per task", () => {
   it("lets one task carry its own limit", async () => {
     const { dom, d, saved } = await open();
     [...row(d, "T-2").querySelectorAll("button")].find((b) => b.textContent === "edit").click();
-    await wait(200);
+    await settle();
     const own = input(d, "^Time limit [(]hours[)]$");
     expect(own.placeholder).toBe("empty = 2h, the project's");
     setValue(dom.window, own, "0.5");
-    await wait(100);
+    await settle();
     btn(d, /^Save$/).click();
-    await wait(250);
+    await settle();
     expect(saved().projects[0].tasks.find((t) => t.id === "t2").limitMs).toBe(30 * M);
     // Half an hour in full, half an hour at $6: $13.
     expect(row(d, "T-2").querySelector(".trow-amt").textContent).toBe("$13.00");
