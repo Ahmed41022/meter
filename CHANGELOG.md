@@ -7,6 +7,16 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-18
+
+Minor rather than major: every field and record added here is absent by
+default, and an absent field already had a defined meaning, so a 1.1.0 build
+reads a 1.2.0 ledger without migrating anything. One caveat, for anyone
+syncing two devices: a 1.1.0 build knows nothing of to-dos or payday answers,
+so it neither shows them nor keeps them in its own copy when it syncs. A 1.2.0
+device still holds them and puts them back on its next sync, but every
+device that syncs should run the same version.
+
 ### Added
 
 - **After a payday, say what happened to the payment.** A notice asks, for the
@@ -481,6 +491,7 @@ is recorded here as the baseline rather than as a set of changes.
 - JSON backup export and restore, a CSV export of every line item, and a nudge
   when the ledger has gone too long without being written to a file.
 
-[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Ahmed41022/meter/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ahmed41022/meter/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ahmed41022/meter/releases/tag/v1.0.0
