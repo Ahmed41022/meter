@@ -35,7 +35,7 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  */
 export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], companyRules = [], pay, asked, onSettleAsk, now, today,
-  onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment,
+  onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment, onMarkLines,
 }) {
   /** The row being given another date, and the date typed. One at a time. */
   const [moving, setMoving] = useState(null);
@@ -213,7 +213,8 @@ export default function DashboardView({
       {(pay.due.length > 0 || pay.waiting.length > 0 || pay.overdue.length > 0) && (
         <UpcomingPayments
           pay={pay} asked={asked} onSettleAsk={onSettleAsk} onPaid={onPaid} onAnswer={onAnswer}
-          onMovePayment={onMovePayment} companyRules={companyRules} now={now} openPay={openPay}
+          onMovePayment={onMovePayment} onMarkLines={onMarkLines} companyRules={companyRules}
+          now={now} openPay={openPay}
           togglePay={togglePay} moving={moving} setMoving={setMoving} paying={paying}
           setPaying={setPaying}
         />

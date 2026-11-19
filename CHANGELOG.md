@@ -7,6 +7,18 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Added
+
+- **Mark single lines of a payment paid, or move them to another day.** Open
+  any row in Upcoming payments, overdue, still to come or waiting on a review,
+  and each line has a box: a task's hours, its per-item pay, a bonus, a shared
+  reward. Tick some and choose Mark paid or Move…; both have an Undo. For when
+  a client pays three tasks of a payday and holds the fourth back. Tasks gain
+  two optional fields for their hours, `hoursReceived` and `hoursPayday`;
+  bonuses and other earnings use the `received` and `payday` they already had.
+  Absent means what it did before, so older ledgers read unchanged. A row
+  already partly received is still answered as a whole.
+
 ## [1.2.0] — 2026-11-18
 
 Minor rather than major: every field and record added here is absent by

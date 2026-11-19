@@ -164,7 +164,7 @@ export default function App({ store: injectedStore }) {
     toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
 
-  const { answerPayment, answerPayments } = paymentActions({ commit, flash, stateRef });
+  const { answerPayment, answerPayments, markPaymentLines } = paymentActions({ commit, flash, stateRef });
 
   useStartup({
     store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryId,
@@ -479,6 +479,7 @@ export default function App({ store: injectedStore }) {
             onPaid={(rows) => answerPayments(rows, OUTCOME.PAID, undefined,
               rows.length === 1 ? "Marked as paid." : `${rows.length} payments marked as paid.`)}
             onMovePayment={(row, date) => answerPayments([row], OUTCOME.MOVED, date, "Date changed.")}
+            onMarkLines={markPaymentLines}
             now={now}
             today={dayKey(now)}
             onOpenProject={openProject}

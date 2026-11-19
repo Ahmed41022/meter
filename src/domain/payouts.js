@@ -10,7 +10,9 @@
  * A payment here is a ROW of the forecast: one client, one currency, one
  * scheduled date, which is what a platform actually sends. The answer is about
  * the whole payment and not about the tasks inside it, which is what a payout
- * is — a figure that either came or did not. The scheduled date is the one
+ * is — a figure that either came or did not. A word about some lines of it and
+ * not others is kept on those lines' own records instead (see paylines.js), so
+ * it takes them off this payment rather than answering it. The scheduled date is the one
  * the forecast gives BEFORE any answer, so that moving a payment does not
  * change which payment the answer belongs to. A payday is a date on the
  * client's clock, "2026-11-18", and travels as one.

@@ -74,6 +74,13 @@
  * is OVERDUE and listed as such, rather than dropped to look like it arrived.
  * Money still waiting on a review has no date to be late for, and a waiting
  * row whose floor has passed is left out as it always was.
+ *
+ * A single LINE can be marked too, on the record it is made of (paylines.js):
+ * an earning's `received` and `payday`, as above, and for a task's hours the
+ * task's own `hoursReceived` and `hoursPayday`. Hours moved that way leave the
+ * task's other money on the task's payday. So that marking can find its
+ * records, a task's line names the earnings it adds up (`earningIds`), and a
+ * shared reward or task-less line the one it is (`earningId`).
  */
 import { isBilled, sessionCents } from "./sessions.js";
 import { fold, isOffClock } from "./projects.js";
@@ -292,28 +299,43 @@ export const upcomingPay = (state, now) => {
        * left off a payday it would only have made look smaller.
        */
       const owed = new Map();
-      const add = (cur, part, cents) => {
-        if (!(cents > 0)) return;
-        if (!owed.has(cur)) owed.set(cur, new Map());
-        const parts = owed.get(cur);
-        parts.set(part, (parts.get(part) ?? 0) + cents);
+      const add = (when, cur, part, cents, earningId) => {
+        if (when === null || !(cents > 0)) return;
+        const at = `${when.date}|${cur}`;
+        if (!owed.has(at)) owed.set(at, { when, cur, parts: new Map() });
+        const parts = owed.get(at).parts;
+        if (!parts.has(part)) parts.set(part, { cents: 0, earningIds: [] });
+        const line = parts.get(part);
+        line.cents += cents;
+        if (earningId) line.earningIds.push(earningId);
       };
-      add(currency, "hours", hourlyCents(byTask, project, task.id, now));
+      /*
+       * The hours as one line of their own may have been marked (paylines.js):
+       * already paid, which leaves them off, or moved to a day of their own,
+       * which dates them there and leaves the rest of the task where it was.
+       */
+      if (task.hoursReceived !== true) {
+        const hoursPay = isDay(task.hoursPayday) ? paydayOn(rule, task.hoursPayday) : pay;
+        add(hoursPay, currency, "hours", hourlyCents(byTask, project, task.id, now));
+      }
       // Only lines naming this task alone. A reward shared across many tasks
       // is not this one's to date, and is dated on its own below.
       for (const earning of sole.get(task.id) ?? []) {
-        add(earning.currency, earning.kind || "other", earning.cents);
+        add(pay, earning.currency, earning.kind || "other", earning.cents, earning.id);
       }
 
-      for (const [cur, parts] of owed) {
-        const row = into(pendingReview ? waiting : due, `${client}|${pay.date}|${cur}`,
-                         { client, company, at: pay.at, date: pay.date, currency: cur });
-        for (const [part, cents] of parts) {
+      for (const { when, cur, parts } of owed.values()) {
+        // Work under review has a floor, not a date; one moved to a day that
+        // has since gone is left out, as a waiting floor that passed always was.
+        if (pendingReview && when.date < today) continue;
+        const row = into(pendingReview ? waiting : due, `${client}|${when.date}|${cur}`,
+                         { client, company, at: when.at, date: when.date, currency: cur });
+        for (const [part, { cents, earningIds }] of parts) {
           row.cents += cents;
           row.tasks.push({
             key: `task:${task.id}:${part}`, kind: "task", part,
             taskId: task.id, label: task.label, project: project.name, projectId: project.id,
-            cents, status,
+            cents, status, ...(earningIds.length ? { earningIds } : {}),
           });
         }
       }
@@ -353,7 +375,7 @@ export const upcomingPay = (state, now) => {
                        { client, company, at: pay.at, date: pay.date, currency: earning.currency });
       row.cents += earning.cents;
       row.tasks.push({
-        key: `reward:${earning.id}`, kind: "reward",
+        key: `reward:${earning.id}`, kind: "reward", earningId: earning.id,
         label: earning.note || "Reward", covers: tasksOf(earning).length,
         project: project.name, projectId: project.id, cents: earning.cents,
       });

@@ -23,6 +23,7 @@ src/
     payPeriod.js   a client's payday: cutoff, zone, the run a time falls in
     payout.js      Upcoming payments: what lands on which day
     payouts.js     what you said about a payment: paid, cancelled, moved, partly received
+    paylines.js    single lines of a payment marked paid or moved, on their own records
     performance.js windows, overlap splitting, trends, comparisons, rollups
     recent.js      Today's lists: what to restart, every day there was work
     rhythm.js      when in the day and week the work happens
@@ -93,6 +94,7 @@ src/
       DeskTime.jsx         billed against idle for the period
       OffClockList.jsx     what was tracked off the clock
       UpcomingPayments.jsx overdue, confirmed and waiting paydays, and their answers
+      PayLines.jsx         an opened payday's lines, ticked to mark paid or move
       Activity.jsx         the activity calendar with its scale and stepper
       WhenYouWork.jsx      the shape of the week and the day
       labels.js            period names, comparison wording, window dates
@@ -345,7 +347,9 @@ Northwind · 2 waiting on a review
 - A bonus, adjustment or per-item payment tied to no task is a line of its own, dated by the day it was added: it rides the next payday after that. Where the client has a schedule, the form for adding earnings asks **When is it paid?** — the next payday, already paid, or one of the six after it. A payday picked is a real date, never "the next run", and leaving the default keeps the date following the schedule. A task's own money, or a shared reward, can be moved to a payday or marked paid the same way. Where the client has no schedule nothing is forecast and the money counts in your earnings at once.
 - A payday is a date on the client's calendar all the way to the screen, so a client east of you is never shown a day early.
 
-A payday that has passed stays listed, first, as **overdue**, with its own total in the heading, until you say what happened. A notice on every tab asks about the oldest: **Paid in full** with the amount that came, **Not yet / partly** with what has come and the day the rest is expected, or **Cancelled**. The amount is prefilled and can be changed: $101 against an expected $100 is saved as it was, and the dollar goes into your earnings as an adjustment. Cancelling takes the money off your earnings and leaves the hours. A payment still to come can be marked **Already paid**, with an amount, or given **Change date**, from its row. Each has an Undo. **Later** puts the notice off until tomorrow. The first time there are any past paydays, Meter asks once whether to mark them all as received, since a ledger with years of them would open on a wall of overdue.
+A payday that has passed stays listed, first, as **overdue**, with its own total in the heading, until you say what happened. A notice on every tab asks about the oldest: **Paid in full** with the amount that came, **Not yet / partly** with what has come and the day the rest is expected, or **Cancelled**. The amount is prefilled and can be changed: $101 against an expected $100 is saved as it was, and the dollar goes into your earnings as an adjustment. Cancelling takes the money off your earnings and leaves the hours. A payment still to come can be marked **Already paid**, with an amount, or given **Change date**, from its row. Each has an Undo. **Later** puts the notice off until tomorrow.
+
+A client can pay part of a payday and hold the rest back, so every opened row, overdue, still to come or waiting on a review, has a box on each line. Tick some and choose **Mark paid**, which takes just those lines off, or **Move…** and a day, which puts them on that day's payment beside whatever else the client pays then. A task's hours, its per-item pay, a bonus and a shared reward are each a line of their own to tick. Both have an Undo. A line marked paid came as listed; where the amount differed, answer the row as a whole instead. A row already partly received has no boxes, because its figure is what was left of the expected amount, not the sum of its lines. Lines cannot be moved onto a day whose payment was already answered. The first time there are any past paydays, Meter asks once whether to mark them all as received, since a ledger with years of them would open on a wall of overdue.
 
 The forecast is not stored. A forecast written down would be wrong the moment a schedule changed, and wrong silently. What you said about a payment is, because it is not something the ledger could work out.
 

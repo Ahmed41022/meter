@@ -68,7 +68,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
   and a bonus tied to no task rides the next payday after the day you add it.
   Once a payday passes, Meter asks what happened: paid in full, cancelled, or
   not yet or only partly received. What actually came is recorded, so $101
-  against an expected $100 is a dollar more in your earnings.
+  against an expected $100 is a dollar more in your earnings. When a client
+  pays only some of a payday, tick those lines and mark them paid, or move
+  the rest to another day.
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.

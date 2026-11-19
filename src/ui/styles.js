@@ -367,7 +367,11 @@ export const CSS = `
   font-family:var(--mono);font-size:12px;color:var(--ink-2);padding:3px 0;}
 /* The name sits in a flex row beside the amount, so on a phone it has to be
    allowed to shrink and break, or a long task label pushes the amount off. */
-.payline > span:first-child{min-width:0;overflow-wrap:anywhere;}
+.payline > span:first-child,.payline-name{min-width:0;overflow-wrap:anywhere;}
+/* A line picked to be marked or moved on its own. The box leads, and the name
+   takes the room between it and the amount. */
+.payline-name{flex:1;}
+.payline .row-check{width:16px;height:16px;align-self:center;margin:0;}
 .payline-kind{color:var(--ink);}
 .payline-of{color:var(--muted);}
 /* What can be said about a payment as a whole. Wraps, so on a phone the

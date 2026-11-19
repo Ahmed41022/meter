@@ -660,6 +660,109 @@ describe("fixes: paydays and settling", () => {
       expect(asking(again)).toBeUndefined();
       expect(payLabels(again)[0]).toMatch(/^Overdue · /);
     }, 60_000);
+
+    describe("single lines of a payment", () => {
+      const amounts = (d) => [...d.querySelectorAll(".payrow .trow-amt")].map((e) => e.textContent);
+      const pick = async (d, re) => {
+        const line = [...d.querySelectorAll(".paylist .payline")].find((l) => re.test(l.textContent));
+        line.querySelector("input.row-check").click();
+        await settle();
+      };
+      const picked = (d) => d.querySelector('.paylist [aria-label="Selected lines"]');
+      /** Two tasks accepted an hour ago, both on Northwind's next payday. */
+      const twoComing = () => {
+        const now = Date.now();
+        const done = (id) => ({ id, label: id, createdAt: now - 80 * DAY, state: "accepted",
+                                stateAt: now - HOUR, submittedAt: now - 2 * HOUR });
+        return scheduled({ company: "Northwind", rules: { Northwind: WEEKLY }, tasks: [done("alpha"), done("beta")] });
+      };
+
+      it("marks one task's hours paid on a payment still to come, and Undo puts them back", async () => {
+        const dom = await bootDash(twoComing(), ASKED);
+        const d = dom.window.document;
+        expect(amounts(d)).toEqual(["$80.00"]);
+        await open(d, 0);
+        // A box on every line, and nothing to do until one is ticked.
+        expect(d.querySelectorAll(".paylist input.row-check")).toHaveLength(2);
+        expect(picked(d)).toBeNull();
+        await pick(d, /Hours · alpha/);
+        expect(picked(d).textContent).toMatch(/1 selected · \$40\.00/);
+        btn(picked(d), /^Mark paid$/).click();
+        await settle();
+        expect(amounts(d)).toEqual(["$40.00"]);
+        expect(d.querySelector(".toast").textContent).toMatch(/1 line marked as paid/);
+        const alpha = () => stored(dom).projects[0].tasks.find((t) => t.id === "alpha");
+        expect(alpha().hoursReceived).toBe(true);
+        // No answer for the payment as a whole: the rest of it is still coming.
+        expect(stored(dom).payouts ?? []).toEqual([]);
+        btn(d.querySelector(".toast"), /^Undo$/).click();
+        await settle();
+        expect(amounts(d)).toEqual(["$80.00"]);
+        expect(alpha()).not.toHaveProperty("hoursReceived");
+      }, 30_000);
+
+      it("moves a line of an overdue payment to a coming day, and refuses the past", async () => {
+        const dom = await bootDash(withOverdue(), ASKED);
+        const d = dom.window.document;
+        expect(payLabels(d)[0]).toMatch(/^Overdue · /);
+        await open(d, 0);
+        await pick(d, /Hours · old0/);
+        btn(picked(d), /^Move…$/).click();
+        await settle();
+        const date = picked(d).querySelector('input[aria-label="Move selected to"]');
+        setValue(dom.window, date, localIso(-3));
+        await settle();
+        expect(btn(picked(d), /^Move$/).disabled).toBe(true);
+        expect(picked(d).textContent).toMatch(/Pick today or a later day/);
+        const target = localIso(12);
+        setValue(dom.window, date, target);
+        await settle();
+        btn(picked(d), /^Move$/).click();
+        await settle();
+        expect(payLabels(d).some((l) => /^Overdue/.test(l))).toBe(false);
+        expect(payLabels(d)).toContain(longDay(target));
+        expect(stored(dom).projects[0].tasks.find((t) => t.id === "old0").hoursPayday).toBe(target);
+      }, 30_000);
+
+      it("will not move lines onto a payday already answered, and keeps them picked", async () => {
+        const target = localIso(12);
+        const seed = { ...twoComing(), payouts: [{
+          id: "done", client: "Northwind", currency: "USD", scheduled: target, outcome: "paid",
+          answeredAt: Date.now(), createdAt: Date.now(), deletedAt: null,
+        }] };
+        const dom = await bootDash(seed, ASKED);
+        const d = dom.window.document;
+        await open(d, 0);
+        await pick(d, /Hours · beta/);
+        btn(picked(d), /^Move…$/).click();
+        await settle();
+        setValue(dom.window, picked(d).querySelector('input[aria-label="Move selected to"]'), target);
+        await settle();
+        btn(picked(d), /^Move$/).click();
+        await settle();
+        expect(d.querySelector(".toast").textContent).toMatch(/payment is already answered/);
+        expect(stored(dom).projects[0].tasks.find((t) => t.id === "beta")).not.toHaveProperty("hoursPayday");
+        expect(amounts(d)).toEqual(["$80.00"]);
+        expect(picked(d)).not.toBeNull();
+      }, 30_000);
+
+      it("offers no boxes on a payment already partly received", async () => {
+        const dom = await bootDash(withOverdue(), ASKED);
+        const d = dom.window.document;
+        const notice = () => [...d.querySelectorAll(".banner")].find((b) => /A payday has passed/.test(b.textContent));
+        btn(notice(), /^Not yet \/ partly$/).click();
+        await settle();
+        setValue(dom.window, notice().querySelector('input[aria-label="Received so far (USD)"]'), "15");
+        setValue(dom.window, notice().querySelector('input[aria-label="New payday"]'), localIso(10));
+        await settle();
+        btn(notice(), /^Save$/).click();
+        await settle();
+        const at = payLabels(d).indexOf(longDay(localIso(10)));
+        await open(d, at);
+        expect(d.querySelectorAll(".paylist input.row-check")).toHaveLength(0);
+        expect(d.querySelector(".paylist").textContent).toMatch(/answered as a whole/);
+      }, 30_000);
+    });
   });
 
   it("puts one client on one payday row however its name was typed", async () => {

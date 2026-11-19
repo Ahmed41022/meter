@@ -4,8 +4,9 @@ import {
 } from "../../domain/earnings.js";
 import { formatMoney } from "../../domain/money.js";
 import {
-  OUTCOME, answerPayouts, largestProject, payoutKey, restorePayment, snapshotPayment,
+  OUTCOME, answerPayouts, answersByPayment, largestProject, payoutKey, restorePayment, snapshotPayment,
 } from "../../domain/payouts.js";
+import { lineRefs, markLines, readMarks, writeMarks } from "../../domain/paylines.js";
 import { payDay } from "../PaymentAnswer.jsx";
 import { uid } from "./shared.js";
 
@@ -94,5 +95,28 @@ export function paymentActions({ commit, flash, stateRef }) {
   const answerPayments = (rows, outcome, movedTo, message) =>
     recordAnswers(rows.map((row) => answerFor(row, { outcome, movedTo })), message);
 
-  return { answerPayment, answerPayments };
+  /**
+   * Some lines of a payment, not the whole of it: marked paid, `{ received:
+   * true }`, or moved to a day of their own, `{ payday }`. The Undo writes the
+   * marks back as they were, as an edit. A move onto a day this client's
+   * payment was already answered for is refused, because the lines would join
+   * that answered payment and vanish with it; false says it was refused.
+   */
+  const markPaymentLines = (row, lines, change) => {
+    if (change.payday) {
+      const there = answersByPayment(stateRef.current).get(payoutKey(row.company, row.currency, change.payday));
+      if (there) {
+        flash(`The ${payDay(change.payday)} payment is already answered. Pick another day.`);
+        return false;
+      }
+    }
+    const before = readMarks(stateRef.current, lineRefs(lines));
+    commit((s) => markLines(s, lines, change));
+    const what = lines.length === 1 ? "1 line" : `${lines.length} lines`;
+    flash(change.received ? `${what} marked as paid.` : `${what} moved to ${payDay(change.payday)}.`,
+          "Undo", () => commit((s) => writeMarks(s, before)));
+    return true;
+  };
+
+  return { answerPayment, answerPayments, markPaymentLines };
 }

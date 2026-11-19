@@ -2,7 +2,7 @@ import { formatMoney } from "../../domain/money.js";
 import { currenciesByValue } from "../../domain/performance.js";
 import { clockFor } from "../../domain/payouts.js";
 import PaymentAnswer, { payDay } from "../PaymentAnswer.jsx";
-import { KIND_WORD } from "../Earnings.jsx";
+import PayLines from "./PayLines.jsx";
 
 /** The task-less money on a row, counted by kind and named in lower case. */
 const extraParts = (row) => {
@@ -21,7 +21,7 @@ const extraParts = (row) => {
  * because this panel is only mounted while there is a payment to show.
  */
 export default function UpcomingPayments({
-  pay, asked, onSettleAsk, onPaid, onAnswer, onMovePayment, companyRules, now, openPay,
+  pay, asked, onSettleAsk, onPaid, onAnswer, onMovePayment, onMarkLines, companyRules, now, openPay,
   togglePay, moving, setMoving, paying, setPaying,
 }) {
   /* What is coming in, and when, is worked out once a minute by the App, which
@@ -115,31 +115,11 @@ export default function UpcomingPayments({
               </div>
               {openPay === row.key && (
                 <div className="paylist">
-                  {row.tasks.map((t) => (
-                    <div className="payline" key={t.key}>
-                      <span>
-                        {/* A task's money is a line for each kind of it, so
-                            the kind leads and the task follows: "Bonus ·
-                            batch 4417". A shared reward says how many tasks
-                            it covers, because that is what tells it from a
-                            task. */}
-                        {t.kind === "reward" ? `${t.label} · ${t.covers} tasks` : (
-                          <>
-                            <span className="payline-kind">
-                              {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
-                            </span>
-                            {t.kind === "extra"
-                              ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
-                              : ` · ${t.label}`}
-                          </>
-                        )}
-                        <span className="payline-of"> · {t.project}</span>
-                      </span>
-                      <span className="payline-amt">
-                        {formatMoney(t.cents, row.currency)}
-                      </span>
-                    </div>
-                  ))}
+                  {/* Each line can be picked and marked paid or moved on its
+                      own, on every kind of row: a client can pay some of a
+                      payday and hold the rest back. Keyed by the row, so
+                      what was picked goes when another row opens. */}
+                  <PayLines key={row.key} row={row} clock={clientClock(row)} onMarkLines={onMarkLines} />
                   {/* What was said about the payment as a whole, not about
                       one line of it: a payout either came or did not. Not
                       on money still waiting on a review, which has no date
@@ -198,7 +178,8 @@ export default function UpcomingPayments({
           it was paid or give it a new date. A reward shared by several tasks is paid with the last of them
           to get there, and waits like unreviewed work until then. Open a row to see
           what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
-          on lines of their own. A bonus tied to no task is paid on the next payday
+          on lines of their own. Tick lines to mark just those paid, or to move them to
+          another day, when a client pays part of a payday. A bonus tied to no task is paid on the next payday
           after the day it was added, unless a payday was chosen for it or it was
           marked as already paid. A negative adjustment is not taken off the day, only
           the money coming in is listed. Anything whose payday has passed has dropped off.
