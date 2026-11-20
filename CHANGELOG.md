@@ -17,13 +17,40 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Live exchange rates, off by default, and a display currency.** Settings →
+  Currency turns them on. Meter then asks `cdn.jsdelivr.net` (and
+  `latest.currency-api.pages.dev` if that is down) for today's rates, about
+  once a day, from a free public feed (CC0, no key). Only the request for the
+  rates is sent: nothing from your ledger leaves the device, and with rates
+  off the app never contacts either host. The last good rates are kept on the
+  device (`meter:rates`, not synced) and used offline, with their date. The
+  section also holds the favourite currencies (add, remove, reorder; only
+  current ISO currencies are offered) and a "Refresh now" button with the last
+  error. Three new preferences sync: `fxOn`, `displayCurrency` (a code or
+  "earned", default USD) and `favourites`.
+- **A ▾ beside every headline total** (Today, Overview, Work, a project's
+  ledger) opens the favourites and "As earned". The choice is one app-wide
+  currency, so every total switches at once. A converted figure is marked
+  "≈" and names the rate date; with no usable rates (off, none yet, or a
+  currency the feed lacks) only "As earned" works and the menu says why.
+- **Summaries follow the display currency**: project cards, Today's rows and
+  the Recent day headings, the Overview's By project and By company figures
+  with their pending and cancelled amounts, Upcoming payments' heading and
+  row totals, a project's Earnings heading, its per-task totals and its
+  unearned figure. Individual records (a session, an earning, a payline) stay
+  in their own currency, as do rates per hour, goals and answering a payment,
+  which always stores the row's own cents.
+- **The money sorts can rank in the display currency**: Work cards and By
+  project *Earned*, By company *Earned* and *An hour*, and *Amount* on a
+  project's Earnings and Sessions rank by converted value as one group when
+  every row can be converted, and keep their per-currency grouping otherwise.
 - **Sorting on the project lists, with synced defaults.** Work and Life cards
   have a Sort row: Added (today's order), Earned, Recently worked, Name and
   Time, without Earned on Life. The Overview's By project gains Earned, and
   By company gets Time, An hour and Earned, opening on Earned, with the
   unassigned row always last. A project's Earnings list can be sorted Newest
   or by Amount, and its Sessions ledger the same way. Money is never added or
-  compared across currencies: rows are grouped by currency, the one with most
+  compared across currencies without a rate: rows are grouped by currency, the one with most
   hours first, biggest first inside each, a row with several currencies is
   placed by its biggest single figure, and rows with no money stay at the
   bottom. Settings → Defaults has one choice per list; six new preferences
@@ -62,6 +89,14 @@ ledger changed such that an older build can no longer read it.
   bonuses and other earnings use the `received` and `payday` they already had.
   Absent means what it did before, so older ledgers read unchanged. A row
   already partly received is still answered as a whole.
+
+### Fixed
+
+- **Currencies are no longer added together on a project card, a project's
+  ledger total or its Earnings heading.** A project holding money in more
+  than one currency printed one sum in the project's currency. Each now shows
+  every currency as earned ("$40.00 · €5.00"), or one converted figure when a
+  display currency is set. A project in a single currency reads as before.
 
 ## [1.2.0] — 2026-11-18
 

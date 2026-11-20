@@ -40,7 +40,13 @@ Corrections preserve pause structure rather than collapsing a session into one s
 
 **Deleting a task unfiles its sessions rather than orphaning them.** The hours stay recorded and reappear under "No task", and the delete is undoable.
 
-**Money is ranked inside one currency, never across.** `domain/order.js` is the one place lists are ordered by money, and it keeps the app's central invariant: no two currencies' amounts are added, compared or divided by another currency's hours. Rows are grouped by currency; the groups are laid out most hours worked in that currency first (ties and lists with no hours by code), and inside a group the biggest comes first. A row with money in several currencies is placed by its biggest single-currency figure, in that figure's currency, never by a sum. Rows with no money sink to the bottom whichever way the sort points, and ties keep the order the rows came in. Turning a sort round flips it inside each group and leaves the groups where they are. `orderByMoney` takes the group order as an argument, which is the seam for a later converted ranking: figures already in one currency go through the same function. Ranking by an hour is the same rule over rates, so it too stays within one currency.
+**Money in two currencies is never added without a rate.** This is the app's central invariant, and it has four parts. Stored money is never converted or rewritten: every amount stays in the currency it was earned in, and a conversion is a display figure worked out fresh from the stored ones. A converted figure is always marked (`≈`) and carries the rate date, so an estimate cannot pass for a record. Nothing that writes to the ledger reads a converted figure: answering a payment stores the row's own currency and cents, whatever is on screen. And with live rates off, the default, the app behaves exactly as it did without them and never touches the network.
+
+**Rates are public data, so they are a per-device cache, not ledger.** `fx/rates.js` fetches one file of units-per-USD from two hosts (the CDN first, then the Pages mirror) with `cache: "no-cache"`, because the CDN tells browsers to keep it for a week, and a timeout that does not depend on the fetch honouring its signal. The last good copy lives under `meter:rates` in `storage/settings.js`, beside the theme, and is not synced; it is stale when from an earlier day, 12 hours old or more, or stamped in the future. `useRates` loads it and checks again about every 6 hours, and does nothing at all (no read, no fetch, no timer) while `fxOn` is false. The choices that follow the owner are synced preferences, one record each: `fxOn` (default off), `displayCurrency` (a code or `earned`, default USD) and `favourites` (a non-empty list of unique codes, default USD); `setPref` compares arrays item by item so an unchanged list is not stamped as an edit.
+
+**Conversion is arithmetic in `domain/fx.js`, and the decision about what to print is in `domain/fxDisplay.js`.** `normaliseRates` accepts only a feed with a real date and a `usd` table, skipping keys that are not three-letter codes and entries that are not positive finite numbers, and pins USD at 1. `convertCents` goes through USD and rounds once, to the nearest cent with halves away from zero, so a refund converts to exactly the negative of the same payment; the same currency is returned untouched. `convertFigures` converts and rounds each currency separately and adds, flags `converted` when any non-zero figure changed currency, and returns `null` cents with the missing codes rather than a total that quietly leaves a currency out. `displayMoney` converts only when the choice is a currency, rates are on and present, and every currency in the figures has a rate; otherwise it returns each currency as earned, in the order the caller already used, and says why (off, none, missing). The UI reads it through `CurrencyContext` and `useMoney`; individual records never go through them.
+
+**Money is ranked inside one currency, or in the display currency.** `domain/order.js` is the one place lists are ordered by money, and it keeps the invariant above. Rows are grouped by currency; the groups are laid out most hours worked in that currency first (ties and lists with no hours by code), and inside a group the biggest comes first. A row with money in several currencies is placed by its biggest single-currency figure, in that figure's currency, never by a sum. Rows with no money sink to the bottom whichever way the sort points, and ties keep the order the rows came in. Turning a sort round flips it inside each group and leaves the groups where they are. `orderByMoney` takes the group order as an argument, which is the seam for the converted ranking: `orderByMoneyIn` asks `convertedFigures` for every row's money as one figure in the display currency, and those figures, all in one currency, go through the same function as one group. It is all or nothing: if rates are off, the choice is `earned`, or any row holds a currency without a rate, the list keeps its grouping, so converted and unconverted rows are never ranked against each other. Ranking by an hour is the same rule over rates, so it too stays within one currency.
 
 **Deletes are soft.** Sessions get a `deletedAt` and drop out of totals, with an undo. Hard-deleting financial records with no undo is a decision you regret exactly once.
 
@@ -89,8 +95,11 @@ tests/projects.test.js     creation, validation, cascading removal, status and c
 tests/tasks.test.js        task records, label matching, re-filing, rates and prices as typed
 tests/settle.test.js       submitting, answering and reopening, and what each does to the money
 tests/earnings.test.js     money without hours, and whether it has landed
-tests/prefs.test.js        synced preferences: defaults, invalid values, no-op writes, merging two devices, the list sort keys
+tests/prefs.test.js        synced preferences: defaults, invalid values, no-op writes (lists included), merging two devices, the list sort keys, the currency prefs
 tests/order.test.js        sorting: money grouped by currency, rows with no money, stable ties, names, the Overview rows
+tests/fx.test.js           the feed's shape, converting cents (rounding, unknown currencies), totals with a missing rate, the currencies worth offering
+tests/fxDisplay.test.js    what a total prints and why not, and ranking in the display currency with the grouping kept when a rate is missing
+tests/rates.test.js        the feed with its fallback, bad shapes and a timeout, the per-device cache, staleness (fetch always stubbed)
 tests/companyList.test.js  the list of clients: folded names, schedules without projects, off-clock left out
 tests/payPeriod.test.js    paydays: cutoffs on a client's clock, DST, the forecast, a line for each kind of money, task-less money, the example ledger
 tests/payouts.test.js      answering a payment: each outcome, amounts, the adjustment, undo, the forecast with answers
@@ -111,6 +120,7 @@ tests/storage.test.js      backends, round trips, a stored ledger that cannot be
 tests/desktop.test.js      the Electron shell: quit guard, loopback server, a second launch
 tests/web.test.js          the published web app and its service worker
 tests/app.integration.*.test.js   the built HTML, driven in jsdom, split by area (shared helpers in tests/app.integration.helpers.js)
+                           (settings-currency, currency-switch and currency-summaries cover live rates, the ▾ and the converted figures and sorts)
 ```
 
 The unit tests are fast because the domain layer is pure. The integration tests are slower but catch what unit tests structurally can't: bundling mistakes, event wiring, and CSS that fails silently. They refuse to run against a `dist/` older than `src/` — a failed build leaves the previous bundle in place, and without that check they pass happily against code that doesn't compile. One of them is a regression test for exactly that — project card text was rendering inline because the elements were `<span>`s, so `margin-top` was dropped without any error anywhere.
@@ -173,7 +183,9 @@ Cases worth knowing about:
 - Editing one task and then another never carries the first one's values over.
 - A sitting from 23:00 to 02:00 is listed under both days, and each day's rows add up to its heading.
 - A week still going is compared with the week before up to the same weekday and time.
-- Dollars and pounds in one period are never added together, nor divided by each other's hours.
+- Dollars and pounds in one period are never added together without a rate, nor divided by each other's hours.
+- With live rates off, nothing is fetched on boot, on any tab, or from the ▾ menu; a converted figure is always marked `≈`; a currency with no rate falls back to each currency as earned, and a ranking never mixes converted and unconverted rows.
+- Answering a payment while another currency is displayed stores the payment's own currency and cents.
 - A ledger that cannot be parsed is copied aside before the first write, and never saved over.
 - A CSV cell starting with `=`, `+`, `-` or `@` cannot run as a formula, and amounts stay numbers.
 - Every test passes whatever the date it runs on: the suite has been run with the clock set to a Monday just after midnight, to the 1st of a month and to 1 January.

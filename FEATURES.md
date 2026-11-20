@@ -33,15 +33,23 @@ src/
     merge.js       sync: last write wins, record by record
     backup.js      how long since the ledger was last copied out
     prefs.js       synced preferences: one record per key, a default for each
-    order.js       how lists are sorted: money ranked inside one currency, never across
+    order.js       how lists are sorted: money ranked inside one currency, or in the display currency when every row converts
+    fx.js          exchange rates as arithmetic: normalising the feed, converting cents, the currencies worth offering
+    fxDisplay.js   what a total prints: one converted figure or each currency as earned, and why not
+  fx/
+    rates.js       fetching today's rates (two hosts, a timeout) and the per-device cache `meter:rates`
   storage/
     store.js       the only module that knows where data lives
-    settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period)
+    settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period, the rates cache)
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
     TodayView      the Today tab: to-dos, today so far, and the days before it
     DashboardView  the Overview tab: what a day, week or month was worth (see dashboard/)
-    SettingsTab    the Settings tab: appearance, defaults, companies and paydays, sync and backup (see settingsTab/)
+    SettingsTab    the Settings tab: appearance, defaults, currency, companies and paydays, sync and backup (see settingsTab/)
+    CurrencyContext.jsx  the display currency and the rates, for any total to ask what to print
+    CurrencySwitch.jsx   the ▾ beside a total and its menu
+    useMoney.js    summary figures in the display currency; `fxMoney.js` prints them with the ≈ and the rate date
+    currencyNames.js  "EGP · Egyptian Pound", falling back to the code
     PaymentAnswer  the form that asks what happened to a payment
     ProjectView    one project: the meter, its tasks, its ledger, its settings (see project/)
     charts.jsx     stat tiles, the trend columns and the activity calendar
@@ -52,6 +60,7 @@ src/
       useWakeCatchUp.js    catches the clock up when the app is looked at again
       useHeartbeat.js      proof of life for a running meter, written without a stamp
       useOverLimit.js      says so when the running task crosses its time limit
+      useRates.js          loads, refreshes and caches the rates while live rates are on; does nothing when off
       backup.js            export, CSV, restore and downloading an unreadable ledger
       sessionActions.js    start, pause, stop, re-file, correct and add time by hand
       taskActions.js       edit tasks, and hand in, answer and reopen them
@@ -83,6 +92,7 @@ src/
     settingsTab/   the sections of the Settings tab (not a project's settings, which are below)
       AppearanceSection.jsx  the theme switch, per device
       DefaultsSection.jsx    choices shared by every synced device: what the Overview opens on
+      CurrencySection.jsx    live rates on or off, the favourite currencies, the display currency
       CompaniesSection.jsx   every client and its payday, each editable in place
       SyncBackupSection.jsx  Export backup, Restore, Export CSV, and the Sync panel
     Settings.jsx   a project's settings panel, composed from `settings/`
@@ -152,7 +162,15 @@ Two panels on that page deliberately ignore the period control: **Targets** and 
 
 Figures are derived by **overlap**, not by when a session started. A session running 23:30 → 00:30 is half an hour of one day and half an hour of the next, counted in each for exactly the minutes it spent there. That is what makes the numbers agree with one another: the daily bars always add up to the weekly headline, and no hour is ever counted twice or lost at a boundary. Period boundaries are built from calendar fields, so they stay correct across DST — including in zones where the clocks go forward at midnight and a local 00:00 simply doesn't exist that day.
 
-Money is never mixed across currencies. If you bill in two, each is totalled and shown on its own line, led by the currency most of the hours were worked in rather than by whichever number is bigger — EGP 300 is not more than $70. Every per-hour figure divides one currency's money by the hours worked in that currency alone, so each currency gets its own *An hour came to* and its own change; a chart column lists each currency's amount on its own line; and the figures that set projects against each other — how much rides on one, which paid best by the hour — appear only when the period's money is in one currency.
+Money is never added across currencies without a rate. By default, if you bill in two, each is totalled and shown on its own line, led by the currency most of the hours were worked in rather than by whichever number is bigger — EGP 300 is not more than $70. Every per-hour figure divides one currency's money by the hours worked in that currency alone, so each currency gets its own *An hour came to* and its own change; a chart column lists each currency's amount on its own line; and the figures that set projects against each other — how much rides on one, which paid best by the hour — appear only when the period's money is in one currency.
+
+**One display currency, with live rates (off by default).** Turn on *Use live exchange rates* in **Settings → Currency** and a **▾** appears beside each headline total: Today's, the Overview's, the Work tab's *Earned across everything*, and a project's ledger total. It offers your favourite currencies and *As earned*, which is the behaviour above. Picking a currency sets one app-wide choice (it syncs), so every total switches together. A converted figure reads *≈ $166.39* with the rate date (*at 19 Nov rates*), or as a title where there is no room. It is computed fresh from the stored amounts through the day's rates and rounded to the cent, halves away from zero; stored money is never converted or rewritten.
+
+What converts is every summary: totals and headlines, project cards, Today's project rows and the Recent day headings, the Overview's By project and By company figures with their pending and cancelled amounts, Upcoming payments' heading and each payday row's total, a project's Earnings heading, its per-task totals and its unearned figure. What stays in its own currency is every record (a session row, an earning row, a line inside an opened payday), rates per hour, goals, comparison changes, and anything that writes: answering a payment stores the row's own currency and cents, whatever is shown. With no usable rates (off, none fetched yet, or a currency the feed lacks) only *As earned* works, and the menu says which; a total with a currency missing falls back to showing each currency as earned.
+
+The money sorts follow the choice. With a display currency and rates, *Earned* (Work cards, By project, By company), *An hour* (By company) and *Amount* (a project's Earnings and Sessions) rank by converted value as one group; if any row in the list has a currency the rates lack, the whole list keeps its grouping by currency, and converted and unconverted rows are never ranked together.
+
+Rates come from a free public feed (the Currency API, CC0, by [fawazahmed0](https://github.com/fawazahmed0/exchange-api), no key), fetched from `cdn.jsdelivr.net` with `latest.currency-api.pages.dev` as the fallback, about once a day while the app is open. Only the request for the rates is sent; nothing from your ledger is. The last good rates are kept on the device and used offline, with their date. Rates off means the app never contacts either host.
 
 ---
 
@@ -309,7 +327,7 @@ Sep 21 – Sep 27 · −92% vs last week
 
 Conservative on purpose: the number you glance at should be money you have, or a rejected week reads as a good one.
 
-**Sorting money never adds or compares two currencies.** *Earned* on the cards and the Overview, and *Amount* on a project's Earnings and Sessions, put the rows into one group per currency, the currency with most hours worked first (by code where there are no hours), and rank by amount inside each group, biggest first. A row with money in several currencies, such as a company, is placed by its biggest single figure and its currency; rows with no money sink to the bottom whichever way the sort points. On the Overview, **By project** offers *Time*, *An hour* (only inside one currency, as before) and *Earned*, and **By company** offers *Time*, *An hour* and *Earned*, opening on Earned; with one currency that is the order it always had, and the unassigned row stays last under every order. A project's **Earnings** list opens *Newest* and offers *Amount*, where deductions sort by their signed value and so come last; pending and cancelled lines stay in the list. The **Sessions** ledger opens *Newest* and offers *Amount*, valued as the rows show it, with idle and cancelled sittings at the bottom; selecting and the bulk actions work the same under either.
+**Sorting money never adds or compares two currencies without a rate.** *Earned* on the cards and the Overview, and *Amount* on a project's Earnings and Sessions, put the rows into one group per currency, the currency with most hours worked first (by code where there are no hours), and rank by amount inside each group, biggest first. A row with money in several currencies, such as a company, is placed by its biggest single figure and its currency; rows with no money sink to the bottom whichever way the sort points. On the Overview, **By project** offers *Time*, *An hour* (only inside one currency, as before) and *Earned*, and **By company** offers *Time*, *An hour* and *Earned*, opening on Earned; with one currency that is the order it always had, and the unassigned row stays last under every order. A project's **Earnings** list opens *Newest* and offers *Amount*, where deductions sort by their signed value and so come last; pending and cancelled lines stay in the list. The **Sessions** ledger opens *Newest* and offers *Amount*, valued as the rows show it, with idle and cancelled sittings at the bottom; selecting and the bulk actions work the same under either.
 
 **Cancelled work keeps its hours and loses its money.** It is dimmed rather than deleted — the hours were still worked, and erasing the record would leave them in the ledger with no account of where their money went. It still counts in every time figure, and the project card, By project and By company name what it cost beside the hours (*$991.63 cancelled*), so hours against a zero read as a fact about the month rather than a broken app.
 
@@ -440,6 +458,7 @@ The **Settings** tab, after Life, gathers what is set once and rarely touched. I
 
 - **Appearance** is the theme: light, dark, or follow the system. It is per device, because what suits a phone at night and a desktop at noon differ, and it is not in the ledger.
 - **Defaults** are choices that sync, so every device agrees. There are seven: what the Overview opens on, either the last period used on that device or a fixed one, and the order each list opens in: Work projects, Life projects, Overview By project, Overview By company, a project's earnings and a project's sessions. Each is named for its list in Settings. They are stored as preferences in the ledger, one record per choice, and a default stores which order, not which way round: a pick on the list itself lasts only until you leave it.
+- **Currency** is live exchange rates. A switch turns them on (off by default), with the date of the rates in use, a *Refresh now* button and the last error; offline, the saved rates are used and their age is said. The **favourites** are the currencies the ▾ offers: add (only current ISO currencies in the feed are offered, from a built-in list until rates arrive; choosing one adds it), remove, reorder, with at least one always kept. *Show totals in* picks the display currency, a favourite or *As earned*. The switch, the favourites and the display currency sync; the rates themselves are per device. A line says which host is asked and that nothing from the ledger is sent, and credits the feed.
 - **Companies & paydays** is every client in one list, one row each, however its name was typed: the schedule in words or *No schedule*, how many projects use it, and the next payday. **Edit** opens the same schedule boxes the project uses, one client at a time, and says before Save that the schedule is shared by every project of that client. Saving has an Undo that writes the old schedule back as a new edit.
 - **Sync & backup** is what is described next.
 

@@ -77,6 +77,11 @@ rates. `npm run shots` regenerates every one of them.</sub>
 - **Follows your system's light or dark setting**, or whichever you pick,
   from the Settings tab, which also lists every client's payday, holds
   backup, restore and sync, and sets the order each project list opens in.
+- **Shows totals in one currency, if you want** — optionally. Turn on live
+  exchange rates in Settings → Currency (off by default; only a public rates
+  file is fetched, nothing from your ledger) and a ▾ beside each total picks a
+  display currency from your favourites. Converted figures are marked ≈ with
+  the rate date; the default stays each currency as earned, never added.
 - **Exports** a JSON backup or a CSV of every line item.
 
 The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.
