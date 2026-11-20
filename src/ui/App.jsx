@@ -17,7 +17,6 @@ import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync, { SyncPip } from "./Sync.jsx";
 import { pricer } from "../domain/terms.js";
-import ThemeSwitch from "./ThemeSwitch.jsx";
 import RunningBar from "./RunningBar.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
 import { dayKey, liveObjectives, objectivesFor, toggleObjective } from "../domain/objectives.js";
@@ -29,6 +28,7 @@ import ProjectsView from "./ProjectsView.jsx";
 import ProjectView from "./ProjectView.jsx";
 import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
+import SettingsTab from "./SettingsTab.jsx";
 
 import { EMPTY, useStartup } from "./app/useStartup.js";
 import { useOverLimit } from "./app/useOverLimit.js";
@@ -485,6 +485,51 @@ export default function App({ store: injectedStore }) {
             onOpenProject={openProject}
             onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
           />
+        ) : tab === "settings" ? (
+          <SettingsTab
+            theme={theme}
+            onTheme={(key) => {
+              setTheme(key);
+              saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
+            }}
+            backupProps={{
+              backup, onExport: exportBackup, onImport: importBackup, onExportCsv: exportCsv,
+              restore: restoring && {
+                name: restoring.name,
+                current: ledgerWords(state),
+                incoming: ledgerWords(restoring.state),
+              },
+              onConfirmRestore: confirmRestore, onCancelRestore: () => setRestoring(null),
+            }}
+            /* The Sync panel sits with Export and Restore: the three are the
+               answers to "where else does this exist". */
+            sync={(
+              <Sync
+                clientId={clientId} draft={clientDraft} onDraft={setClientDraft}
+                onSaveClientId={() => {
+                  const id = clientDraft.trim();
+                  if (!id) return;
+                  saveSetting(SETTING.CLIENT_ID, id);
+                  setClientId(id);
+                  setClientDraft("");
+                }}
+                onForget={() => {
+                  saveSetting(SETTING.CLIENT_ID, null);
+                  setClientId("");
+                  authRef.current = null;
+                  revisionRef.current = null;
+                  setSync({ state: "idle", at: null });
+                }}
+                status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
+                canSignIn={originAllowed()} origin={window.location.origin}
+                onSync={() => runSync({ interactive: true })}
+                onSignOut={async () => {
+                  await authRef.current?.signOut();
+                  setSync({ state: "idle", at: null });
+                }}
+              />
+            )}
+          />
         ) : (
           <ProjectsView
             scope={tab}
@@ -497,44 +542,6 @@ export default function App({ store: injectedStore }) {
             now={now}
             onOpen={openProject}
             {...projectListActions({ commit })}
-            onExport={exportBackup} onImport={importBackup} backup={backup}
-            onExportCsv={exportCsv}
-            restore={restoring && {
-              name: restoring.name,
-              current: ledgerWords(state),
-              incoming: ledgerWords(restoring.state),
-            }}
-            onConfirmRestore={confirmRestore} onCancelRestore={() => setRestoring(null)}
-          />
-        )}
-
-        {/* Sync belongs beside Export and Restore: they are the three answers to
-            "where else does this exist". Work only — the Life tab has no ledger
-            of its own, it is a view of the same one. */}
-        {!project && tab === "work" && (
-          <Sync
-            clientId={clientId} draft={clientDraft} onDraft={setClientDraft}
-            onSaveClientId={() => {
-              const id = clientDraft.trim();
-              if (!id) return;
-              saveSetting(SETTING.CLIENT_ID, id);
-              setClientId(id);
-              setClientDraft("");
-            }}
-            onForget={() => {
-              saveSetting(SETTING.CLIENT_ID, null);
-              setClientId("");
-              authRef.current = null;
-              revisionRef.current = null;
-              setSync({ state: "idle", at: null });
-            }}
-            status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
-            canSignIn={originAllowed()} origin={window.location.origin}
-            onSync={() => runSync({ interactive: true })}
-            onSignOut={async () => {
-              await authRef.current?.signOut();
-              setSync({ state: "idle", at: null });
-            }}
           />
         )}
       </div>
@@ -548,13 +555,6 @@ export default function App({ store: injectedStore }) {
           <SyncPip status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
                    onSync={() => runSync({ interactive: true })} />
         )}
-        {/* System is the default and stays it. The other two exist because
-            "what my OS is set to" and "what I want to look at right now" are
-            not the same question — least of all at 2am. */}
-        <ThemeSwitch theme={theme} onChange={(key) => {
-          setTheme(key);
-          saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
-        }} />
         {/* Which build you are looking at. Three copies of this app can be in
             use at once — browser, phone and desktop — and "it works on mine"
             is not answerable without it. */}

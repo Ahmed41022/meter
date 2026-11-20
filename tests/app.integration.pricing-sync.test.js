@@ -80,6 +80,7 @@ describe("choosing a theme", () => {
     const dom = await boot(seed);
     await settle();
     const d = dom.window.document;
+    await toProjects(d, "Settings");
     for (const label of ["Light", "Dark", "Match system"]) {
       expect(themeBtn(d, label), label).not.toBeNull();
     }
@@ -91,6 +92,7 @@ describe("choosing a theme", () => {
     const dom = await boot(seed);
     await settle();
     const d = dom.window.document;
+    await toProjects(d, "Settings");
     themeBtn(d, "Light").click();
     await settle();
     expect(root(d).getAttribute("data-theme")).toBe("light");
@@ -109,6 +111,7 @@ describe("choosing a theme", () => {
     const dom = await boot(seed, { "meter:theme": "dark" });
     await settle();
     const d = dom.window.document;
+    await toProjects(d, "Settings");
     themeBtn(d, "Match system").click();
     await settle();
     expect(root(d).hasAttribute("data-theme")).toBe(false);
@@ -397,7 +400,7 @@ describe("the sync panel", () => {
     const dom = await boot(seed);
     await settle();
     const d = dom.window.document;
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     return { dom, d };
   };
   const panel = (d) => [...d.querySelectorAll(".sec")]
@@ -435,7 +438,7 @@ describe("the sync panel", () => {
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     expect(btn(d, /Sign in with Google/i)).toBeTruthy();
     expect(panel(d).textContent).toMatch(/merges rather than replaces/i);
 
@@ -451,7 +454,7 @@ describe("the sync panel", () => {
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     expect(panel(d).querySelectorAll(".btn")).toHaveLength(1);
     expect(panel(d).querySelector(".btn").textContent).toMatch(/Sign in with Google/i);
     expect([...panel(d).querySelectorAll(".linkish")].map((b) => b.textContent))
@@ -466,7 +469,7 @@ describe("the sync panel", () => {
     const dom = await boot(seed, { "meter:google-client": "abc.apps.googleusercontent.com" });
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     btn(d, /Sign in with Google/i).click();
     await settle();
     expect(panel(d).textContent).toMatch(/Syncing/i);
@@ -475,6 +478,7 @@ describe("the sync panel", () => {
 
   it("stamps what a change touched, so two devices can be merged later", async () => {
     const { dom, d } = await open();
+    await toProjects(d, "Work");
     d.querySelector(".card").click();
     await settle();
     // No task: naming one adds it to the PROJECT, which is a real change to the

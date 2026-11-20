@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
@@ -8,7 +8,7 @@ import { isCancelled, isPending, isPieceOnly, perTask } from "../domain/earnings
 import { isDone } from "../domain/objectives.js";
 import { sessionCents } from "../domain/sessions.js";
 import { pricer } from "../domain/terms.js";
-import { countWord, daysWord, wordsFor } from "./words.js";
+import { wordsFor } from "./words.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
@@ -24,8 +24,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  */
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
-  onOpen, onAdd, onExport, onImport, onExportCsv, backup,
-  restore = null, onConfirmRestore, onCancelRestore,
+  onOpen, onAdd,
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
@@ -39,7 +38,6 @@ export default function ProjectsView({
   const [error, setError] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
-  const fileRef = useRef(null);
 
   // What a sitting came to: its rate, and a share of it for time over its
   // task's limit, as every other screen values it.
@@ -245,30 +243,7 @@ export default function ProjectsView({
 
 
       <div className="sec">
-        {/* Where the Restore button was, because that is where the reader is
-            looking once the file is picked. Restoring replaces; it does not
-            merge. So the two ledgers are set side by side, in terms a person
-            can recognise them by, before either is touched. */}
-        {restore ? (
-          <div className="panel restore" role="alertdialog" aria-labelledby="restore-title">
-            <span className="eyebrow" id="restore-title">Replace your ledger?</span>
-            <p>
-              Restoring “{restore.name}” replaces everything here with what the file holds.
-              Nothing is merged: anything here that the file doesn&apos;t have is gone, unless you
-              press Undo straight after.
-            </p>
-            <dl className="restore-sides">
-              <dt>Here now</dt>
-              <dd>{restore.current}</dd>
-              <dt>In the file</dt>
-              <dd>{restore.incoming}</dd>
-            </dl>
-            <div className="controls">
-              <button className="btn danger" onClick={onConfirmRestore}>Replace my ledger</button>
-              <button className="btn ghost" onClick={onCancelRestore}>Cancel</button>
-            </div>
-          </div>
-        ) : adding ? (
+        {adding ? (
           <div className="panel">
             <span className="eyebrow">New {w.projectNoun}</span>
             <div style={{ height: 14 }} />
@@ -336,30 +311,7 @@ export default function ProjectsView({
             <button className="btn primary" onClick={() => setAdding(true)}>
               New {w.projectNoun}
             </button>
-            <button className={"btn " + (backup?.stale ? "primary" : "ghost")} onClick={onExport}>
-              Export backup
-            </button>
-            <button className="btn ghost" onClick={() => fileRef.current?.click()}>Restore</button>
-            {!life && onExportCsv && (
-              <button className="btn ghost" onClick={onExportCsv}>Export CSV</button>
-            )}
-            <input ref={fileRef} type="file" accept="application/json" style={{ display: "none" }}
-                   onChange={(e) => {
-                     const f = e.target.files?.[0];
-                     if (f) onImport(f);
-                     e.target.value = "";
-                   }} />
           </div>
-        )}
-        {/* Stated whether or not it is overdue: a reader should be able to see
-            that the last copy is recent, not have to trust the silence. */}
-        {!life && backup && (
-          <p className="backup-note">
-            {backup.never
-              ? "No backup has ever been exported."
-              : `Last backup ${daysWord(backup.days)}.`}
-            {backup.unsaved > 0 && ` ${countWord(backup.unsaved)} since.`}
-          </p>
         )}
       </div>
     </>

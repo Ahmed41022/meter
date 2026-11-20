@@ -166,7 +166,7 @@ describe("fixes: data, export and layout", () => {
     const exportCsv = async (seed) => {
       const dom = await boot(seed);
       const d = dom.window.document;
-      await toProjects(d, "Work");
+      await toProjects(d, "Settings");
       return grab(dom, () => btn(d, /Export CSV/i).click());
     };
 
@@ -225,7 +225,7 @@ describe("fixes: data, export and layout", () => {
      *  a cold run can take longer than any fixed wait worth writing down. */
     const pick = async (dom, content, name = "meter-2024-02-03.json") => {
       const d = dom.window.document;
-      await toProjects(d, "Work");
+      await toProjects(d, "Settings");
       const input = d.querySelector("input[type=file]");
       const chosen = new dom.window.File([content], name, { type: "application/json" });
       Object.defineProperty(input, "files", { value: [chosen], configurable: true });

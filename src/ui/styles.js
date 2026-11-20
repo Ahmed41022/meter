@@ -317,7 +317,7 @@ export const CSS = `
 }
 
 .foot{margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:9px;}
-/* Sync state, from any screen. The panel that configures it stays on Work. */
+/* Sync state, from any screen. The panel that configures it is in Settings. */
 .pip{display:inline-flex;align-items:center;gap:7px;background:none;border:0;
   font:inherit;font-size:11.5px;font-family:var(--mono);color:var(--muted);
   cursor:pointer;padding:4px 2px;}
@@ -341,6 +341,14 @@ export const CSS = `
   user-select:all;word-break:break-all;}
 
 .backup-note{margin:10px 0 0;font-size:12px;color:var(--muted);}
+/* Settings tab: one titled block per concern. The title looks like an eyebrow
+   but is a real heading, so a screen reader can jump between sections; it is
+   not given the eyebrow class because the Sync panel inside has eyebrows of its
+   own that other code looks up by their text. */
+.settings-sec + .settings-sec{margin-top:34px;}
+.settings-sec .segmented.theme{display:inline-flex;}
+.settings-title{margin:0 0 12px;font-size:10.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--muted);}
 /* Restoring a backup: the ledger here set beside the one in the file, so what
    "replace" will cost is in front of the reader before they agree to it. */
 .restore p{margin:10px 0 0;font-size:13.5px;line-height:1.6;color:var(--ink-2);}

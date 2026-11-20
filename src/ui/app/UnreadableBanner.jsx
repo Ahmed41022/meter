@@ -21,7 +21,7 @@ export default function UnreadableBanner({
       {" "}<button className="linkish" onClick={downloadUnreadable}>Download it</button>
       {" "}to keep a copy you can repair, or{" "}
       <button className="linkish"
-              onClick={() => { setOpenProjectId(null); setFocusSession(null); setTab("work"); }}>
+              onClick={() => { setOpenProjectId(null); setFocusSession(null); setTab("settings"); }}>
         restore a backup
       </button>.
       {!store.held && (

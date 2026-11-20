@@ -65,7 +65,7 @@ describe("nudging the user to keep a copy they hold", () => {
   it("records the backup and drops the nudge once a file is produced", async () => {
     const { dom, d } = await open({ projects: [project("a")], sessions: [block("s1", 3)] });
     expect(banner(d)).toBeTruthy();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     // jsdom implements no blob URLs, so the download throws and the stamp never
     // lands — which is the RIGHT behaviour (no file handed over, no backup
     // recorded) but leaves the happy path untestable without this.
@@ -87,7 +87,7 @@ describe("nudging the user to keep a copy they hold", () => {
     const { d } = await open({
       projects: [project("a")], sessions: [block("s1", 40)], lastBackupAt: daysAgo(2),
     });
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     expect(d.querySelector(".backup-note").textContent).toMatch(/Last backup 2 days ago/i);
   }, 25_000);
 });
@@ -230,7 +230,7 @@ describe("handing the numbers to a spreadsheet", () => {
     const dom = await boot(seed);
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     const csv = await grab(dom, d, /Export CSV/i);
 
     // After the byte-order mark that tells Excel the file is UTF-8.
@@ -250,7 +250,7 @@ describe("handing the numbers to a spreadsheet", () => {
     const dom = await boot({ ...seed, lastBackupAt: undefined });
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Work");
+    await toProjects(d, "Settings");
     await grab(dom, d, /Export CSV/i);
 
     const saved = JSON.parse(dom.window.localStorage.getItem("meter:v1"));
