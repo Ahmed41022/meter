@@ -35,6 +35,9 @@ export const SETTING = {
   /** The day the notice about a passed payday was last put off with Later, as
    *  this device's calendar day. A reminder snoozed, so per device. */
   PAYOUT_LATER: "meter:payout-later",
+  /** The last good exchange rates (see fx/rates.js). Public data fetched for
+   *  this device, so it is a cache, not work, and stays out of the ledger. */
+  RATES: "meter:rates",
 };
 
 export const THEME = { SYSTEM: "system", LIGHT: "light", DARK: "dark" };

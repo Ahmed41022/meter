@@ -167,3 +167,80 @@ describe("the list sort preferences", () => {
     expect(prefOf(odd, "cardsSort")).toBe("added");
   });
 });
+
+describe("the currency preferences", () => {
+  it("default to rates off, USD, and USD as the only favourite", () => {
+    expect(prefOf({}, "fxOn")).toBe(false);
+    expect(prefOf({}, "displayCurrency")).toBe("USD");
+    expect(prefOf({}, "favourites")).toEqual(["USD"]);
+  });
+
+  it("hands out a default favourites list that cannot be changed by a caller", () => {
+    expect(() => prefOf({}, "favourites").push("EUR")).toThrow();
+  });
+
+  it("validates fxOn as a real boolean", () => {
+    expect(PREFS.fxOn.valid(true)).toBe(true);
+    expect(PREFS.fxOn.valid(false)).toBe(true);
+    for (const v of ["true", 1, 0, null, undefined]) expect(PREFS.fxOn.valid(v)).toBe(false);
+  });
+
+  it("validates displayCurrency as an upper-case code or earned", () => {
+    for (const v of ["USD", "EGP", "earned"]) expect(PREFS.displayCurrency.valid(v)).toBe(true);
+    for (const v of ["usd", "US", "USDT", "Earned", "", null, 5, ["USD"]]) {
+      expect(PREFS.displayCurrency.valid(v)).toBe(false);
+    }
+  });
+
+  it("validates favourites as a non-empty list of unique upper-case codes", () => {
+    expect(PREFS.favourites.valid(["USD", "EGP"])).toBe(true);
+    for (const v of [[], ["USD", "USD"], ["usd"], ["USD", "EU"], ["USD", 5], "USD", null, undefined,
+      { 0: "USD", length: 1 }]) {
+      expect(PREFS.favourites.valid(v)).toBe(false);
+    }
+  });
+
+  it("falls back to the default for a stored value that does not validate", () => {
+    const state = { prefs: [
+      { id: "favourites", value: ["USD", "USD"], deletedAt: null },
+      { id: "displayCurrency", value: "usd", deletedAt: null },
+      { id: "fxOn", value: "yes", deletedAt: null },
+    ] };
+    expect(prefOf(state, "favourites")).toEqual(["USD"]);
+    expect(prefOf(state, "displayCurrency")).toBe("USD");
+    expect(prefOf(state, "fxOn")).toBe(false);
+  });
+
+  it("refuses an invalid value", () => {
+    const state = { projects: [] };
+    expect(setPref(state, "favourites", [], 1)).toBe(state);
+    expect(setPref(state, "favourites", ["EUR", "EUR"], 1)).toBe(state);
+    expect(setPref(state, "displayCurrency", "euro", 1)).toBe(state);
+    expect(setPref(state, "fxOn", "on", 1)).toBe(state);
+  });
+
+  it("stores a list and treats the same list, as a new array, as no change", () => {
+    const state = setPref({}, "favourites", ["USD", "EGP"], 1);
+    expect(prefOf(state, "favourites")).toEqual(["USD", "EGP"]);
+    expect(setPref(state, "favourites", ["USD", "EGP"], 2)).toBe(state);
+  });
+
+  it("stamps nothing for an unchanged list, but a reordered one is a change", () => {
+    const state = commit({}, (s) => setPref(s, "favourites", ["USD", "EGP"], 1), 1);
+    const same = commit(state, (s) => setPref(s, "favourites", ["USD", "EGP"], 2), 2);
+    expect(same).toEqual(state);
+    expect(same.prefs[0].updatedAt).toBe(1);
+    const moved = commit(state, (s) => setPref(s, "favourites", ["EGP", "USD"], 3), 3);
+    expect(prefOf(moved, "favourites")).toEqual(["EGP", "USD"]);
+    expect(moved.prefs[0].updatedAt).toBe(3);
+  });
+
+  it("keeps a change to each currency preference through a merge", () => {
+    const base = { projects: [], sessions: [] };
+    const phone = commit(base, (s) => setPref(s, "fxOn", true, 1), 100);
+    const desk = commit(base, (s) => setPref(s, "favourites", ["EGP", "USD"], 1), 200);
+    const merged = mergeState(phone, desk);
+    expect(prefOf(merged, "fxOn")).toBe(true);
+    expect(prefOf(merged, "favourites")).toEqual(["EGP", "USD"]);
+  });
+});

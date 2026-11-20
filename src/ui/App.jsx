@@ -11,6 +11,7 @@ import { storedPeriodFor } from "../domain/payPeriod.js";
 import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
 import { backupState } from "../domain/backup.js";
+import { useRates } from "./app/useRates.js";
 import { SORT_PREFS, prefOf, setPref } from "../domain/prefs.js";
 import { companyList } from "../domain/payPeriod.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -180,6 +181,9 @@ export default function App({ store: injectedStore }) {
     () => liveSessions(state.sessions).some((s) => isRunning(s) && ownedBy(s, device)),
     [state.sessions, device],
   );
+  // Off by default, and then it does nothing: see useRates.
+  const fxOn = prefOf(state, "fxOn");
+  const fx = useRates(fxOn);
   const backup = useMemo(() => backupState(state, now), [state, now]);
 
   /**
@@ -505,6 +509,14 @@ export default function App({ store: injectedStore }) {
             onTheme={(key) => {
               setTheme(key);
               saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
+            }}
+            currency={{
+              fxOn, onFxOn: (on) => commit((s) => setPref(s, "fxOn", on, Date.now())),
+              fx,
+              favourites: prefOf(state, "favourites"),
+              onFavourites: (list) => commit((s) => setPref(s, "favourites", list, Date.now())),
+              displayCurrency: prefOf(state, "displayCurrency"),
+              onDisplayCurrency: (code) => commit((s) => setPref(s, "displayCurrency", code, Date.now())),
             }}
             companies={companyList(state)} now={now}
             {...companyActions({ commit, flash, stateRef })}

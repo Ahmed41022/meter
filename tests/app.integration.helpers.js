@@ -96,14 +96,17 @@ export const COUNTER = `<script>
  *  ledger, such as the Google client id. They have to be in place before the
  *  page runs, because the app reads them once at mount, exactly as a real
  *  browser would. */
-export const boot = async (seed, settings = null) => {
+export const boot = async (seed, settings = null, script = "") => {
   let html = readFileSync(DIST, "utf8");
   const sets = [
     seed && `localStorage.setItem('meter:v1', ${JSON.stringify(JSON.stringify(seed))});`,
     ...Object.entries(settings ?? {}).map(
       ([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`),
   ].filter(Boolean);
-  const preamble = sets.length ? `<script>${sets.join("")}</script>${COUNTER}` : COUNTER;
+  // `script` runs before the bundle, for what a test must have in place first
+  // (a stubbed fetch, say): jsdom has no network of its own.
+  const preamble = (sets.length ? `<script>${sets.join("")}</script>${COUNTER}` : COUNTER)
+    + (script ? `<script>${script}</script>` : "");
   html = html.replace('<div id="root"></div>', `<div id="root"></div>${preamble}`);
   const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/" });
   await appReady(dom);

@@ -353,6 +353,17 @@ export const CSS = `
 .company-name{font-size:14.5px;color:var(--ink);}
 .company-meta{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px;}
 .company-edit{margin-top:14px;}
+/* Currency: the favourites list, one row per code with its move and remove buttons. */
+.fav-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line-2);}
+.fav-row:last-of-type{border-bottom:0;}
+.fav-code{flex:1;font-size:14px;color:var(--ink);}
+.fav-name{color:var(--muted);font-size:12.5px;margin-left:8px;}
+.fav-add{display:flex;gap:9px;margin-top:12px;align-items:center;}
+.fav-add .inp{flex:1;min-width:0;}
+.fx-switch{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink);cursor:pointer;}
+.fx-status{font-size:13px;color:var(--ink-2);margin:10px 0 0;line-height:1.55;}
+.fx-status.err{color:var(--amber);}
+.fx-note{margin:10px 0 0;font-size:12px;color:var(--muted);line-height:1.55;}
 .settings-title{margin:0 0 12px;font-size:10.5px;font-weight:600;text-transform:uppercase;
   letter-spacing:.1em;color:var(--muted);}
 /* Restoring a backup: the ledger here set beside the one in the file, so what

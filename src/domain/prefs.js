@@ -35,6 +35,14 @@ const sortPref = (orders, fallback) => {
   return { default: fallback, valid: (v) => keys.includes(v) };
 };
 
+const isCode = (v) => typeof v === "string" && /^[A-Z]{3}$/.test(v);
+
+/** Equal as stored: arrays by their items, everything else by identity. */
+const sameValue = (a, b) =>
+  Array.isArray(a) && Array.isArray(b)
+    ? a.length === b.length && a.every((x, i) => x === b[i])
+    : a === b;
+
 /**
  * Every preference this build knows: its default, and what counts as a valid
  * value. Adding one is one line here.
@@ -57,6 +65,19 @@ export const PREFS = {
   byCompanySort: sortPref(BY_COMPANY_ORDERS, "earned"),
   earningsSort: sortPref(EARNINGS_ORDERS, "newest"),
   sessionsSort: sortPref(SESSION_ORDERS, "newest"),
+  // Live exchange rates (domain/fx.js, fx/rates.js). Off until asked for, so
+  // an app that never turns it on never touches the network.
+  fxOn: { default: false, valid: (v) => typeof v === "boolean" },
+  // The one currency every total is shown in, or "earned": each currency as
+  // it was earned, never added together.
+  displayCurrency: { default: "USD", valid: (v) => v === "earned" || isCode(v) },
+  // The currencies offered in the switcher, in the owner's order. Never empty,
+  // so the switcher always has something to offer besides "As earned".
+  favourites: {
+    default: Object.freeze(["USD"]),
+    valid: (v) => Array.isArray(v) && v.length > 0 && v.every(isCode)
+      && new Set(v).size === v.length,
+  },
 };
 
 /** The preferences that name a list's order, for the Defaults section. */
@@ -91,7 +112,7 @@ export const setPref = (state, key, value, now) => {
   const known = PREFS[key];
   if (!known || !known.valid(value)) return state;
   const found = record(state, key);
-  if (found && !found.deletedAt && found.value === value) return state;
+  if (found && !found.deletedAt && sameValue(found.value, value)) return state;
   const next = found
     ? { ...found, value, deletedAt: null }
     : { id: key, value, createdAt: now, deletedAt: null };

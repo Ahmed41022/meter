@@ -67,7 +67,7 @@ describe("Companies & paydays", () => {
   it("sits between Defaults and Sync & backup", async () => {
     const { d } = await open(ledger([project("a", "Acme")]));
     expect([...d.querySelectorAll(".settings-title")].map((h) => h.textContent))
-      .toEqual(["Appearance", "Defaults", "Companies & paydays", "Sync & backup"]);
+      .toEqual(["Appearance", "Defaults", "Currency", "Companies & paydays", "Sync & backup"]);
   }, 25_000);
 
   it("lists each client once, with its schedule in words, project count and next payday", async () => {

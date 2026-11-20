@@ -1,5 +1,6 @@
 import AppearanceSection from "./settingsTab/AppearanceSection.jsx";
 import DefaultsSection from "./settingsTab/DefaultsSection.jsx";
+import CurrencySection from "./settingsTab/CurrencySection.jsx";
 import CompaniesSection from "./settingsTab/CompaniesSection.jsx";
 import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
 
@@ -12,13 +13,14 @@ import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
  */
 export default function SettingsTab({
   theme, onTheme, overviewPeriod, onOverviewPeriod, sorts, onSort, companies, now, onSaveCompanyPayday,
-  backupProps, sync,
+  backupProps, sync, currency,
 }) {
   return (
     <>
       <AppearanceSection theme={theme} onTheme={onTheme} />
       <DefaultsSection overviewPeriod={overviewPeriod} onOverviewPeriod={onOverviewPeriod}
                        sorts={sorts} onSort={onSort} />
+      <CurrencySection {...currency} now={now} />
       <CompaniesSection companies={companies} now={now} onSave={onSaveCompanyPayday} />
       <SyncBackupSection {...backupProps}>{sync}</SyncBackupSection>
     </>
