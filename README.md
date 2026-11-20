@@ -74,7 +74,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
 - **Runs on a phone** as an installed app, offline, and syncs through your own
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.
-- **Follows your system's light or dark setting**, or whichever you pick.
+- **Follows your system's light or dark setting**, or whichever you pick,
+  from the Settings tab, which also lists every client's payday and holds
+  backup, restore and sync.
 - **Exports** a JSON backup or a CSV of every line item.
 
 The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.

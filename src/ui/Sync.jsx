@@ -24,7 +24,7 @@ export const ago = (at, now) => {
 /**
  * The same status in one line, from wherever you are.
  *
- * The panel below lives on the Work tab because that is where Export and
+ * The panel below lives in the Settings tab because that is where Export and
  * Restore are, and the three of them answer one question together. But "has
  * my phone got this yet?" is asked on every screen, and an answer you have to
  * navigate to is an answer you stop checking.

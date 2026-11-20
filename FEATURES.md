@@ -20,7 +20,7 @@ src/
     settle.js      what submitting, answering and reopening do to the money
     terms.js       a project's rate and time limit, and how far a change reaches
     earnings.js    money with no duration, pay states, how a project pays
-    payPeriod.js   a client's payday: cutoff, zone, the run a time falls in
+    payPeriod.js   a client's payday: cutoff, zone, the run a time falls in, and the list of clients
     payout.js      Upcoming payments: what lands on which day
     payouts.js     what you said about a payment: paid, cancelled, moved, partly received
     paylines.js    single lines of a payment marked paid or moved, on their own records
@@ -32,13 +32,15 @@ src/
     csv.js         the line-item export
     merge.js       sync: last write wins, record by record
     backup.js      how long since the ledger was last copied out
+    prefs.js       synced preferences: one record per key, a default for each
   storage/
     store.js       the only module that knows where data lives
-    settings.js    per-device choices that are not part of the ledger
+    settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period)
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
     TodayView      the Today tab: to-dos, today so far, and the days before it
     DashboardView  the Overview tab: what a day, week or month was worth (see dashboard/)
+    SettingsTab    the Settings tab: appearance, defaults, companies and paydays, sync and backup (see settingsTab/)
     PaymentAnswer  the form that asks what happened to a payment
     ProjectView    one project: the meter, its tasks, its ledger, its settings (see project/)
     charts.jsx     stat tiles, the trend columns and the activity calendar
@@ -56,7 +58,8 @@ src/
       projectActions.js    a project's schedule, terms, status and deletion
       objectiveActions.js  a project's objectives
       todayActions.js      the to-do list, and starting a session from Today
-      navigation.js        opening a project on its tab, and jumping to a session
+      navigation.js        opening a project on its tab, jumping to a session, and opening Settings
+      companyActions.js    changing a client's payday from the Companies list, with Undo
       shared.js            ids, and reading a task prompt, which several actions share
       TopBar.jsx           the app name, the way back from a project, and the tabs
       UnreadableBanner.jsx the saved ledger could not be read
@@ -75,6 +78,11 @@ src/
       Ledger.jsx           the session list: filter, selection, add time, rows
       SettingsSection.jsx  the Settings block that opens the panel
       format.js            how a clock time and a day are printed on this page
+    settingsTab/   the sections of the Settings tab (not a project's settings, which are below)
+      AppearanceSection.jsx  the theme switch, per device
+      DefaultsSection.jsx    choices shared by every synced device: what the Overview opens on
+      CompaniesSection.jsx   every client and its payday, each editable in place
+      SyncBackupSection.jsx  Export backup, Restore, Export CSV, and the Sync panel
     Settings.jsx   a project's settings panel, composed from `settings/`
     settings/      the parts of the settings panel
       form.js              the form's shape: what the inputs hold, and reading it back
@@ -82,6 +90,7 @@ src/
       zones.js             the clocks a payday cutoff can be read on
       RateTerms.jsx        rate, time limit, acceptance reward, how far a change reaches
       CompanyPayday.jsx    the company and its payday schedule
+      PayScheduleFields.jsx  the schedule's boxes and read-back, shared with the Companies list
       goalFields.jsx       the boxes a goal is set with
       ProjectState.jsx     counts as, when it pays and status: the immediate controls
       Danger.jsx           deleting a project, behind a second click
@@ -127,7 +136,7 @@ A sitting that crossed midnight is listed under **each** day it touched, and eac
 
 ## Reporting performance
 
-**Overview** reports every project at once for a chosen **Day**, **Week**, **Month**, **Year** or **All** of it. **Today**, **Work** and **Life** are the tabs beside it — the app opens on Today — and opening a project from any of them drills into its meter and ledger.
+**Overview** reports every project at once for a chosen **Day**, **Week**, **Month**, **Year** or **All** of it. **Today**, **Work**, **Life** and **Settings** are the tabs beside it — the app opens on Today — and opening a project from any of them drills into its meter and ledger. The Overview opens on the period this device last looked at, unless **Settings → Defaults** names one, which every synced device then shares.
 
 Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
 
@@ -326,7 +335,7 @@ The time beside the buttons is when it happened, not when you tick the box. Unti
 
 ## Getting paid
 
-A payday belongs to the client, not to one project, so it is set in the **Payday** part of any of its projects' settings and shared by every project under that company: weekly — *work in before Monday is paid the following Wednesday* — or monthly — *before the 1st, paid on the 15th* — or none. A period shuts at a minute on the client's own clock (*Sunday 19:00, America/New_York*), and Settings says what that is on yours. The offset is read off the zone at each instant, so a daylight-saving change on either side moves the boundary with it. A zone this browser does not know is kept as saved, with a note that paydays are worked out on this device's clock until it is.
+A payday belongs to the client, not to one project, so it is set in the **Payday** part of any of its projects' settings, or in **Settings → Companies & paydays**, which lists every client with its schedule in words, its project count and its next payday, and edits one in place with an Undo. Either way it is shared by every project under that company: weekly — *work in before Monday is paid the following Wednesday* — or monthly — *before the 1st, paid on the 15th* — or none. A period shuts at a minute on the client's own clock (*Sunday 19:00, America/New_York*), and Settings says what that is on yours. The offset is read off the zone at each instant, so a daylight-saving change on either side moves the boundary with it. A zone this browser does not know is kept as saved, with a note that paydays are worked out on this device's clock until it is.
 
 Renaming a project's company takes the payday with it. Naming a company that already has a schedule brings that schedule in, since joining a client means joining its paydays; if you have changed the payday boxes and the company named has a different one, Settings says so before saving, because saving would change it for every project under that company.
 
@@ -353,7 +362,7 @@ A client can pay part of a payday and hold the rest back, so every opened row, o
 
 The forecast is not stored. A forecast written down would be wrong the moment a schedule changed, and wrong silently. What you said about a payment is, because it is not something the ledger could work out.
 
-`docs/payments-seed.json` is a fictional ledger that shows all of it: paydays, bonuses of each kind, a shared reward, two currencies, overdue and answered payments. Restoring it from **Work → Restore** replaces your ledger, so try it on a spare profile or back up first.
+`docs/payments-seed.json` is a fictional ledger that shows all of it: paydays, bonuses of each kind, a shared reward, two currencies, overdue and answered payments. Restoring it from **Settings → Sync & backup → Restore** replaces your ledger, so try it on a spare profile or back up first.
 
 ---
 
@@ -421,9 +430,22 @@ Every editor starts from the thing it was opened on. Opening one task's editor a
 
 ---
 
+## Settings
+
+The **Settings** tab, after Life, gathers what is set once and rarely touched. It is not a project's settings, which stay in the project.
+
+- **Appearance** is the theme: light, dark, or follow the system. It is per device, because what suits a phone at night and a desktop at noon differ, and it is not in the ledger.
+- **Defaults** are choices that sync, so every device agrees. For now one: what the Overview opens on, either the last period used on that device or a fixed one. They are stored as preferences in the ledger, one record per choice.
+- **Companies & paydays** is every client in one list, one row each, however its name was typed: the schedule in words or *No schedule*, how many projects use it, and the next payday. **Edit** opens the same schedule boxes the project uses, one client at a time, and says before Save that the schedule is shared by every project of that client. Saving has an Undo that writes the old schedule back as a new edit.
+- **Sync & backup** is what is described next.
+
+---
+
 ## Keeping the ledger
 
 The ledger lives in this browser's storage, which a cleared cache takes with it, so the app says when it has been a while since the last backup and how many records exist only here.
+
+These are in **Settings → Sync & backup**, with the Drive sync panel beside them.
 
 - **Export a backup** writes the whole ledger as plain JSON. **Restore** reads one back — after showing the ledger here beside the one in the file, in projects, sessions and payments and the dates they span, and saying that it replaces rather than merges. The Undo after it stays.
 - **Export CSV** writes every line item for a spreadsheet. It starts with a byte-order mark, so Excel reads names in Arabic or with emoji as they were typed, and a text cell that starts with `=`, `+`, `-` or `@` is written so Excel shows it rather than runs it as a formula. Time off the clock keeps its hours and carries no money, and says what it is.

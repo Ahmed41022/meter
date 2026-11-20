@@ -9,6 +9,27 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **A Settings tab**, after Life, in four sections. *Appearance* holds the
+  theme switch, moved from the footer, which now keeps only the sync status
+  and the version. *Defaults* holds choices that follow you between devices;
+  the first is which period the Overview opens on: the last one used on this
+  device, as before, or always Day, Week, Month, Year or All. *Companies &
+  paydays* lists every client with its schedule in words, its project count and
+  its next payday, and edits a schedule in place with an Undo; a project's own
+  settings link to it. *Sync & backup* now holds Export backup, Restore,
+  Export CSV and the Drive sync panel, all moved from the Work tab, with the
+  restore confirmation unchanged. The "restore a backup" link on the
+  unreadable-ledger banner now goes there.
+- **Synced preferences.** A new `prefs` list in the ledger holds one record
+  per preference, `{ id, value, createdAt, deletedAt }`, so a change on the
+  phone and a different one on the desktop both survive a sync. A value this
+  build does not know reads as the default, and a ledger with no `prefs` reads
+  as all defaults. They are settings, not work: they never count towards "N
+  records exist only in this browser". One caveat, for anyone syncing two
+  devices: a 1.2.0 build knows nothing of `prefs`, so it neither shows them nor
+  keeps them in its own copy when it syncs, as with to-dos in 1.2.0. A newer
+  device still holds them and puts them back on its next sync, but every
+  device that syncs should run the same version.
 - **Mark single lines of a payment paid, or move them to another day.** Open
   any row in Upcoming payments, overdue, still to come or waiting on a review,
   and each line has a box: a task's hours, its per-item pay, a bonus, a shared
