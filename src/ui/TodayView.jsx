@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { elapsedMs, isRunning, startedAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
+import { useDisplay } from "./CurrencyContext.jsx";
+import CurrencySwitch from "./CurrencySwitch.jsx";
+import { moneyText, rateNote } from "./fxMoney.js";
 import {
   byProject, currenciesByValue, performanceIn, periodRange, sessionMsInWindow, splitByClock,
 } from "../domain/performance.js";
@@ -34,11 +37,18 @@ const money = (cents) =>
  * and it is said at all because its rows are listed underneath, and a row
  * whose money is in no figure above it reads as a sum that does not add up.
  */
-const daySum = (totals, nothing = "") => {
-  const waiting = money(Object.fromEntries(
-    Object.entries(totals.pendingCents).filter(([, c]) => c !== 0)));
+const unsettled = (totals) => Object.fromEntries(
+  Object.entries(totals.pendingCents).filter(([, c]) => c !== 0));
+
+/** `shown` carries the converted figures for the headline; the day headings
+ *  below it are left as earned. */
+const daySum = (totals, nothing = "", shown = null) => {
+  const waiting = shown ? moneyText(shown.waiting) : money(unsettled(totals));
+  const earned = shown
+    ? [moneyText(shown.earned), rateNote(shown.earned)].filter(Boolean).join(" ")
+    : money(totals.billedCents);
   return [
-    money(totals.billedCents) || nothing,
+    earned || nothing,
     totals.billedMs > 0 ? formatShortDuration(totals.billedMs) : "",
     waiting ? `${waiting} pending` : "",
   ].filter(Boolean).join(" · ");
@@ -94,6 +104,10 @@ export default function TodayView({
     ...byProject(offClockProjects(projects), offClock, dayFrom, dayTo, now, rateOf),
   ];
   const today = performanceIn(work, dayFrom, dayTo, now, rateOf, workEarnings);
+  const figs = {
+    earned: useDisplay(today.billedCents, currenciesByValue),
+    waiting: useDisplay(unsettled(today), currenciesByValue),
+  };
 
   return (
     <>
@@ -130,7 +144,10 @@ export default function TodayView({
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">Today</span>
-          <span className="eyebrow">{daySum(today, "nothing yet")}</span>
+          <span className="fx-head">
+            <span className="eyebrow">{daySum(today, "nothing yet", figs)}</span>
+            <CurrencySwitch display={figs.earned} />
+          </span>
         </div>
         <div className="panel">
           {todayRows.length === 0 ? (

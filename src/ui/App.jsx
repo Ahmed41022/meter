@@ -12,6 +12,7 @@ import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
 import { backupState } from "../domain/backup.js";
 import { useRates } from "./app/useRates.js";
+import { CurrencyContext } from "./CurrencyContext.jsx";
 import { SORT_PREFS, prefOf, setPref } from "../domain/prefs.js";
 import { companyList } from "../domain/payPeriod.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
@@ -332,9 +333,18 @@ export default function App({ store: injectedStore }) {
     : null;
   const recovering = recoveryId ? state.sessions.find((s) => s.id === recoveryId) : null;
 
+  // The one display currency, for every total below.
+  const currency = {
+    choice: prefOf(state, "displayCurrency"), fxOn, rates: fx.rates,
+    favourites: prefOf(state, "favourites"),
+    onChoose: (code) => commit((s) => setPref(s, "displayCurrency", code, Date.now())),
+    onOpenSettings: openSettings,
+  };
+
   return (
-    // The attribute the palette already keys off: absent means follow the
-    // system, and "light" is what overrides a system set to dark.
+    <CurrencyContext.Provider value={currency}>
+    {/* The attribute the palette already keys off: absent means follow the
+        system, and "light" is what overrides a system set to dark. */}
     <div className="mtr" data-theme={theme === THEME.SYSTEM ? undefined : theme}>
       <style>{CSS}</style>
       <div className="wrap">
@@ -595,5 +605,6 @@ export default function App({ store: injectedStore }) {
                onAction={() => { toast.run?.(); setToast(null); }} />
       )}
     </div>
+    </CurrencyContext.Provider>
   );
 }

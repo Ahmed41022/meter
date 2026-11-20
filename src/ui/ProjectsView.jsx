@@ -14,6 +14,10 @@ import {
 } from "../domain/order.js";
 import { wordsFor } from "./words.js";
 import SortBar from "./SortBar.jsx";
+import { useCurrency, useDisplay } from "./CurrencyContext.jsx";
+import CurrencySwitch from "./CurrencySwitch.jsx";
+import { displayMoney } from "../domain/fxDisplay.js";
+import { moneyText, rateNote } from "./fxMoney.js";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
@@ -47,6 +51,8 @@ export default function ProjectsView({
   // until the list is left, like the Overview period, and is never written
   // back: changing the default is Settings' job.
   const [picked, setPicked] = useState(null);
+  const { choice, fxOn, rates } = useCurrency();
+  const fxSettings = { choice, fxOn, rates };
   const orders = life ? LIFE_ORDERS : CARD_ORDERS;
   const usable = (key) => orders.some(([k]) => k === key);
   // A pick made on Work can outlive a switch to Life, where Earned is absent.
@@ -81,6 +87,10 @@ export default function ProjectsView({
     });
     return Object.entries(acc);
   }, [life, projects, sessions, earnings, now, price]);
+
+  // The headline in the display currency, when there is one to show. The order
+  // is the one `totals` has always been in.
+  const shownTotals = useDisplay(Object.fromEntries(totals));
 
   const trackedMs = useMemo(() => {
     if (!life) return 0;
@@ -177,13 +187,25 @@ export default function ProjectsView({
     const mine = sessions.filter((s) => s.projectId === p.id);
     const ms = mine.reduce((a, s) => a + elapsedMs(s, now), 0);
     const settled = (s) => !isPending(s) && !isCancelled(s);
-    const cents = life
-      ? 0
-      : mine.filter(settled).reduce((a, s) => a + whole(s), 0)
-        + earnings.filter((e) => e.projectId === p.id && settled(e)).reduce((a, e) => a + e.cents, 0);
-    const waiting = life ? 0
-      : mine.filter(isPending).reduce((a, s) => a + whole(s), 0)
-        + earnings.filter((e) => e.projectId === p.id && isPending(e)).reduce((a, e) => a + e.cents, 0);
+    // Money is kept per currency: a project can hold sessions at one rate and a
+    // bonus in another currency, and adding them printed one number in the
+    // project's currency that was neither.
+    const figures = (pred) => {
+      if (life) return {};
+      const acc = {};
+      mine.filter(pred).forEach((s) => { acc[s.currency] = (acc[s.currency] || 0) + whole(s); });
+      earnings.filter((e) => e.projectId === p.id && pred(e))
+        .forEach((e) => { acc[e.currency] = (acc[e.currency] || 0) + e.cents; });
+      return Object.fromEntries(Object.entries(acc).filter(([, c]) => c !== 0));
+    };
+    // The project's own currency leads, then the rest, biggest first.
+    const cardOrder = (f) => Object.entries(f).sort((x, y) =>
+      (y[0] === p.currency) - (x[0] === p.currency) || y[1] - x[1]);
+    const cardMoney = (f) => displayMoney(f, fxSettings, cardOrder);
+    const earned = figures(settled);
+    // A card always says what it earned, even when that is nothing at all.
+    const cents = cardMoney(Object.keys(earned).length ? earned : { [p.currency]: 0 });
+    const waiting = cardMoney(figures(isPending));
     /**
      * What was earned here and then taken back.
      *
@@ -192,9 +214,9 @@ export default function ProjectsView({
      * as a bug in the app rather than as a batch that was turned down. The
      * amount is the missing half of that sentence.
      */
-    const voided = life ? 0
-      : mine.filter(isCancelled).reduce((a, s) => a + whole(s), 0)
-        + earnings.filter((e) => e.projectId === p.id && isCancelled(e)).reduce((a, e) => a + e.cents, 0);
+    const voided = cardMoney(figures(isCancelled));
+    const said = (d) => moneyText(d);
+    const tip = (d) => rateNote(d) || undefined;
     const open = openCount(p.id);
     const company = life ? null : companyOf(p);
     const stopped = isPaused(p) || projectDone(p);
@@ -221,13 +243,15 @@ export default function ProjectsView({
           </span>
         </span>
         <span>
-          <span className="card-amt">
-            {life ? (ms ? formatShortDuration(ms) : "—") : formatMoney(cents, p.currency)}
+          <span className="card-amt" title={life ? undefined : tip(cents)}>
+            {life ? (ms ? formatShortDuration(ms) : "—") : said(cents)}
           </span>
           <span className="card-dur">
             {life ? "tracked" : (ms ? formatShortDuration(ms) : "no time yet")}
-            {waiting !== 0 && ` · ${formatMoney(waiting, p.currency)} pending`}
-            {voided !== 0 && ` · ${formatMoney(voided, p.currency)} cancelled`}
+            {waiting.mode === "converted" || waiting.entries.length > 0
+              ? ` · ${said(waiting)} pending` : ""}
+            {voided.mode === "converted" || voided.entries.length > 0
+              ? ` · ${said(voided)} cancelled` : ""}
           </span>
         </span>
       </button>
@@ -255,8 +279,14 @@ export default function ProjectsView({
         <span className="eyebrow">
           {life ? "Tracked across everything" : "Earned across everything"}
         </span>
+        {!life && <CurrencySwitch display={shownTotals} className="grand-switch" />}
         {life ? (
           <div className="grand-amt">{trackedMs ? formatShortDuration(trackedMs) : "—"}</div>
+        ) : shownTotals.mode === "converted" ? (
+          <div className="grand-amt">
+            {moneyText(shownTotals)}
+            {rateNote(shownTotals) && <span className="fx-date">{rateNote(shownTotals)}</span>}
+          </div>
         ) : totals.length === 0 ? (
           <div className="grand-amt">—</div>
         ) : totals.map(([cur, cents]) => (

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { COMMON_CURRENCIES, knownCurrencies } from "../../domain/fx.js";
 import { HOSTS } from "../../fx/rates.js";
+import { currencyLabel, currencyName } from "../currencyNames.js";
 
 /** "19 November 2026" from the feed's plain date, with no time zone to shift it. */
 const dayWords = (iso) => {
@@ -18,18 +19,6 @@ const agoWords = (ms) => {
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours} hours ago`;
   return `${Math.floor(hours / 24)} days ago`;
-};
-
-let names = null;
-/** "Egyptian Pound" for EGP, or "" where the platform cannot say. */
-const nameOf = (code) => {
-  try {
-    names ??= new Intl.DisplayNames(undefined, { type: "currency" });
-    const n = names.of(code);
-    return n && n !== code ? n : "";
-  } catch {
-    return "";
-  }
 };
 
 function Status({ fx, now }) {
@@ -100,7 +89,7 @@ export default function CurrencySection({
           {favourites.map((code, i) => (
             <div className="fav-row" role="listitem" key={code}>
               <span className="fav-code">
-                {code}<span className="fav-name">{nameOf(code)}</span>
+                {code}<span className="fav-name">{currencyName(code)}</span>
               </span>
               <button className="btn ghost" aria-label={`Move ${code} up`}
                       disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
@@ -118,7 +107,7 @@ export default function CurrencySection({
           <select className="inp" aria-label="Currency to add" value={choice}
                   onChange={(e) => setPick(e.target.value)}>
             {offered.map((c) => (
-              <option key={c} value={c}>{nameOf(c) ? `${c} · ${nameOf(c)}` : c}</option>
+              <option key={c} value={c}>{currencyLabel(c)}</option>
             ))}
           </select>
           <button className="btn ghost" disabled={!choice}
@@ -130,7 +119,7 @@ export default function CurrencySection({
           <span className="eyebrow">Show totals in</span>
           <select className="inp" value={displayCurrency}
                   onChange={(e) => onDisplayCurrency(e.target.value)}>
-            {shown.map((c) => <option key={c} value={c}>{c}</option>)}
+            {shown.map((c) => <option key={c} value={c}>{currencyLabel(c)}</option>)}
             <option value="earned">As earned</option>
           </select>
         </label>

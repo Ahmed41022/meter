@@ -2,6 +2,9 @@ import { lastActivityAt, startedAt } from "../../domain/time.js";
 import { formatMoney, formatShortDuration } from "../../domain/money.js";
 import { effectiveRate } from "../../domain/performance.js";
 import { StatTile } from "../charts.jsx";
+import { currenciesByValue } from "../../domain/performance.js";
+import { useDisplay } from "../CurrencyContext.jsx";
+import { moneyText, rateNote } from "../fxMoney.js";
 import { date } from "./format.js";
 
 /**
@@ -9,7 +12,7 @@ import { date } from "./format.js";
  * an hour of it was worth. Shown instead of the goal bars once it is done.
  */
 export default function ClosingSummary({
-  sessions, idleSessions, offClock, currency, totalCents, totalMs, idleMs, share,
+  sessions, idleSessions, offClock, currency, totalCents, totalFigures, totalMs, idleMs, share,
   overallGoal, overallValue,
 }) {
   /** The span the project actually ran, taken from the work rather than from
@@ -20,6 +23,7 @@ export default function ClosingSummary({
     ? Math.min(...allSessions.map((s) => startedAt(s))) : null;
   const ranTo = allSessions.length
     ? Math.max(...allSessions.map((s) => s.closedAt ?? lastActivityAt(s) ?? startedAt(s))) : null;
+  const shownTotal = useDisplay(totalFigures, currenciesByValue);
   const closingRate = effectiveRate(totalCents, totalMs);
   const goalUnit = (v) => (overallGoal?.type === "money"
     ? formatMoney(Math.round(v * 100), currency) : formatShortDuration(v * 60_000));
@@ -41,7 +45,8 @@ export default function ClosingSummary({
         ) : (
           <div className="tiles closing">
             {!offClock && (
-              <StatTile label="Earned" value={formatMoney(totalCents, currency)} />
+              <StatTile label="Earned" value={moneyText(shownTotal)}
+                        sub={rateNote(shownTotal) || null} />
             )}
             <StatTile label={offClock ? "Tracked" : "Billed"}
                       value={formatShortDuration(totalMs)}

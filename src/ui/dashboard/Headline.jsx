@@ -1,5 +1,8 @@
 import { Fragment } from "react";
 import { formatMoney } from "../../domain/money.js";
+import { useDisplay } from "../CurrencyContext.jsx";
+import CurrencySwitch from "../CurrencySwitch.jsx";
+import { moneyText, rateNote } from "../fxMoney.js";
 import { Delta } from "../charts.jsx";
 import { periodLabel, rangeNote } from "./labels.js";
 
@@ -7,10 +10,22 @@ import { periodLabel, rangeNote } from "./labels.js";
 export default function Headline({
   period, offset, from, to, earned, moneyDeltas, vs, pending,
 }) {
+  // `earned` arrives already in the order of the period's hours; the entries
+  // are kept in that order as the figures, so "as earned" prints as it always did.
+  const shown = useDisplay(Object.fromEntries(earned));
+  const waiting = useDisplay(Object.fromEntries(pending));
   return (
     <div className="grand">
       <span className="eyebrow">{periodLabel(period, offset, from, to)} · earned</span>
-      {earned.length === 0
+      <CurrencySwitch display={shown} className="grand-switch" />
+      {shown.mode === "converted"
+        ? (
+          <div className="grand-amt">
+            {moneyText(shown)}
+            {rateNote(shown) && <span className="fx-date">{rateNote(shown)}</span>}
+          </div>
+        )
+        : earned.length === 0
         ? <div className="grand-amt">—</div>
         : earned.map(([cur, cents], i) => (
             <div className={i === 0 ? "grand-amt" : "grand-alt"} key={cur}>
@@ -32,7 +47,7 @@ export default function Headline({
           actually landed, or a rejected week reads as a good one. */}
       {pending.length > 0 && (
         <div className="grand-pending">
-          + {pending.map(([cur, c]) => formatMoney(c, cur)).join(" · ")} pending
+          + {moneyText(waiting)} pending
         </div>
       )}
     </div>

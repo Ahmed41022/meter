@@ -15,6 +15,10 @@ import {
 } from "../../domain/order.js";
 import SortBar from "../SortBar.jsx";
 import { date, time } from "./format.js";
+import { currenciesByValue } from "../../domain/performance.js";
+import { useDisplay } from "../CurrencyContext.jsx";
+import CurrencySwitch from "../CurrencySwitch.jsx";
+import { moneyText, rateNote } from "../fxMoney.js";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
  *  the per-task figures stay reachable without a long scroll. */
@@ -47,13 +51,14 @@ const contradiction = (status, { rejected, accepted }) => {
  * editing) live here; what the rest of the page also needs is passed in.
  */
 export default function Ledger({
-  project, sessions, idleSessions, now, price, whole, totalCents, totalMs, currency, offClock,
+  project, sessions, idleSessions, now, price, whole, totalFigures, totalMs, currency, offClock,
   piece, settles, stopped, w, earnings, findOverlaps, focusSession, focusRow, ledgerOpen,
   setLedgerOpen, filterTask, setFilterTask, selected, setSelected, setEditingTask, setSettling,
   onSetPayStateMany, onAssign, onCorrect, onRevertCorrection, onDeleteSession, onAddManual,
   defaultSort = "newest",
 }) {
   const [addingTime, setAddingTime] = useState(false);
+  const shownTotal = useDisplay(totalFigures, currenciesByValue);
   const [bulkPrompt, setBulkPrompt] = useState(false);
   // A mark waiting on a yes because it would contradict a task's answer.
   // Tied to the rows it was asked about, so changing the selection drops it.
@@ -154,7 +159,11 @@ export default function Ledger({
           </span>
         </button>
         <span className="eyebrow">
-          {offClock ? "" : `${formatMoney(totalCents, project.currency)} · `}
+          {!offClock && <>
+            {moneyText(shownTotal)}
+            {rateNote(shownTotal) && ` ${rateNote(shownTotal)}`}
+            {" "}<CurrencySwitch display={shownTotal} />{" · "}
+          </>}
           {totalMs ? formatShortDuration(totalMs) : "0m"}
           {!stopped && <>
             {" · "}

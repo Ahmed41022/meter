@@ -104,6 +104,15 @@ export default function ProjectView({
   const moneyOf = (s) => (isCancelled(s) ? 0 : whole(s));
 
   const totalCents = sessions.reduce((a, s) => a + moneyOf(s), 0);
+  // The same total per currency, for showing in the display currency. A
+  // project whose sessions were not all in one currency used to print their
+  // sum as if it were in the project's.
+  const totalFigures = (() => {
+    const acc = {};
+    sessions.forEach((s) => { acc[s.currency] = (acc[s.currency] || 0) + moneyOf(s); });
+    const kept = Object.fromEntries(Object.entries(acc).filter(([, c]) => c !== 0));
+    return Object.keys(kept).length ? kept : { [project.currency]: 0 };
+  })();
   const totalMs = sessions.reduce((a, s) => a + elapsedMs(s, now), 0);
 
   const idleMs = idleSessions.reduce((a, s) => a + elapsedMs(s, now), 0);
@@ -171,7 +180,8 @@ export default function ProjectView({
       {isDone(project) && (
         <ClosingSummary
           sessions={sessions} idleSessions={idleSessions} offClock={offClock}
-          currency={currency} totalCents={totalCents} totalMs={totalMs} idleMs={idleMs}
+          currency={currency} totalCents={totalCents} totalFigures={totalFigures}
+          totalMs={totalMs} idleMs={idleMs}
           share={share} overallGoal={overallGoal} overallValue={overallValue}
         />
       )}
@@ -223,7 +233,8 @@ export default function ProjectView({
 
       <Ledger defaultSort={defaultSessionsSort}
         project={project} sessions={sessions} idleSessions={idleSessions} now={now} price={price}
-        whole={whole} totalCents={totalCents} totalMs={totalMs} currency={currency}
+        whole={whole} totalFigures={totalFigures} totalMs={totalMs}
+        currency={currency}
         offClock={offClock} piece={piece} settles={settles} stopped={stopped} w={w}
         earnings={earnings} findOverlaps={findOverlaps} focusSession={focusSession}
         focusRow={focusRow} ledgerOpen={ledgerOpen} setLedgerOpen={setLedgerOpen}

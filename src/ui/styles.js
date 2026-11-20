@@ -363,6 +363,30 @@ export const CSS = `
 .fx-switch{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink);cursor:pointer;}
 .fx-status{font-size:13px;color:var(--ink-2);margin:10px 0 0;line-height:1.55;}
 .fx-status.err{color:var(--amber);}
+/* The ▾ beside a total, and its menu. The menu opens leftwards from the button
+   and is capped to the screen, so at 375px it never runs off either edge. */
+.fx-head{display:inline-flex;align-items:center;gap:8px;}
+.fx-switch-wrap{position:relative;display:inline-block;}
+.grand{position:relative;}
+.grand > .fx-switch-wrap.grand-switch{position:absolute;top:-2px;right:0;}
+.fx-btn{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:8px;
+  width:28px;height:26px;font-size:13px;line-height:1;cursor:pointer;font-family:inherit;padding:0;}
+.fx-btn:hover,.fx-btn[aria-expanded="true"]{color:var(--jade);border-color:var(--jade);}
+.fx-pop{position:absolute;z-index:30;right:0;top:calc(100% + 6px);width:max-content;
+  min-width:220px;max-width:min(300px,calc(100vw - 32px));background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:6px;
+  box-shadow:0 8px 28px rgba(0,0,0,.18);text-align:left;text-transform:none;letter-spacing:0;
+  font-family:inherit;font-weight:400;}
+.fx-item{display:flex;justify-content:space-between;gap:12px;width:100%;background:none;border:0;
+  border-radius:8px;padding:8px 10px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer;
+  text-align:left;}
+.fx-item:hover:not(:disabled),.fx-item:focus-visible{background:var(--raise);outline:none;}
+.fx-item:disabled{color:var(--faint);cursor:default;}
+.fx-item[aria-checked="true"]{color:var(--jade);font-weight:600;}
+.fx-tick{font-size:12px;color:var(--muted);white-space:nowrap;}
+.fx-why{border-top:1px solid var(--line-2);margin-top:4px;padding:8px 10px 4px;font-size:12.5px;
+  color:var(--ink-2);line-height:1.5;}
+.fx-date{display:block;font-family:inherit;font-size:11.5px;color:var(--muted);margin-top:2px;}
 .fx-note{margin:10px 0 0;font-size:12px;color:var(--muted);line-height:1.55;}
 .settings-title{margin:0 0 12px;font-size:10.5px;font-weight:600;text-transform:uppercase;
   letter-spacing:.1em;color:var(--muted);}
