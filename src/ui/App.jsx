@@ -11,6 +11,7 @@ import { storedPeriodFor } from "../domain/payPeriod.js";
 import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
 import { backupState } from "../domain/backup.js";
+import { prefOf, setPref } from "../domain/prefs.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
@@ -473,6 +474,8 @@ export default function App({ store: injectedStore }) {
             objectives={liveObjectives(state)}
             companyRules={state.companies ?? []}
             pay={pay}
+            /* The synced default, or "last" for this device's own memory. */
+            defaultPeriod={prefOf(state, "overviewPeriod")}
             asked={payoutsAsked}
             onSettleAsk={() => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setPayoutsAsked(true); }}
             onAnswer={answerPayment}
@@ -488,6 +491,8 @@ export default function App({ store: injectedStore }) {
         ) : tab === "settings" ? (
           <SettingsTab
             theme={theme}
+            overviewPeriod={prefOf(state, "overviewPeriod")}
+            onOverviewPeriod={(value) => commit((s) => setPref(s, "overviewPeriod", value, Date.now()))}
             onTheme={(key) => {
               setTheme(key);
               saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);

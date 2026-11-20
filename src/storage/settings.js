@@ -17,8 +17,11 @@ export const SETTING = {
    *  theme suits a phone at night and a desktop at noon are different
    *  questions, and syncing the answer would make one of them wrong. */
   THEME: "meter:theme",
-  /** Which span the Overview opens on. A view preference, not work — it does
-   *  not belong in the ledger and does not want merging. */
+  /** The span this device last looked at on the Overview. Per device, not work,
+   *  so it is not in the ledger. It is what the synced default "last used"
+   *  (the `overviewPeriod` preference, see domain/prefs.js) means: when that
+   *  preference names a span, it wins and this is only kept up to date; when
+   *  it is "last", this decides. */
   PERIOD: "meter:period",
   /** Which machine this is. Minted once and never synced — it is the one fact
    *  about a device that must NOT travel with the ledger, because its whole

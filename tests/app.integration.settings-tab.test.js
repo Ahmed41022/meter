@@ -29,7 +29,7 @@ describe("the Settings tab", () => {
     await toProjects(d, "Settings");
     expect(d.querySelector("[role=tab][aria-selected=true]").textContent).toBe("Settings");
     const titles = [...d.querySelectorAll(".settings-title")].map((h) => h.textContent);
-    expect(titles).toEqual(["Appearance", "Sync & backup"]);
+    expect(titles).toEqual(["Appearance", "Defaults", "Sync & backup"]);
   }, 25_000);
 
   it("holds the theme switch, which is no longer in the footer", async () => {

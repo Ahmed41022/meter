@@ -1,4 +1,5 @@
 import AppearanceSection from "./settingsTab/AppearanceSection.jsx";
+import DefaultsSection from "./settingsTab/DefaultsSection.jsx";
 import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
 
 /**
@@ -8,10 +9,13 @@ import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
  *
  * Not to be confused with settings/, which is a single PROJECT's settings.
  */
-export default function SettingsTab({ theme, onTheme, backupProps, sync }) {
+export default function SettingsTab({
+  theme, onTheme, overviewPeriod, onOverviewPeriod, backupProps, sync,
+}) {
   return (
     <>
       <AppearanceSection theme={theme} onTheme={onTheme} />
+      <DefaultsSection overviewPeriod={overviewPeriod} onOverviewPeriod={onOverviewPeriod} />
       <SyncBackupSection {...backupProps}>{sync}</SyncBackupSection>
     </>
   );

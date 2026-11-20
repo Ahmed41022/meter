@@ -34,7 +34,7 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, asked, onSettleAsk, now, today,
+  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, defaultPeriod = "last", asked, onSettleAsk, now, today,
   onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment, onMarkLines,
 }) {
   /** The row being given another date, and the date typed. One at a time. */
@@ -50,7 +50,14 @@ export default function DashboardView({
   // small daily annoyance and the answer is one string. Validated on read: a
   // stored value from a future version, or a hand-edited one, must not leave
   // the Overview showing nothing.
+  //
+  // A default chosen in Settings comes first: it is shared by every device, so
+  // it is what the owner asked this screen to open on. "last" is the old
+  // behaviour. Picking a span here still updates the per-device memory either
+  // way, so switching the default back to "last" resumes from where this
+  // device left off.
   const [period, setPeriod] = useState(() => {
+    if (PERIODS.includes(defaultPeriod)) return defaultPeriod;
     const saved = loadSetting(SETTING.PERIOD, "week");
     return PERIODS.includes(saved) ? saved : "week";
   });
