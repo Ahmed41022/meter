@@ -1,12 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { PREFS, prefOf, setPref } from "../src/domain/prefs.js";
+import { PREFS, SORT_PREFS, prefOf, setPref } from "../src/domain/prefs.js";
 import { mergeState, stampChanges } from "../src/domain/merge.js";
 import { backupState, unsavedSince } from "../src/domain/backup.js";
 import { ledgerWords } from "../src/ui/words.js";
-
-// A second key, registered only for these tests, so merging two DIFFERENT keys
-// can be shown before a real second one exists.
-PREFS.testSort = { default: "name", valid: (v) => v === "name" || v === "recent" };
 
 /** What App's commit does: reduce, then stamp whatever the change touched. */
 const commit = (state, reduce, now) => stampChanges(state, reduce(state), now);
@@ -93,11 +89,11 @@ describe("prefs through a merge", () => {
 
   it("keeps a change to each of two different keys, whichever way round", () => {
     const phone = commit(base, (s) => setPref(s, "overviewPeriod", "month", 1), 100);
-    const desk = commit(base, (s) => setPref(s, "testSort", "recent", 1), 200);
+    const desk = commit(base, (s) => setPref(s, "cardsSort", "recent", 1), 200);
     for (const [a, b] of [[phone, desk], [desk, phone]]) {
       const merged = mergeState(a, b);
       expect(prefOf(merged, "overviewPeriod")).toBe("month");
-      expect(prefOf(merged, "testSort")).toBe("recent");
+      expect(prefOf(merged, "cardsSort")).toBe("recent");
     }
   });
 
@@ -127,5 +123,40 @@ describe("prefs are settings, not work", () => {
 
   it("are left out of the words that describe a ledger", () => {
     expect(ledgerWords(setPref({}, "overviewPeriod", "week", 1))).toBe("nothing at all");
+  });
+});
+
+describe("the list sort preferences", () => {
+  const DEFAULTS = {
+    cardsSort: "added", lifeSort: "added", byProjectSort: "time",
+    byCompanySort: "earned", earningsSort: "newest", sessionsSort: "newest",
+  };
+
+  it("registers one key per list, each with the agreed default", () => {
+    expect([...SORT_PREFS].sort()).toEqual(Object.keys(DEFAULTS).sort());
+    for (const [key, value] of Object.entries(DEFAULTS)) {
+      expect(PREFS[key].default).toBe(value);
+      expect(prefOf({}, key)).toBe(value);
+    }
+  });
+
+  it("accepts the options of its own list and nothing else", () => {
+    expect(PREFS.cardsSort.valid("earned")).toBe(true);
+    expect(PREFS.lifeSort.valid("earned")).toBe(false);
+    expect(PREFS.lifeSort.valid("recent")).toBe(true);
+    expect(PREFS.byCompanySort.valid("rate")).toBe(true);
+    expect(PREFS.byProjectSort.valid("amount")).toBe(false);
+    expect(PREFS.earningsSort.valid("amount")).toBe(true);
+    expect(PREFS.sessionsSort.valid("name")).toBe(false);
+    expect(PREFS.cardsSort.valid("earned-asc")).toBe(false);
+    expect(PREFS.cardsSort.valid(undefined)).toBe(false);
+  });
+
+  it("stores a choice and falls back to the default for one this build does not know", () => {
+    const out = setPref({}, "lifeSort", "name", 5);
+    expect(prefOf(out, "lifeSort")).toBe("name");
+    expect(setPref({}, "lifeSort", "earned", 5)).toEqual({});
+    const odd = { prefs: [{ id: "cardsSort", value: "fastest", deletedAt: null }] };
+    expect(prefOf(odd, "cardsSort")).toBe("added");
   });
 });

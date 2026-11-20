@@ -11,7 +11,7 @@ import { storedPeriodFor } from "../domain/payPeriod.js";
 import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
 import { backupState } from "../domain/backup.js";
-import { prefOf, setPref } from "../domain/prefs.js";
+import { SORT_PREFS, prefOf, setPref } from "../domain/prefs.js";
 import { companyList } from "../domain/payPeriod.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
@@ -496,6 +496,8 @@ export default function App({ store: injectedStore }) {
             theme={theme}
             overviewPeriod={prefOf(state, "overviewPeriod")}
             onOverviewPeriod={(value) => commit((s) => setPref(s, "overviewPeriod", value, Date.now()))}
+            sorts={Object.fromEntries(SORT_PREFS.map((key) => [key, prefOf(state, key)]))}
+            onSort={(key, value) => commit((s) => setPref(s, key, value, Date.now()))}
             onTheme={(key) => {
               setTheme(key);
               saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
@@ -550,6 +552,7 @@ export default function App({ store: injectedStore }) {
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
             now={now}
+            defaultSort={prefOf(state, tab === "life" ? "lifeSort" : "cardsSort")}
             onOpen={openProject}
             {...projectListActions({ commit })}
           />

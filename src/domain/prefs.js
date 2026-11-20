@@ -18,6 +18,22 @@
  * Like the rest of `domain/`, nothing here reads the clock or storage.
  */
 import { PERIODS } from "./performance.js";
+import {
+  BY_COMPANY_ORDERS, BY_PROJECT_ORDERS, CARD_ORDERS, EARNINGS_ORDERS, LIFE_ORDERS,
+  SESSION_ORDERS, keysOf,
+} from "./order.js";
+
+/**
+ * A preference naming which order a list opens in. It stores the order's key
+ * and NOT its direction: each order opens the way it is first read (biggest or
+ * latest first, names A to Z), and turning it round is a question for the
+ * moment, so a stored direction would only double the choices for a default
+ * nobody wants ("smallest earner first, always").
+ */
+const sortPref = (orders, fallback) => {
+  const keys = keysOf(orders);
+  return { default: fallback, valid: (v) => keys.includes(v) };
+};
 
 /**
  * Every preference this build knows: its default, and what counts as a valid
@@ -31,7 +47,22 @@ export const PREFS = {
     default: "last",
     valid: (v) => v === "last" || PERIODS.includes(v),
   },
+  // Work project cards. Today's order is the order added.
+  cardsSort: sortPref(CARD_ORDERS, "added"),
+  // Life cards have their own key because Earned is a value Work can hold and
+  // Life cannot: one shared key would make a Work default of Earned mean
+  // something else (or nothing) on Life.
+  lifeSort: sortPref(LIFE_ORDERS, "added"),
+  byProjectSort: sortPref(BY_PROJECT_ORDERS, "time"),
+  byCompanySort: sortPref(BY_COMPANY_ORDERS, "earned"),
+  earningsSort: sortPref(EARNINGS_ORDERS, "newest"),
+  sessionsSort: sortPref(SESSION_ORDERS, "newest"),
 };
+
+/** The preferences that name a list's order, for the Defaults section. */
+export const SORT_PREFS = [
+  "cardsSort", "lifeSort", "byProjectSort", "byCompanySort", "earningsSort", "sessionsSort",
+];
 
 const record = (state, key) => (state?.prefs ?? []).find((r) => r.id === key);
 

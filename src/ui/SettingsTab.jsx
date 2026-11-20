@@ -11,13 +11,14 @@ import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
  * Not to be confused with settings/, which is a single PROJECT's settings.
  */
 export default function SettingsTab({
-  theme, onTheme, overviewPeriod, onOverviewPeriod, companies, now, onSaveCompanyPayday,
+  theme, onTheme, overviewPeriod, onOverviewPeriod, sorts, onSort, companies, now, onSaveCompanyPayday,
   backupProps, sync,
 }) {
   return (
     <>
       <AppearanceSection theme={theme} onTheme={onTheme} />
-      <DefaultsSection overviewPeriod={overviewPeriod} onOverviewPeriod={onOverviewPeriod} />
+      <DefaultsSection overviewPeriod={overviewPeriod} onOverviewPeriod={onOverviewPeriod}
+                       sorts={sorts} onSort={onSort} />
       <CompaniesSection companies={companies} now={now} onSave={onSaveCompanyPayday} />
       <SyncBackupSection {...backupProps}>{sync}</SyncBackupSection>
     </>

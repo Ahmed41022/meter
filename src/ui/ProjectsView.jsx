@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { elapsedMs, isRunning } from "../domain/time.js";
+import { elapsedMs, isRunning, lastActivityAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
   companyOf, isDone as projectDone, isPaused, searchProjects, validateProject,
@@ -8,7 +8,12 @@ import { isCancelled, isPending, isPieceOnly, perTask } from "../domain/earnings
 import { isDone } from "../domain/objectives.js";
 import { sessionCents } from "../domain/sessions.js";
 import { pricer } from "../domain/terms.js";
+import {
+  CARD_ORDERS, LIFE_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney,
+  orderByName, orderByNumber,
+} from "../domain/order.js";
 import { wordsFor } from "./words.js";
+import SortBar from "./SortBar.jsx";
 
 export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
@@ -24,7 +29,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  */
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
-  onOpen, onAdd,
+  defaultSort = "added", onOpen, onAdd,
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
@@ -38,6 +43,17 @@ export default function ProjectsView({
   const [error, setError] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
+  // What was picked on the bar, or null to follow the synced default. It lasts
+  // until the list is left, like the Overview period, and is never written
+  // back: changing the default is Settings' job.
+  const [picked, setPicked] = useState(null);
+  const orders = life ? LIFE_ORDERS : CARD_ORDERS;
+  const usable = (key) => orders.some(([k]) => k === key);
+  // A pick made on Work can outlive a switch to Life, where Earned is absent.
+  const opens = (key) => ({ key, desc: opensDescending(key) });
+  const sort = picked && usable(picked.key)
+    ? picked
+    : opens(usable(defaultSort) ? defaultSort : "added");
 
   // What a sitting came to: its rate, and a share of it for time over its
   // task's limit, as every other screen values it.
@@ -72,6 +88,60 @@ export default function ProjectsView({
     return sessions.filter((s) => mine.has(s.projectId))
       .reduce((total, s) => total + elapsedMs(s, now), 0);
   }, [life, projects, sessions, now]);
+
+  /**
+   * The cards in the chosen order. Everything it needs is read straight off
+   * the sessions and earnings, as the cards read them.
+   *
+   * Earned is per currency, never summed across: a project's figures are
+   * {EGP: ..., USD: ...} (a bonus can arrive in another currency than the
+   * rate), and orderByMoney places it by its biggest single figure. The
+   * currencies are laid out most hours worked first, the order the rest of the
+   * app lists them in.
+   */
+  function ordered(list) {
+    const { key, desc } = sort;
+    const mineOf = (p) => sessions.filter((s) => s.projectId === p.id);
+    switch (key) {
+      case "earned": {
+        const figures = (p) => {
+          const acc = {};
+          mineOf(p).filter((s) => !isPending(s) && !isCancelled(s)).forEach((s) => {
+            acc[s.currency] = (acc[s.currency] || 0) + whole(s);
+          });
+          earnings.filter((e) => e.projectId === p.id && !isPending(e) && !isCancelled(e))
+            .forEach((e) => { acc[e.currency] = (acc[e.currency] || 0) + e.cents; });
+          return acc;
+        };
+        const ms = {};
+        const ids = new Set(list.map((p) => p.id));
+        sessions.filter((s) => ids.has(s.projectId)).forEach((s) => {
+          ms[s.currency] = (ms[s.currency] || 0) + elapsedMs(s, now);
+        });
+        // Calculated once per project: the figures feed both the groups and
+        // the sort.
+        const memo = new Map(list.map((p) => [p.id, figures(p)]));
+        const of = (p) => memo.get(p.id);
+        return orderByMoney(list, of, { desc, groups: groupOrder(currenciesOf(list, of), ms) });
+      }
+      case "recent":
+        return orderByNumber(list, (p) => {
+          const mine = mineOf(p);
+          return mine.length ? Math.max(...mine.map((s) => lastActivityAt(s))) : null;
+        }, desc);
+      case "name":
+        return orderByName(list, (p) => p.name, desc);
+      case "time":
+        return orderByNumber(list, (p) => {
+          const ms = mineOf(p).reduce((a, s) => a + elapsedMs(s, now), 0);
+          return ms > 0 ? ms : null;
+        }, desc);
+      default:
+        // Added: the order the projects came in, which is the order today's
+        // lists have always had. Turning it round reverses it.
+        return desc ? list : [...list].reverse();
+    }
+  }
 
   const openCount = (projectId) =>
     objectives.filter((o) => o.projectId === projectId && !isDone(o)).length;
@@ -169,7 +239,7 @@ export default function ProjectsView({
   // Searching narrows the LIST only. The headline above still totals every
   // project, because what you have earned does not change while you look for
   // something.
-  const matching = searchProjects(projects, query);
+  const matching = ordered(searchProjects(projects, query));
   const running = matching.filter((p) => !projectDone(p));
   const finished = matching.filter(projectDone);
   const searching = query.trim() !== "";
@@ -203,6 +273,12 @@ export default function ProjectsView({
             <button className="linkish find-clear" onClick={() => setQuery("")}>Clear</button>
           )}
         </div>
+      )}
+
+      {projects.length > 1 && (
+        <SortBar label="Order the projects by" orders={orders} order={sort.key}
+                 desc={sort.desc} opensDesc={opensDescending}
+                 onChange={(key, desc) => setPicked({ key, desc })} />
       )}
 
       <div className="stack">
