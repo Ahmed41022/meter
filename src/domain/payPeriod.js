@@ -55,7 +55,7 @@
  *
  * Like the rest of `domain/`, nothing here reads the clock.
  */
-import { fold } from "./projects.js";
+import { companyOf, fold, liveProjects, workProjects } from "./projects.js";
 
 export const PERIOD = { WEEKLY: "weekly", MONTHLY: "monthly" };
 
@@ -499,4 +499,45 @@ export const setPayPeriod = (state, name, rule, now) => {
       { id: companyId(clean), name: clean, payPeriod: period, createdAt: now, deletedAt: null },
     ],
   };
+};
+
+/**
+ * Every client there is, for the one list of paydays.
+ *
+ * A client exists here because a live WORK project names it, or because it has
+ * a stored schedule even though no live project names it any more (a payday
+ * you set is worth keeping in view after the project that prompted it is
+ * deleted). Off-clock projects never count: a company on sleep is a category
+ * error, as the project's own Settings already says.
+ *
+ * Names are folded, so "Northwind" and "northwind " are one client, exactly as
+ * they are for the schedule itself. The name shown is the one the company
+ * record keeps, or else the first spelling a project used. `rule` is the
+ * schedule as stored, or null; `projects` is how many live work projects use
+ * the client. Sorted by name.
+ */
+export const companyList = (state) => {
+  const found = new Map();
+  for (const project of workProjects(liveProjects(state?.projects))) {
+    const name = companyOf(project);
+    if (!name) continue;
+    const key = fold(name);
+    const row = found.get(key) ?? { key, name, projects: 0 };
+    row.projects += 1;
+    found.set(key, row);
+  }
+  const rules = new Map();
+  for (const record of liveCompanies(state)) {
+    const key = fold(record.name);
+    const rule = storedPeriod(record.payPeriod);
+    rules.set(key, { name: record.name, rule });
+    if (rule && !found.has(key)) found.set(key, { key, name: record.name, projects: 0 });
+  }
+  return [...found.values()]
+    .map(({ key, name, projects }) => ({
+      name: rules.get(key)?.name ?? name,
+      rule: rules.get(key)?.rule ?? null,
+      projects,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 };

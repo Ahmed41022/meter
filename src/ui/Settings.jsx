@@ -17,7 +17,7 @@ export { unsavedSettings };
 
 export default function Settings({
   project, projects = [], onPatch, onDeleteProject, onSetStatus, hasRunningSession,
-  payPeriod = null, companies = [], onSetPayPeriod, now = Date.now(), onSetTerms,
+  payPeriod = null, companies = [], onSetPayPeriod, now = Date.now(), onSetTerms, onOpenSettings,
 }) {
   const [form, setForm] = useState(() => restored(project, payPeriod));
   /**
@@ -193,7 +193,8 @@ export default function Settings({
       <CompanyPayday project={project} projects={projects} company={company}
                      setCompany={setCompany} onKey={onKey} target={target} clash={clash}
                      theirName={theirName} theirs={theirs} useTheirs={useTheirs}
-                     period={period} setPeriod={setPeriod} rule={rule} now={now} />
+                     period={period} setPeriod={setPeriod} rule={rule} now={now}
+                     onOpenSettings={onOpenSettings} />
 
       <div className="sec-head" style={{ marginTop: 22 }}>
         <span className="eyebrow">Session goal</span>

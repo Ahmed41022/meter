@@ -12,6 +12,7 @@ import { OUTCOME } from "../domain/payouts.js";
 import { upcomingPay } from "../domain/payout.js";
 import { backupState } from "../domain/backup.js";
 import { prefOf, setPref } from "../domain/prefs.js";
+import { companyList } from "../domain/payPeriod.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
@@ -45,6 +46,7 @@ import { projectActions, projectListActions } from "./app/projectActions.js";
 import { objectiveActions } from "./app/objectiveActions.js";
 import { todayActions } from "./app/todayActions.js";
 import { navigation } from "./app/navigation.js";
+import { companyActions } from "./app/companyActions.js";
 import TopBar from "./app/TopBar.jsx";
 import { backupHandlers } from "./app/backup.js";
 import VolatileNotice from "./app/VolatileNotice.jsx";
@@ -300,7 +302,7 @@ export default function App({ store: injectedStore }) {
     setUnreadable,
   });
 
-  const { openProject, showSession } = navigation({
+  const { openProject, showSession, openSettings } = navigation({
     stateRef, setOpenProjectId, setFocusSession, setTab,
   });
 
@@ -452,6 +454,7 @@ export default function App({ store: injectedStore }) {
             /* Every client's schedule, so Settings can say when a company
                typed into it already has one that saving would replace. */
             companies={state.companies ?? []}
+            onOpenSettings={openSettings}
           />
         ) : tab === "today" ? (
           <TodayView
@@ -497,6 +500,8 @@ export default function App({ store: injectedStore }) {
               setTheme(key);
               saveSetting(SETTING.THEME, key === THEME.SYSTEM ? null : key);
             }}
+            companies={companyList(state)} now={now}
+            {...companyActions({ commit, flash, stateRef })}
             backupProps={{
               backup, onExport: exportBackup, onImport: importBackup, onExportCsv: exportCsv,
               restore: restoring && {

@@ -347,6 +347,12 @@ export const CSS = `
    own that other code looks up by their text. */
 .settings-sec + .settings-sec{margin-top:34px;}
 .settings-sec .segmented.theme{display:inline-flex;}
+/* Companies & paydays: one row per client, its editor opening under it. */
+.company-row + .company-row{margin-top:16px;padding-top:16px;border-top:1px solid var(--line-2);}
+.company-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+.company-name{font-size:14.5px;color:var(--ink);}
+.company-meta{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px;}
+.company-edit{margin-top:14px;}
 .settings-title{margin:0 0 12px;font-size:10.5px;font-weight:600;text-transform:uppercase;
   letter-spacing:.1em;color:var(--muted);}
 /* Restoring a backup: the ledger here set beside the one in the file, so what

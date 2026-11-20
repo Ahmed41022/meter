@@ -19,5 +19,13 @@ export function navigation({ stateRef, setOpenProjectId, setFocusSession, setTab
     if (found) openProject(found.projectId, id);
   };
 
-  return { openProject, showSession };
+  /** Closes whatever project is open and shows the Settings tab: for a link
+   *  that points out of a project to something that is not part of it. */
+  const openSettings = () => {
+    setOpenProjectId(null);
+    setFocusSession(null);
+    setTab("settings");
+  };
+
+  return { openProject, showSession, openSettings };
 }

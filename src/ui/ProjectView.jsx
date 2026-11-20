@@ -26,7 +26,7 @@ export default function ProjectView({
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
   onSetEarningTasks, onSubmitTasks, onAnswerTasks, onReopenTasks, onRewardTasks,
-  payPeriod = null, companies = [], onSetPayPeriod,
+  payPeriod = null, companies = [], onSetPayPeriod, onOpenSettings,
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
@@ -237,6 +237,7 @@ export default function ProjectView({
         project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
         onDeleteProject={onDeleteProject} onSetStatus={onSetStatus} payPeriod={payPeriod}
         companies={companies} onSetPayPeriod={onSetPayPeriod} now={now} running={running}
+        onOpenSettings={onOpenSettings}
       />
     </>
   );

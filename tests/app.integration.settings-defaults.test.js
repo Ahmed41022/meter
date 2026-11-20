@@ -34,7 +34,7 @@ describe("the Defaults section", () => {
     await settle();
     await toProjects(d, "Settings");
     expect([...d.querySelectorAll(".settings-title")].map((h) => h.textContent))
-      .toEqual(["Appearance", "Defaults", "Sync & backup"]);
+      .toEqual(["Appearance", "Defaults", "Companies & paydays", "Sync & backup"]);
     expect(section(d).textContent).toMatch(/Shared by every device that syncs/);
   }, 25_000);
 

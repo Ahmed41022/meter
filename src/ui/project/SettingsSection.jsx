@@ -8,7 +8,7 @@ import Settings, { unsavedSettings } from "../Settings.jsx";
  */
 export default function SettingsSection({
   project, projects, onPatch, onSetTerms, onDeleteProject, onSetStatus, payPeriod, companies,
-  onSetPayPeriod, now, running,
+  onSetPayPeriod, now, running, onOpenSettings,
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -29,7 +29,7 @@ export default function SettingsSection({
         <Settings project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
                   onDeleteProject={onDeleteProject} onSetStatus={onSetStatus}
                   payPeriod={payPeriod} companies={companies}
-                  onSetPayPeriod={onSetPayPeriod} now={now}
+                  onSetPayPeriod={onSetPayPeriod} now={now} onOpenSettings={onOpenSettings}
                   hasRunningSession={!!running} />
       )}
     </div>
