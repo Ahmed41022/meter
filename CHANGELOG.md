@@ -7,6 +7,14 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Changed
+
+- **Changing a client's payday no longer moves paydays that have passed.**
+  Only paydays still to come follow the new schedule; past ones keep their
+  dates, so the answers given about them stay with them instead of coming
+  back as overdue on other days. A company keeps its old schedules, with the
+  moment each was replaced, in an optional `history`.
+
 ### Added
 
 - **A Settings tab**, after Life, in four sections. *Appearance* holds the

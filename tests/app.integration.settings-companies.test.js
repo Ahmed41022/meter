@@ -129,6 +129,35 @@ describe("Companies & paydays", () => {
     expect(payLabels(d).every((l) => /^Fri/.test(l))).toBe(true);
   }, 30_000);
 
+  it("keeps a payday that has passed where it was, and moves only those still to come", async () => {
+    // One task paid on a Wednesday a few weeks back, still listed as overdue,
+    // and one paid on the coming Wednesday.
+    const DAY = 24 * HOUR;
+    const old = project("o", "Acme");
+    old.tasks[0] = { ...old.tasks[0], stateAt: Date.now() - 30 * DAY, submittedAt: Date.now() - 30 * DAY - HOUR };
+    const seed = { ...ledger([old, project("a", "Acme")], { Acme: WED }), payouts: [] };
+    const dom = await bootDash(seed, { "meter:payouts-asked": "1" });
+    const d = dom.window.document;
+    const before = payLabels(d);
+    const overdue = before.filter((l) => /^Overdue/.test(l));
+    expect(overdue).toHaveLength(1);
+    expect(overdue[0]).toMatch(/Wed/);
+
+    await toProjects(d, "Settings");
+    await edit(d, "Acme");
+    expect(rowOf(d, "Acme").textContent).toMatch(/Paydays already passed keep their dates/);
+    setValue(dom.window, control(rowOf(d, "Acme"), "Is paid on"), "5");
+    await settle();
+    btn(rowOf(d, "Acme"), /^Save$/).click();
+    await settle();
+    expect(recordOf(dom, "Acme").history).toHaveLength(1);
+
+    await toProjects(d, "Overview");
+    const after = payLabels(d);
+    expect(after.filter((l) => /^Overdue/.test(l))).toEqual(overdue);
+    expect(after.filter((l) => !/^Overdue/.test(l)).every((l) => /^Fri/.test(l))).toBe(true);
+  }, 30_000);
+
   it("can switch a client from weekly to monthly", async () => {
     const { dom, d } = await open(ledger([project("a", "Acme")], { Acme: WED }));
     await edit(d, "Acme");

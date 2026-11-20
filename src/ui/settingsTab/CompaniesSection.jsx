@@ -32,7 +32,8 @@ function ScheduleEditor({ company, now, onSave, onCancel }) {
       <div className="hint warn" style={{ marginTop: 0 }}>
         This schedule is shared by every {company.name} project
         {company.projects > 1 ? ` (${company.projects} of them)` : ""}, so saving changes the
-        payday of all of them.
+        payday of all of them. Paydays already passed keep their dates; only those still to come
+        move.
       </div>
       <PayScheduleFields period={form} setPeriod={setPeriod} rule={rule} now={now}
                          target={company.name} onKey={onKey} paysOnAcceptance={null} />

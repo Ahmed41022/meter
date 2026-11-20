@@ -470,12 +470,49 @@ export const payPeriodFor = (state, project) =>
 export const storedPeriodFor = (state, project) =>
   storedPeriod(findCompany(state, project?.company ?? "")?.payPeriod);
 
+/** The schedules a project's company used to have, oldest first; empty for
+ *  one that never changed. See `paydayThrough`. */
+export const payHistoryFor = (state, project) =>
+  findCompany(state, project?.company ?? "")?.history ?? [];
+
+/**
+ * The payday for work dated `at`, honouring the schedules that came before.
+ *
+ * A schedule changed today should move the paydays still to come, and not the
+ * ones already past: those are history, and the answers given about them are
+ * filed under the dates they had. Re-dating them under the new rule made
+ * months of answered paydays come back as overdue on different days.
+ *
+ * So each old rule is kept with the moment it was replaced (`until`). Work
+ * dated before that moment was under it, and if the payday it gave had passed
+ * by then on that clock, it stays. If not, it was still due when the schedule
+ * changed, so the next rule decides, and so on to the current one. Work dated
+ * after every change, and every floor dated from now, is the current rule's
+ * alone. A payday falling on the very day of a change was still to come.
+ */
+export const paydayThrough = (history, rule, at) => {
+  for (const step of history ?? []) {
+    if (!Number.isFinite(step?.until) || !(at < step.until)) continue;
+    const old = normalisePeriod(step.rule);
+    const pay = old ? paydayFor(old, at) : null;
+    if (pay && pay.date < dayOnClock(old, step.until)) return pay;
+  }
+  return paydayFor(rule, at);
+};
+
 /**
  * Writes a company's schedule, creating the record the first time.
  *
  * A null rule clears the schedule but keeps the record: the company is still
  * a company, it just has no stated payday, and tombstoning it would make the
  * next device to look think it had been deleted.
+ *
+ * Replacing a schedule keeps the old one in `history`, with the moment it was
+ * replaced, so paydays that had already passed under it stay where they were
+ * (see `paydayThrough`). Saving the same schedule again records nothing, which
+ * matters because a project's Save writes its company's schedule every time.
+ * Absent history means the schedule never changed, as on every record written
+ * before it existed.
  */
 export const setPayPeriod = (state, name, rule, now) => {
   const clean = String(name ?? "").trim();
@@ -485,10 +522,15 @@ export const setPayPeriod = (state, name, rule, now) => {
   const key = fold(clean);
   const found = rows.find((c) => fold(c.name) === key);
   if (found) {
+    const before = storedPeriod(found.payPeriod);
+    const replaced = before !== null && !samePeriod(before, period) && Number.isFinite(now);
     return {
       ...state,
       companies: rows.map((c) => (c === found
-        ? { ...c, name: clean, payPeriod: period, deletedAt: null }
+        ? {
+          ...c, name: clean, payPeriod: period, deletedAt: null,
+          ...(replaced ? { history: [...(c.history ?? []), { rule: before, until: now }] } : {}),
+        }
         : c)),
     };
   }

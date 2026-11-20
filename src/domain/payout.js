@@ -89,7 +89,7 @@ import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
 import { EARNING, isCancelled, isPending, paysOnAcceptance, tasksOf } from "./earnings.js";
 import { OUTCOME, answersByPayment, payoutKey } from "./payouts.js";
-import { dayOnClock, isDay, payPeriodFor, paydayFor, paydayOn } from "./payPeriod.js";
+import { dayOnClock, isDay, payHistoryFor, payPeriodFor, paydayOn, paydayThrough } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
  *  valued at, time over a limit at its share. Idle time is left out, as it
@@ -243,6 +243,10 @@ export const upcomingPay = (state, now) => {
     if (project.deletedAt || isOffClock(project)) continue;
     const rule = payPeriodFor(state, project);
     if (!rule) continue;
+    // Schedules this client used to have: a payday that had passed under one
+    // of them when it was replaced stays where it was (payPeriod.js).
+    const history = payHistoryFor(state, project);
+    const paydayFor = (r, at) => paydayThrough(history, r, at);
     const named = (project.company ?? "").trim();
     const client = fold(named);
     if (!spelling.has(client)) spelling.set(client, named);
