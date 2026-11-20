@@ -34,6 +34,29 @@ export const conversion = (figures, { choice, fxOn, rates }) => {
 };
 
 /**
+ * The way to rank rows by ONE converted figure, or null when they cannot be.
+ *
+ * `figuresOf(row)` is a row's `{ CUR: cents }`. Returns a replacement for it
+ * that gives `{ [choice]: convertedCents }`, which `orderByMoney` then ranks as
+ * a single group. It is all or nothing: if the display currency is "earned",
+ * rates are off or absent, or ANY row holds a currency without a rate, the
+ * answer is null and the list keeps its own grouping by currency. Converted
+ * and unconverted rows are never ranked against each other, because that would
+ * put a figure that is an estimate beside one that is not.
+ */
+export const convertedFigures = (rows, figuresOf, settings) => {
+  if (!settings || settings.choice === "earned") return null;
+  for (const row of rows) {
+    if (!conversion(figuresOf(row), settings).ok) return null;
+  }
+  if (!conversion({}, settings).ok) return null;
+  return (row) => {
+    const { cents } = convertFigures(figuresOf(row), settings.choice, settings.rates);
+    return cents ? { [settings.choice]: cents } : {};
+  };
+};
+
+/**
  * The figures as something to print.
  *
  * `{ mode: "separate", entries }`: each currency as it was earned, in the order

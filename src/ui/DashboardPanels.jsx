@@ -12,6 +12,8 @@ import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { currenciesByValue } from "../domain/performance.js";
 import { BY_COMPANY_ORDERS } from "../domain/order.js";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
+import { useMoney } from "./useMoney.js";
+import { moneyText, rateNote } from "./fxMoney.js";
 
 /** A goal's period, said the way the sentence needs it. */
 const PERIOD_WORD = { week: "this week", month: "this month" };
@@ -63,6 +65,7 @@ function OrderTabs({ label, orders, value, onChange }) {
 
 /** Every project of one client totalled together. */
 export function ByCompanyPanel({ show, companies, named, shares, sort, setSort }) {
+  const fx = useMoney();
   if (!show) return null;
   return (
         <div className="sec">
@@ -80,15 +83,19 @@ export function ByCompanyPanel({ show, companies, named, shares, sort, setSort }
           <div className="panel">
             {companies.map((row) => {
               const share = shares?.get(row) ?? null;
+              // The row's money in the display currency, when there is one;
+              // otherwise as earned, as ever. The per-hour rates stay native.
+              const earned = fx.show(row.billedCents, currenciesByValue);
+              const waiting = fx.show(row.pendingCents, currenciesByValue);
+              const voided = fx.show(row.cancelledCents, currenciesByValue);
               return (
                 <div className={"crow" + (row.company === null ? " none" : "")} key={row.company ?? ""}>
                   <span className="crow-top">
                     <span className="crow-name">{row.company ?? "No company"}</span>
-                    <span className="crow-amt">
+                    <span className="crow-amt" title={rateNote(earned) || undefined}>
                       {currenciesByValue(row.billedCents).length === 0
                         ? "—"
-                        : currenciesByValue(row.billedCents)
-                            .map(([cur, c]) => formatMoney(c, cur)).join(" · ")}
+                        : moneyText(earned)}
                     </span>
                   </span>
                   <span className="crow-bar">
@@ -105,10 +112,16 @@ export function ByCompanyPanel({ show, companies, named, shares, sort, setSort }
                     {row.timedRateCents !== null && row.rateCents !== row.timedRateCents
                       && ` (${formatMoney(row.timedRateCents, row.currency)}/hr timed)`}
                     {share !== null && ` · ${Math.round(share * 100)}% of revenue`}
-                    {row.currency && (row.pendingCents[row.currency] ?? 0) !== 0
-                      && ` · ${formatMoney(row.pendingCents[row.currency], row.currency)} pending`}
-                    {row.currency && (row.cancelledCents[row.currency] ?? 0) !== 0
-                      && ` · ${formatMoney(row.cancelledCents[row.currency], row.currency)} cancelled`}
+                    {waiting.mode === "converted"
+                      ? ((row.pendingCents ? Object.values(row.pendingCents).some((c) => c !== 0) : false)
+                        && ` · ${moneyText(waiting)} pending`)
+                      : row.currency && (row.pendingCents[row.currency] ?? 0) !== 0
+                        && ` · ${formatMoney(row.pendingCents[row.currency], row.currency)} pending`}
+                    {voided.mode === "converted"
+                      ? (Object.values(row.cancelledCents ?? {}).some((c) => c !== 0)
+                        && ` · ${moneyText(voided)} cancelled`)
+                      : row.currency && (row.cancelledCents[row.currency] ?? 0) !== 0
+                        && ` · ${formatMoney(row.cancelledCents[row.currency], row.currency)} cancelled`}
                     {row.projects.length > 1 && ` · ${row.projects.length} projects`}
                   </span>
                 </div>
@@ -126,6 +139,7 @@ export function ByProjectPanel({
   rows, shownRows, orders, byRate, rateCurrency, top, widest, projectSort, setProjectSort,
   onOpenProject,
 }) {
+  const fx = useMoney();
   return (
       <div className="sec">
         <div className="sec-head">
@@ -155,11 +169,19 @@ export function ByProjectPanel({
             // One colour for every bar. These are projects, not an ordered
             // scale, so shading them by size would double-encode the length.
             const cents = billedCents[project.currency] ?? 0;
+            // In the display currency this is the project's whole settled
+            // money; as earned it stays the figure in the project's own.
+            const earned = fx.show(billedCents, currenciesByValue);
+            const waiting = fx.show(pendingCents, currenciesByValue);
+            const voided = fx.show(cancelledCents, currenciesByValue);
+            const some = (figures) => Object.values(figures).some((c) => c !== 0);
             return (
               <button className="prow" key={project.id} onClick={() => onOpenProject(project.id)}>
                 <span className="prow-top">
                   <span className="prow-name">{project.name}</span>
-                  <span className="prow-amt">{formatMoney(cents, project.currency)}</span>
+                  <span className="prow-amt" title={rateNote(earned) || undefined}>
+                    {earned.mode === "converted" ? moneyText(earned) : formatMoney(cents, project.currency)}
+                  </span>
                 </span>
                 <span className="prow-bar">
                   <span className="prow-billed"
@@ -174,13 +196,17 @@ export function ByProjectPanel({
                   {idleMs > 0 && ` · ${formatShortDuration(idleMs)} idle`}
                   {/* Otherwise a project whose money is all waiting on
                       acceptance reads as having earned nothing. */}
-                  {(pendingCents[project.currency] ?? 0) !== 0
-                    && ` · ${formatMoney(pendingCents[project.currency], project.currency)} pending`}
+                  {waiting.mode === "converted"
+                    ? some(pendingCents) && ` · ${moneyText(waiting)} pending`
+                    : (pendingCents[project.currency] ?? 0) !== 0
+                      && ` · ${formatMoney(pendingCents[project.currency], project.currency)} pending`}
                   {/* And a project whose work was turned down reads as having
                       earned nothing for no stated reason, with the hours
                       sitting right beside the zero. */}
-                  {(cancelledCents[project.currency] ?? 0) !== 0
-                    && ` · ${formatMoney(cancelledCents[project.currency], project.currency)} cancelled`}
+                  {voided.mode === "converted"
+                    ? some(cancelledCents) && ` · ${moneyText(voided)} cancelled`
+                    : (cancelledCents[project.currency] ?? 0) !== 0
+                      && ` · ${formatMoney(cancelledCents[project.currency], project.currency)} cancelled`}
                 </span>
               </button>
             );

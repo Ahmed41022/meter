@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   COMMON_CURRENCIES, convertCents, convertFigures, hasCurrency, isRatesTable, knownCurrencies,
-  normaliseRates,
+  normaliseRates, offerableCurrencies,
 } from "../src/domain/fx.js";
 
 const feed = (usd = { egp: 50, eur: 0.9, gbp: 0.8 }, date = "2026-11-19") => ({ date, usd });
@@ -160,5 +160,28 @@ describe("convertFigures", () => {
     const figures = { USD: 1000, EGP: 5000 };
     convertFigures(figures, "EUR", table);
     expect(figures).toEqual({ USD: 1000, EGP: 5000 });
+  });
+});
+
+describe("offerableCurrencies", () => {
+  const feedWithNoise = normaliseRates({
+    date: "2026-11-19",
+    usd: { egp: 50, eur: 0.9, ada: 2, ats: 12, azm: 5000, btc: 0.00001, bef: 36 },
+  });
+  const current = ["EGP", "EUR", "USD", "GBP"];
+
+  it("is the feed's codes that are current ISO currencies, sorted", () => {
+    expect(offerableCurrencies(feedWithNoise, current)).toEqual(["EGP", "EUR", "USD"]);
+  });
+
+  it("falls back to the common list with no rates, no platform list, or nothing in common", () => {
+    expect(offerableCurrencies(null, current)).toEqual(COMMON_CURRENCIES);
+    expect(offerableCurrencies(feedWithNoise, null)).toEqual(COMMON_CURRENCIES);
+    expect(offerableCurrencies(feedWithNoise, [])).toEqual(COMMON_CURRENCIES);
+    expect(offerableCurrencies(feedWithNoise, ["ZZZ"])).toEqual(COMMON_CURRENCIES);
+  });
+
+  it("hands back a copy of the common list, not the list itself", () => {
+    expect(offerableCurrencies(null, null)).not.toBe(COMMON_CURRENCIES);
   });
 });

@@ -8,7 +8,13 @@
  * of projects paid in EGP and USD has no honest single ranking, so money is
  * ranked inside one currency at a time and the currencies are laid out as
  * groups.
+ *
+ * The one exception is a ranking in the owner's display currency
+ * (`orderByMoneyIn`): every figure is first converted to that one currency
+ * through the day's rates, so the rows are compared like with like, and only
+ * when EVERY row converts.
  */
+import { convertedFigures } from "./fxDisplay.js";
 
 // The orders each list offers, as [key, label]. The key is what a synced
 // preference stores, so renaming a label is free and renaming a key is not.
@@ -102,9 +108,9 @@ export const groupOrder = (currencies, msByCurrency = {}) =>
  * group the biggest comes first, or the smallest when `desc` is false.
  * Rows with no money sink to the bottom either way, in the order they came.
  *
- * `groups` is the seam for a converted ranking: a later version can rank on
- * one converted figure by supplying figures in a single currency, with no
- * change to anything that calls this.
+ * `groups` is the seam for a converted ranking: figures supplied in a single
+ * currency rank as one group (see `orderByMoneyIn`, which does exactly that
+ * when the display currency allows).
  */
 export const orderByMoney = (rows, figuresOf, { desc = true, groups = [] } = {}) => {
   const rank = new Map(groups.map((c, i) => [c, i]));
@@ -122,6 +128,21 @@ export const orderByMoney = (rows, figuresOf, { desc = true, groups = [] } = {})
   return [...have, ...none].map((k) => k.row);
 };
 
+/**
+ * `orderByMoney` over rows that may be ranked in the display currency.
+ *
+ * `fx` is `{ choice, fxOn, rates }`, or null for "as earned". When every row
+ * can be converted they are ranked as one group by converted value; otherwise
+ * this is exactly `orderByMoney` with the given `groups`, so nothing changes
+ * for anyone not using a display currency.
+ */
+export const orderByMoneyIn = (rows, figuresOf, options, fx = null) => {
+  const converted = fx && convertedFigures(rows, figuresOf, fx);
+  return converted
+    ? orderByMoney(rows, converted, { desc: options.desc })
+    : orderByMoney(rows, figuresOf, options);
+};
+
 /** The currencies a set of rows has money in, for building `groups`. */
 export const currenciesOf = (rows, figuresOf) =>
   rows.flatMap((row) => Object.entries(figuresOf(row) ?? {})
@@ -137,9 +158,9 @@ const hoursOf = (rows) => {
 };
 
 /** Order by money with groups laid out by the hours the rows themselves report. */
-const byMoneyAndHours = (rows, figuresOf) =>
-  orderByMoney(rows, figuresOf,
-    { groups: groupOrder(currenciesOf(rows, figuresOf), hoursOf(rows)) });
+const byMoneyAndHours = (rows, figuresOf, fx = null) =>
+  orderByMoneyIn(rows, figuresOf,
+    { groups: groupOrder(currenciesOf(rows, figuresOf), hoursOf(rows)) }, fx);
 
 /**
  * The Overview's By project rows in the chosen order. "time" is the order they
@@ -147,8 +168,8 @@ const byMoneyAndHours = (rows, figuresOf) =>
  * settled money for the period, one currency at a time. ("An hour" is ranked
  * by worthPerHour, which has its own floor and sole-currency rule.)
  */
-export const orderProjectRows = (rows, key) =>
-  key === "earned" ? byMoneyAndHours(rows, (r) => r.billedCents) : rows;
+export const orderProjectRows = (rows, key, fx = null) =>
+  key === "earned" ? byMoneyAndHours(rows, (r) => r.billedCents, fx) : rows;
 
 /**
  * The Overview's By company rows in the chosen order, with the unassigned row
@@ -160,14 +181,14 @@ export const orderProjectRows = (rows, key) =>
  * the blended hourly figure, which a row has only when its money is in one
  * currency, so it is ranked inside that currency and rows with no rate sink.
  */
-export const orderCompanyRows = (rows, key) => {
+export const orderCompanyRows = (rows, key, fx = null) => {
   const named = rows.filter((r) => r.company !== null);
   const gap = rows.filter((r) => r.company === null);
   const sorted = key === "time"
     ? orderByNumber(named, (r) => (r.billedMs > 0 ? r.billedMs : null))
     : key === "rate"
-      ? byMoneyAndHours(named, (r) => (r.rateCents > 0 ? { [r.currency]: r.rateCents } : {}))
+      ? byMoneyAndHours(named, (r) => (r.rateCents > 0 ? { [r.currency]: r.rateCents } : {}), fx)
       : byMoneyAndHours(named, (r) => Object.fromEntries(
-        Object.entries(r.billedCents).filter(([, c]) => c > 0)));
+        Object.entries(r.billedCents).filter(([, c]) => c > 0)), fx);
   return [...sorted, ...gap];
 };

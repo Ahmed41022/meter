@@ -14,6 +14,7 @@ import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { byHourOfDay, byWeekday, timedOnly } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
 import { SETTING, loadSetting } from "../storage/settings.js";
+import { useMoney } from "./useMoney.js";
 import PeriodHeader from "./dashboard/PeriodHeader.jsx";
 import Headline from "./dashboard/Headline.jsx";
 import TodayFocus from "./dashboard/TodayFocus.jsx";
@@ -40,6 +41,7 @@ export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], companyRules = [], pay, defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", asked, onSettleAsk, now, today,
   onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment, onMarkLines,
 }) {
+  const fx = useMoney();
   /** The row being given another date, and the date typed. One at a time. */
   const [moving, setMoving] = useState(null);
   /** The row whose "Already paid" form is open: a future payment marked paid
@@ -183,9 +185,9 @@ export default function DashboardView({
   const wanted = projectPick ?? defaultProjectSort;
   const projectSort = keysOf(projectOrders).includes(wanted) ? wanted : "time";
   const byRate = projectSort === "rate";
-  const shownRows = byRate ? ranked : orderProjectRows(rows, projectSort);
+  const shownRows = byRate ? ranked : orderProjectRows(rows, projectSort, fx.settings);
   const companySort = companyPick ?? defaultCompanySort;
-  const shownCompanies = orderCompanyRows(companies, companySort);
+  const shownCompanies = orderCompanyRows(companies, companySort, fx.settings);
   const top = sole ? concentration(rows, sole) : null;
 
   // Today's focus is the same whichever period is on screen: what is left to

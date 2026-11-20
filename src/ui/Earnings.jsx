@@ -7,9 +7,12 @@ import {
 } from "../domain/earnings.js";
 import { nextPaydays } from "../domain/payPeriod.js";
 import {
-  EARNINGS_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney, orderByNumber,
+  EARNINGS_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoneyIn, orderByNumber,
 } from "../domain/order.js";
 import SortBar from "./SortBar.jsx";
+import { useMoney } from "./useMoney.js";
+import { moneyText, rateNote } from "./fxMoney.js";
+import { currenciesByValue } from "../domain/performance.js";
 
 /** The value a "no task" option carries. A select cannot hold null, and ""
  *  is indistinguishable from an unset control. */
@@ -73,6 +76,7 @@ export default function Earnings({
   // page is left.
   const [picked, setPicked] = useState(null);
   const sort = picked ?? { key: defaultSort, desc: opensDescending(defaultSort) };
+  const fx = useMoney();
   /**
    * Newest by date, or by amount. Amount is grouped by currency, the
    * project's own first (every other one by code), and inside a group it is
@@ -83,14 +87,26 @@ export default function Earnings({
    */
   const figures = (e) => ({ [e.currency]: e.cents });
   const rows = sort.key === "amount"
-    ? orderByMoney(earnings, figures, {
+    ? orderByMoneyIn(earnings, figures, {
       desc: sort.desc,
       groups: groupOrder(currenciesOf(earnings, figures), { [project.currency]: 1 }),
-    })
+    }, fx.settings)
     : orderByNumber(earnings, (e) => e.at, sort.desc);
-  const settled = rows.filter((e) => !isPending(e) && !isCancelled(e))
-    .reduce((a, e) => a + e.cents, 0);
-  const pending = rows.filter(isPending).reduce((a, e) => a + e.cents, 0);
+  // The heading, per currency: earnings can come in more than the project's
+  // currency, and one sum printed in the project's was a figure that was
+  // neither. A heading with nothing to say still says 0 in the project's own.
+  const totalled = (list) => {
+    const acc = {};
+    list.forEach((e) => { acc[e.currency] = (acc[e.currency] || 0) + e.cents; });
+    return Object.fromEntries(Object.entries(acc).filter(([, c]) => c !== 0));
+  };
+  const settledFigures = totalled(rows.filter((e) => !isPending(e) && !isCancelled(e)));
+  const settledShown = fx.show(
+    Object.keys(settledFigures).length ? settledFigures : { [project.currency]: 0 },
+    currenciesByValue,
+  );
+  const pendingShown = fx.show(totalled(rows.filter(isPending)), currenciesByValue);
+  const said = moneyText;
 
   const amount = Math.round(Number(form.amount) * 100);
   // Midday, so a date typed in cannot land on the wrong side of a day
@@ -145,9 +161,10 @@ export default function Earnings({
             way, so "earned without the clock" describes nothing and reads too
             close to the app's own "off the clock". */}
         <span className="eyebrow">{isPieceOnly(project) ? "Accepted work" : "Earned without the clock"}</span>
-        <span className="eyebrow">
-          {formatMoney(settled, project.currency)}
-          {pending !== 0 && ` · ${formatMoney(pending, project.currency)} pending`}
+        <span className="eyebrow" title={rateNote(settledShown) || undefined}>
+          {said(settledShown)}
+          {pendingShown.entries.length > 0 || pendingShown.mode === "converted"
+            ? ` · ${said(pendingShown)} pending` : ""}
         </span>
       </div>
       {rows.length > 1 && (

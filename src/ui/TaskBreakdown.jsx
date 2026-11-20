@@ -2,6 +2,7 @@ import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { taskPay } from "../domain/earnings.js";
 import { UNASSIGNED } from "../domain/tasks.js";
 import { TASK } from "../domain/taskState.js";
+import { useMoney } from "./useMoney.js";
 
 /**
  * What one task is owed, in the words that matter once there are forty of them.
@@ -15,12 +16,13 @@ import { TASK } from "../domain/taskState.js";
  * are each paid for; none of them is worth a fiftieth of it.
  */
 function PayLine({ pay, currency }) {
+  const fx = useMoney();
   if (!pay.claimed && !pay.cancelled) {
     return <div className="trow-sub unclaimed">not claimed</div>;
   }
   const parts = [];
-  if (pay.settled) parts.push(`${formatMoney(pay.settled, currency)} paid`);
-  if (pay.pending) parts.push(`${formatMoney(pay.pending, currency)} pending`);
+  if (pay.settled) parts.push(`${fx.fmt(pay.settled, currency)} paid`);
+  if (pay.pending) parts.push(`${fx.fmt(pay.pending, currency)} pending`);
   if (pay.shared) parts.push(`in ${pay.shared} shared reward${pay.shared === 1 ? "" : "s"}`);
   if (pay.cancelled) parts.push(`${pay.cancelled} rejected`);
   return (
@@ -53,6 +55,7 @@ export default function TaskBreakdown({
   // On work paid per accepted item the hours earn nothing by the hour, so the
   // earned column is a row of zeroes sitting next to the money that was
   // actually paid — the one place a reader would take it for a figure.
+  const fx = useMoney();
   const money = !offClock && !piece;
   // Whether a batch can be acted on is the caller's question, not this one's.
   // "No task" is never selectable: it is a bucket, not a thing anyone accepted.
@@ -120,14 +123,16 @@ export default function TaskBreakdown({
             {r.idleMs > 0 && (
               <div className="trow-sub idle">
                 {formatShortDuration(r.idleMs)} idle
-                {!offClock && ` · ${formatMoney(r.idleCents, currency)} unearned`}
+                {!offClock && ` · ${fx.fmt(r.idleCents, currency)} unearned`}
               </div>
             )}
           </div>
           <span className="trow-time">
             {r.billedMs > 0 ? formatShortDuration(r.billedMs) : "—"}
           </span>
-          {money && <span className="trow-amt">{formatMoney(r.billedCents, currency)}</span>}
+          {money && <span className="trow-amt" title={fx.note(r.billedCents, currency) || undefined}>
+            {fx.fmt(r.billedCents, currency)}
+          </span>}
         </div>
       ))}
     </div>

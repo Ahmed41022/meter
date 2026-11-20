@@ -2,6 +2,7 @@ import { useState } from "react";
 import { elapsedMs, isRunning, startedAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { useDisplay } from "./CurrencyContext.jsx";
+import { useMoney } from "./useMoney.js";
 import CurrencySwitch from "./CurrencySwitch.jsx";
 import { moneyText, rateNote } from "./fxMoney.js";
 import {
@@ -42,11 +43,11 @@ const unsettled = (totals) => Object.fromEntries(
 
 /** `shown` carries the converted figures for the headline; the day headings
  *  below it are left as earned. */
-const daySum = (totals, nothing = "", shown = null) => {
-  const waiting = shown ? moneyText(shown.waiting) : money(unsettled(totals));
+const daySum = (totals, nothing = "", shown = null, fmt = money) => {
+  const waiting = shown ? moneyText(shown.waiting) : fmt(unsettled(totals));
   const earned = shown
     ? [moneyText(shown.earned), rateNote(shown.earned)].filter(Boolean).join(" ")
-    : money(totals.billedCents);
+    : fmt(totals.billedCents);
   return [
     earned || nothing,
     totals.billedMs > 0 ? formatShortDuration(totals.billedMs) : "",
@@ -104,6 +105,11 @@ export default function TodayView({
     ...byProject(offClockProjects(projects), offClock, dayFrom, dayTo, now, rateOf),
   ];
   const today = performanceIn(work, dayFrom, dayTo, now, rateOf, workEarnings);
+  // Summary figures below the headline follow the display currency too. The
+  // rate date is a title on each, where there is no room for it in the line.
+  const fx = useMoney();
+  const inShown = (figures) => moneyText(fx.show(figures, currenciesByValue));
+  const dateOf = (figures) => rateNote(fx.show(figures, currenciesByValue)) || undefined;
   const figs = {
     earned: useDisplay(today.billedCents, currenciesByValue),
     waiting: useDisplay(unsettled(today), currenciesByValue),
@@ -173,12 +179,16 @@ export default function TodayView({
               </span>
               {!isOffClock(project) && (
                 <span className="trow-amt">
-                  {money(billedCents) || "—"}
-                  {money(pendingCents) && (
-                    <span className="trow-pending">{money(pendingCents)} pending</span>
+                  <span title={dateOf(billedCents)}>{inShown(billedCents) || "—"}</span>
+                  {inShown(pendingCents) && (
+                    <span className="trow-pending" title={dateOf(pendingCents)}>
+                      {inShown(pendingCents)} pending
+                    </span>
                   )}
-                  {money(cancelledCents) && (
-                    <span className="trow-pending">{money(cancelledCents)} cancelled</span>
+                  {inShown(cancelledCents) && (
+                    <span className="trow-pending" title={dateOf(cancelledCents)}>
+                      {inShown(cancelledCents)} cancelled
+                    </span>
                   )}
                 </span>
               )}
@@ -207,7 +217,9 @@ export default function TodayView({
             <div key={day.dayStart} className="day">
               <div className="day-head">
                 <span className="day-name">{longDay(day.dayStart)}</span>
-                <span className="day-sum">{daySum(totals)}</span>
+                <span className="day-sum" title={dateOf(totals.billedCents)}>
+                  {daySum(totals, "", null, inShown)}
+                </span>
               </div>
               <div className="panel">
                 {day.sessions.map((s) => {

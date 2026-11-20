@@ -11,12 +11,13 @@ import TaskPrompt from "../TaskPrompt.jsx";
 import SessionEditor from "../SessionEditor.jsx";
 import ManualSession from "../ManualSession.jsx";
 import {
-  SESSION_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney, orderByNumber,
+  SESSION_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoneyIn, orderByNumber,
 } from "../../domain/order.js";
 import SortBar from "../SortBar.jsx";
 import { date, time } from "./format.js";
 import { currenciesByValue } from "../../domain/performance.js";
 import { useDisplay } from "../CurrencyContext.jsx";
+import { useMoney } from "../useMoney.js";
 import CurrencySwitch from "../CurrencySwitch.jsx";
 import { moneyText, rateNote } from "../fxMoney.js";
 
@@ -59,6 +60,7 @@ export default function Ledger({
 }) {
   const [addingTime, setAddingTime] = useState(false);
   const shownTotal = useDisplay(totalFigures, currenciesByValue);
+  const fx = useMoney();
   const [bulkPrompt, setBulkPrompt] = useState(false);
   // A mark waiting on a yes because it would contradict a task's answer.
   // Tied to the rows it was asked about, so changing the selection drops it.
@@ -88,9 +90,9 @@ export default function Ledger({
   for (const s of ordered) hoursBy[s.currency] = (hoursBy[s.currency] || 0) + elapsedMs(s, now);
   const byAmount = (rows) => (offClock
     ? orderByNumber(rows, (s) => (elapsedMs(s, now) > 0 ? elapsedMs(s, now) : null), sort.desc)
-    : orderByMoney(rows, moneyOf, {
+    : orderByMoneyIn(rows, moneyOf, {
       desc: sort.desc, groups: groupOrder(currenciesOf(rows, moneyOf), hoursBy),
-    }));
+    }, fx.settings));
   // The ledger is one flat list, so a sort needs no day headings to give up.
   // Newest turned round is oldest first.
   const arranged = sort.key === "amount"

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { COMMON_CURRENCIES, knownCurrencies } from "../../domain/fx.js";
+import { offerableCurrencies } from "../../domain/fx.js";
 import { HOSTS } from "../../fx/rates.js";
 import { currencyLabel, currencyName } from "../currencyNames.js";
 
@@ -19,6 +18,15 @@ const agoWords = (ms) => {
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours} hours ago`;
   return `${Math.floor(hours / 24)} days ago`;
+};
+
+/** The platform's current ISO 4217 codes, where it can say. */
+const currentCurrencies = () => {
+  try {
+    return Intl.supportedValuesOf("currency");
+  } catch {
+    return null;
+  }
 };
 
 function Status({ fx, now }) {
@@ -53,10 +61,8 @@ function Status({ fx, now }) {
 export default function CurrencySection({
   fxOn, onFxOn, fx, now, favourites, onFavourites, displayCurrency, onDisplayCurrency,
 }) {
-  const [pick, setPick] = useState("");
-  const offered = (fx.rates ? knownCurrencies(fx.rates) : COMMON_CURRENCIES)
+  const offered = offerableCurrencies(fx.rates, currentCurrencies())
     .filter((c) => !favourites.includes(c));
-  const choice = offered.includes(pick) ? pick : (offered[0] ?? "");
 
   const move = (i, by) => {
     const next = [...favourites];
@@ -103,17 +109,16 @@ export default function CurrencySection({
             </div>
           ))}
         </div>
+        {/* Picking one adds it at once: a select with a separate Add button
+            read as finished after the pick, and nothing happened. */}
         <div className="fav-add">
-          <select className="inp" aria-label="Currency to add" value={choice}
-                  onChange={(e) => setPick(e.target.value)}>
+          <select className="inp" aria-label="Add a currency" value=""
+                  onChange={(e) => e.target.value && onFavourites([...favourites, e.target.value])}>
+            <option value="">Add a currency…</option>
             {offered.map((c) => (
               <option key={c} value={c}>{currencyLabel(c)}</option>
             ))}
           </select>
-          <button className="btn ghost" disabled={!choice}
-                  onClick={() => onFavourites([...favourites, choice])}>
-            Add
-          </button>
         </div>
         <label className="field" style={{ marginTop: 16 }}>
           <span className="eyebrow">Show totals in</span>

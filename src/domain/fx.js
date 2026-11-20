@@ -122,3 +122,22 @@ export const COMMON_CURRENCIES = [
   "RUB", "BRL", "MXN", "ZAR", "NGN", "KES", "MAD", "SEK", "NOK", "DKK", "PLN", "SGD",
   "HKD", "NZD", "KRW", "PKR", "IDR", "MYR", "THB",
 ];
+
+/**
+ * The currencies worth offering when adding a favourite.
+ *
+ * The feed lists everything it has, crypto tickers and retired currencies
+ * included (ADA, AKT, ATS, BEF, AZM...), which buries the ones anybody holds.
+ * So: its codes intersected with `supported`, the platform's list of current
+ * ISO 4217 currencies (`Intl.supportedValuesOf("currency")`), passed in so this
+ * stays pure. With no rates yet, or no such list on this platform, or nothing
+ * in common, the built-in common list stands in.
+ */
+export const offerableCurrencies = (rates, supported) => {
+  if (rates && Array.isArray(supported) && supported.length) {
+    const current = new Set(supported);
+    const both = knownCurrencies(rates).filter((c) => current.has(c));
+    if (both.length) return both;
+  }
+  return [...COMMON_CURRENCIES];
+};

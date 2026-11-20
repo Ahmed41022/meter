@@ -30,7 +30,7 @@ const STUB = `
     if (window.__mode === "fail") return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
     return Promise.resolve({
       ok: true, status: 200,
-      json: async () => ({ date: "2026-11-19", usd: { egp: 53.83, eur: 0.9118, gbp: 0.78, jpy: 150 } }),
+      json: async () => ({ date: "2026-11-19", usd: { egp: 53.83, eur: 0.9118, gbp: 0.78, jpy: 150, ada: 2, ats: 12, azm: 5000, btc: 0.00001 } }),
     });
   };`;
 const FAILING = STUB.replace('"ok"', '"fail"');
@@ -136,12 +136,12 @@ describe("the favourites", () => {
   it("adds from the built-in list when nothing is cached, and stores a synced pref", async () => {
     const dom = await bootCurrency();
     const d = dom.window.document;
-    const select = section(d).querySelector("select[aria-label='Currency to add']");
+    const select = section(d).querySelector("select[aria-label='Add a currency']");
     expect([...select.options].map((o) => o.value)).not.toContain("USD");
     expect([...select.options].map((o) => o.value)).toContain("EGP");
+    // Choosing is adding: there is no second button to press.
+    expect(btn(section(d), /^Add$/)).toBeUndefined();
     setValue(dom.window, select, "EGP");
-    await settle();
-    btn(section(d), /^Add$/).click();
     await settle();
     expect(favs(d)).toEqual(["USD", "EGP"]);
     expect(pref(dom, "favourites")).toEqual(["USD", "EGP"]);
@@ -153,9 +153,27 @@ describe("the favourites", () => {
     const dom = await bootCurrency(seedOn);
     const d = dom.window.document;
     await ratesShown(d);
-    const values = [...section(d).querySelector("select[aria-label='Currency to add']").options]
+    const values = [...section(d).querySelector("select[aria-label='Add a currency']").options]
       .map((o) => o.value);
-    expect(values).toEqual(["EGP", "EUR", "GBP", "JPY"]);
+    // Without the feed's crypto tickers and retired currencies (ada, ats, azm, btc).
+    expect(values.filter(Boolean)).toEqual(["EGP", "EUR", "GBP", "JPY"]);
+  }, 25_000);
+
+  it("still lists a stored favourite the offer would filter out", async () => {
+    const ledger = {
+      ...seedOn,
+      prefs: [on, { id: "favourites", value: ["USD", "ATS"], createdAt: 1, updatedAt: 1, deletedAt: null }],
+    };
+    const dom = await bootCurrency(ledger);
+    const d = dom.window.document;
+    await ratesShown(d);
+    expect(favs(d)).toEqual(["USD", "ATS"]);
+    const values = [...section(d).querySelector("select[aria-label='Add a currency']").options]
+      .map((o) => o.value);
+    expect(values).not.toContain("ATS");
+    const display = [...section(d).querySelectorAll("select")]
+      .find((x) => x.getAttribute("aria-label") !== "Add a currency");
+    expect([...display.options].map((o) => o.value)).toContain("ATS");
   }, 25_000);
 
   it("reorders and removes, and always keeps one", async () => {
@@ -192,7 +210,7 @@ describe("the favourites", () => {
     const dom = await bootCurrency(ledger);
     const d = dom.window.document;
     const select = [...section(d).querySelectorAll("select")]
-      .find((s) => s.getAttribute("aria-label") !== "Currency to add");
+      .find((s) => s.getAttribute("aria-label") !== "Add a currency");
     expect([...select.options].map((o) => o.value)).toEqual(["USD", "EGP", "earned"]);
     expect(select.value).toBe("USD");
     setValue(dom.window, select, "EGP");

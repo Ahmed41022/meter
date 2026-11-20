@@ -9,7 +9,7 @@ import { isDone } from "../domain/objectives.js";
 import { sessionCents } from "../domain/sessions.js";
 import { pricer } from "../domain/terms.js";
 import {
-  CARD_ORDERS, LIFE_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney,
+  CARD_ORDERS, LIFE_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoneyIn,
   orderByName, orderByNumber,
 } from "../domain/order.js";
 import { wordsFor } from "./words.js";
@@ -132,7 +132,8 @@ export default function ProjectsView({
         // the sort.
         const memo = new Map(list.map((p) => [p.id, figures(p)]));
         const of = (p) => memo.get(p.id);
-        return orderByMoney(list, of, { desc, groups: groupOrder(currenciesOf(list, of), ms) });
+        return orderByMoneyIn(list, of, { desc, groups: groupOrder(currenciesOf(list, of), ms) },
+          fxSettings);
       }
       case "recent":
         return orderByNumber(list, (p) => {

@@ -3,6 +3,8 @@ import { currenciesByValue } from "../../domain/performance.js";
 import { clockFor } from "../../domain/payouts.js";
 import PaymentAnswer, { payDay } from "../PaymentAnswer.jsx";
 import PayLines from "./PayLines.jsx";
+import { useMoney } from "../useMoney.js";
+import { moneyText, rateNote } from "../fxMoney.js";
 
 /** The task-less money on a row, counted by kind and named in lower case. */
 const extraParts = (row) => {
@@ -27,9 +29,14 @@ export default function UpcomingPayments({
   /* What is coming in, and when, is worked out once a minute by the App, which
      needs it for the notice that follows a passed payday on every tab. */
   /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
-  const totalOf = (rows) => currenciesByValue(
-    rows.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {}),
-  ).map(([cur, c]) => formatMoney(c, cur)).join(" · ");
+  const fx = useMoney();
+  /** The display currency, when there is one, applies to what is SHOWN on a
+   *  heading or a row. The rows themselves keep their own cents and currency:
+   *  answering a payment reads those, never anything converted. */
+  const figuresOf = (rows) =>
+    rows.reduce((acc, r) => ({ ...acc, [r.currency]: (acc[r.currency] ?? 0) + r.cents }), {});
+  const totalOf = (rows) => moneyText(fx.show(figuresOf(rows), currenciesByValue));
+  const dateOf = (rows) => rateNote(fx.show(figuresOf(rows), currenciesByValue)) || undefined;
   const payTotal = totalOf(pay.due);
   const lateTotal = totalOf(pay.overdue);
 
@@ -61,7 +68,7 @@ export default function UpcomingPayments({
         {/* Only the answered money, and it says so. The rows below carry
             dates of their own now, so a bare figure here would read as
             their total and be short by everything still under review. */}
-        <span className="eyebrow">
+        <span className="eyebrow" title={dateOf([...pay.overdue, ...pay.due])}>
           {pay.overdue.length > 0 && `${lateTotal} overdue · `}
           {pay.due.length === 0 ? "nothing confirmed yet" : `${payTotal} confirmed`}
         </span>
@@ -111,7 +118,7 @@ export default function UpcomingPayments({
                     {row.moved && ` · moved from ${payDay(row.scheduled)}`}
                   </div>
                 </div>
-                <span className="trow-amt">{formatMoney(row.cents, row.currency)}</span>
+                <span className="trow-amt" title={dateOf([row])}>{totalOf([row])}</span>
               </div>
               {openPay === row.key && (
                 <div className="paylist">

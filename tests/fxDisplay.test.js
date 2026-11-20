@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normaliseRates } from "../src/domain/fx.js";
-import { conversion, displayMoney } from "../src/domain/fxDisplay.js";
+import { conversion, convertedFigures, displayMoney } from "../src/domain/fxDisplay.js";
+import { orderByMoney, orderByMoneyIn } from "../src/domain/order.js";
 import { currenciesByValue } from "../src/domain/performance.js";
 
 const rates = normaliseRates({ date: "2026-11-19", usd: { egp: 50, eur: 0.9 } });
@@ -88,5 +89,50 @@ describe("displayMoney", () => {
     const figures = { USD: 2000, EUR: 500 };
     displayMoney(figures, on("EGP"), order);
     expect(figures).toEqual({ USD: 2000, EUR: 500 });
+  });
+});
+
+describe("ranking in the display currency", () => {
+  const rows = [
+    { id: "cairo", f: { EGP: 500_000 } },        // about $92.59 at 54
+    { id: "boston", f: { USD: 20_000 } },        // $200
+    { id: "mixed", f: { USD: 1000, EGP: 54_000 } },   // $10 + $10
+  ];
+  const figuresOf = (r) => r.f;
+  const t54 = normaliseRates({ date: "2026-11-19", usd: { egp: 54 } });
+  const fx = (choice, over = {}) => ({ choice, fxOn: true, rates: t54, ...over });
+  const ids = (list) => list.map((r) => r.id);
+
+  it("turns every row into one figure in the chosen currency", () => {
+    const of = convertedFigures(rows, figuresOf, fx("USD"));
+    expect(of(rows[0])).toEqual({ USD: 9259 });
+    expect(of(rows[1])).toEqual({ USD: 20_000 });
+    expect(of(rows[2])).toEqual({ USD: 2000 });
+  });
+
+  it("ranks as one group where the native grouping puts EGP above a bigger dollar figure", () => {
+    const native = orderByMoney(rows, figuresOf, { groups: ["EGP", "USD"] });
+    expect(ids(native)[0]).toBe("cairo");
+    const converted = orderByMoneyIn(rows, figuresOf, { groups: ["EGP", "USD"] }, fx("USD"));
+    expect(ids(converted)).toEqual(["boston", "cairo", "mixed"]);
+    const smallestFirst = orderByMoneyIn(rows, figuresOf, { desc: false, groups: [] }, fx("USD"));
+    expect(ids(smallestFirst)).toEqual(["mixed", "cairo", "boston"]);
+  });
+
+  it("is null, and the grouping stays, under As earned, with rates off, or when any row lacks a rate", () => {
+    expect(convertedFigures(rows, figuresOf, fx("earned"))).toBeNull();
+    expect(convertedFigures(rows, figuresOf, fx("USD", { fxOn: false }))).toBeNull();
+    expect(convertedFigures(rows, figuresOf, fx("USD", { rates: null }))).toBeNull();
+    expect(convertedFigures(rows, figuresOf, fx("JPY"))).toBeNull();
+    const withSek = [...rows, { id: "sek", f: { SEK: 5 } }];
+    expect(convertedFigures(withSek, figuresOf, fx("USD"))).toBeNull();
+    const opts = { groups: ["EGP", "USD", "SEK"] };
+    expect(ids(orderByMoneyIn(withSek, figuresOf, opts, fx("USD"))))
+      .toEqual(ids(orderByMoney(withSek, figuresOf, opts)));
+  });
+
+  it("is exactly orderByMoney with no settings at all", () => {
+    const opts = { groups: ["EGP", "USD"] };
+    expect(ids(orderByMoneyIn(rows, figuresOf, opts))).toEqual(ids(orderByMoney(rows, figuresOf, opts)));
   });
 });
