@@ -6,6 +6,10 @@ import {
   tasksOf,
 } from "../domain/earnings.js";
 import { nextPaydays } from "../domain/payPeriod.js";
+import {
+  EARNINGS_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney, orderByNumber,
+} from "../domain/order.js";
+import SortBar from "./SortBar.jsx";
 
 /** The value a "no task" option carries. A select cannot hold null, and ""
  *  is indistinguishable from an unset control. */
@@ -46,6 +50,7 @@ const toInput = (t) => {
  */
 export default function Earnings({
   project, earnings, now, onAdd, onRemove, onSetPayState, onSetTasks, payPeriod = null,
+  defaultSort = "newest",
 }) {
   const [adding, setAdding] = useState(false);
   // Which row is having its task changed. One at a time: a select on every
@@ -64,7 +69,25 @@ export default function Earnings({
   const chosen = form.taskId === NONE ? null : findTask(project, form.taskId);
   const each = priceFor(project, chosen);
 
-  const rows = [...earnings].sort((a, b) => b.at - a.at);
+  // A pick on the bar, or null to follow the synced default; lasts until the
+  // page is left.
+  const [picked, setPicked] = useState(null);
+  const sort = picked ?? { key: defaultSort, desc: opensDescending(defaultSort) };
+  /**
+   * Newest by date, or by amount. Amount is grouped by currency, the
+   * project's own first (every other one by code), and inside a group it is
+   * SIGNED: the biggest money in comes first and a deduction comes last,
+   * which is the reading of "biggest first" that puts the largest payment at
+   * the top and the largest loss at the bottom. Pending and cancelled lines
+   * stay where they are and are ranked by their amount like the rest.
+   */
+  const figures = (e) => ({ [e.currency]: e.cents });
+  const rows = sort.key === "amount"
+    ? orderByMoney(earnings, figures, {
+      desc: sort.desc,
+      groups: groupOrder(currenciesOf(earnings, figures), { [project.currency]: 1 }),
+    })
+    : orderByNumber(earnings, (e) => e.at, sort.desc);
   const settled = rows.filter((e) => !isPending(e) && !isCancelled(e))
     .reduce((a, e) => a + e.cents, 0);
   const pending = rows.filter(isPending).reduce((a, e) => a + e.cents, 0);
@@ -127,6 +150,11 @@ export default function Earnings({
           {pending !== 0 && ` · ${formatMoney(pending, project.currency)} pending`}
         </span>
       </div>
+      {rows.length > 1 && (
+        <SortBar label="Order the earnings by" orders={EARNINGS_ORDERS} order={sort.key}
+                 desc={sort.desc} opensDesc={opensDescending}
+                 onChange={(key, desc) => setPicked({ key, desc })} />
+      )}
       <div className="panel">
         {rows.length === 0 && !adding && (
           <div className="empty">

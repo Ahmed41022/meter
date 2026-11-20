@@ -10,6 +10,7 @@
  */
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { currenciesByValue } from "../domain/performance.js";
+import { BY_COMPANY_ORDERS } from "../domain/order.js";
 import { GoalMeter, goalFormatter } from "./parts.jsx";
 
 /** A goal's period, said the way the sentence needs it. */
@@ -45,16 +46,36 @@ export function TargetsPanel({ targets, behind, onOpenProject }) {
   );
 }
 
+/** The segmented "order by" control both Overview breakdowns share. */
+function OrderTabs({ label, orders, value, onChange }) {
+  return (
+    <div className="segmented small" role="tablist" aria-label={label}>
+      {orders.map(([key, text]) => (
+        <button key={key} role="tab" aria-selected={value === key}
+                className={"seg" + (value === key ? " on" : "")}
+                onClick={() => onChange(key)}>
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Every project of one client totalled together. */
-export function ByCompanyPanel({ show, companies, named, shares }) {
+export function ByCompanyPanel({ show, companies, named, shares, sort, setSort }) {
   if (!show) return null;
   return (
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">By company</span>
-            <span className="eyebrow">
-              {named.length} {named.length === 1 ? "company" : "companies"}
-            </span>
+            {named.length > 1 ? (
+              <OrderTabs label="Order companies by" orders={BY_COMPANY_ORDERS} value={sort}
+                         onChange={setSort} />
+            ) : (
+              <span className="eyebrow">
+                {named.length} {named.length === 1 ? "company" : "companies"}
+              </span>
+            )}
           </div>
           <div className="panel">
             {companies.map((row) => {
@@ -102,23 +123,16 @@ export function ByCompanyPanel({ show, companies, named, shares }) {
  *  currency the ranking by the hour was taken in, and so the one its figures
  *  are in. */
 export function ByProjectPanel({
-  rows, shownRows, ranked, byRate, rateCurrency, top, widest, projectSort, setProjectSort,
+  rows, shownRows, orders, byRate, rateCurrency, top, widest, projectSort, setProjectSort,
   onOpenProject,
 }) {
   return (
       <div className="sec">
         <div className="sec-head">
           <span className="eyebrow">By project</span>
-          {ranked.length > 1 ? (
-            <div className="segmented small" role="tablist" aria-label="Order projects by">
-              {[["time", "Time"], ["rate", "An hour"]].map(([key, label]) => (
-                <button key={key} role="tab" aria-selected={projectSort === key}
-                        className={"seg" + (projectSort === key ? " on" : "")}
-                        onClick={() => setProjectSort(key)}>
-                  {label}
-                </button>
-              ))}
-            </div>
+          {orders.length > 1 ? (
+            <OrderTabs label="Order projects by" orders={orders} value={projectSort}
+                       onChange={setProjectSort} />
           ) : (
             <span className="eyebrow">{rows.length ? `${rows.length} active` : ""}</span>
           )}

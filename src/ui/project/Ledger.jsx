@@ -10,6 +10,10 @@ import { UNASSIGNED, findTask, rateFor, taskLabel } from "../../domain/tasks.js"
 import TaskPrompt from "../TaskPrompt.jsx";
 import SessionEditor from "../SessionEditor.jsx";
 import ManualSession from "../ManualSession.jsx";
+import {
+  SESSION_ORDERS, currenciesOf, groupOrder, opensDescending, orderByMoney, orderByNumber,
+} from "../../domain/order.js";
+import SortBar from "../SortBar.jsx";
 import { date, time } from "./format.js";
 
 /** Above this many rows the ledger is collapsed on arrival, so Settings and
@@ -47,6 +51,7 @@ export default function Ledger({
   piece, settles, stopped, w, earnings, findOverlaps, focusSession, focusRow, ledgerOpen,
   setLedgerOpen, filterTask, setFilterTask, selected, setSelected, setEditingTask, setSettling,
   onSetPayStateMany, onAssign, onCorrect, onRevertCorrection, onDeleteSession, onAddManual,
+  defaultSort = "newest",
 }) {
   const [addingTime, setAddingTime] = useState(false);
   const [bulkPrompt, setBulkPrompt] = useState(false);
@@ -54,13 +59,42 @@ export default function Ledger({
   // Tied to the rows it was asked about, so changing the selection drops it.
   const [asked, setAsked] = useState(null);           // {status, ids} | null
   const [editingSession, setEditingSession] = useState(null);
+  // A pick on the bar, or null to follow the synced default; lasts until the
+  // page is left.
+  const [picked, setPicked] = useState(null);
+  const sort = picked ?? { key: defaultSort, desc: opensDescending(defaultSort) };
 
   // The ledger shows both kinds; the totals above keep them apart.
   const ordered = [...sessions, ...idleSessions].sort((a, b) => startedAt(b) - startedAt(a));
+  /**
+   * What a sitting is worth, as the figure on its row: one currency's cents,
+   * or null where it is worth nothing. Idle time earns nothing and a rejected
+   * sitting never arrived (the totals above leave it out the same way), so
+   * both sink. A running sitting is valued as of now, as its row shows it.
+   * Off the clock there is no money, so the row's figure is its length.
+   */
+  const moneyOf = (s) => {
+    if (isIdle(s) || isCancelled(s)) return {};
+    return piece
+      ? { [currency]: earnedFrom(earnings, s.id) }
+      : { [s.currency]: whole(s) };
+  };
+  const hoursBy = {};
+  for (const s of ordered) hoursBy[s.currency] = (hoursBy[s.currency] || 0) + elapsedMs(s, now);
+  const byAmount = (rows) => (offClock
+    ? orderByNumber(rows, (s) => (elapsedMs(s, now) > 0 ? elapsedMs(s, now) : null), sort.desc)
+    : orderByMoney(rows, moneyOf, {
+      desc: sort.desc, groups: groupOrder(currenciesOf(rows, moneyOf), hoursBy),
+    }));
+  // The ledger is one flat list, so a sort needs no day headings to give up.
+  // Newest turned round is oldest first.
+  const arranged = sort.key === "amount"
+    ? byAmount(ordered)
+    : orderByNumber(ordered, startedAt, sort.desc);
   const visible = filterTask
-    ? ordered.filter((s) =>
+    ? arranged.filter((s) =>
         filterTask === UNASSIGNED ? !s.taskId : s.taskId === filterTask)
-    : ordered;
+    : arranged;
   const showLedger = ledgerOpen ?? (visible.length <= LEDGER_AUTO_COLLAPSE && !filterTask);
   // The session the editor is open on, for as long as it exists. Deleted from
   // its own row while the form is open, it has no times left to read, and a
@@ -213,6 +247,13 @@ export default function Ledger({
             {selected.length === visible.length ? "Deselect all" : `Select all ${visible.length}`}
           </button>
         </div>
+      )}
+
+      {showLedger && visible.length > 1 && (
+        <SortBar label="Order the sessions by"
+                 orders={offClock ? SESSION_ORDERS.map(([k, l]) => [k, k === "amount" ? "Duration" : l]) : SESSION_ORDERS}
+                 order={sort.key} desc={sort.desc} opensDesc={opensDescending}
+                 onChange={(key, desc) => setPicked({ key, desc })} />
       )}
 
       {editedSession && (

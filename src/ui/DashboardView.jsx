@@ -7,6 +7,9 @@ import {
   splitByClock, trendFor, byCompany, comparisonRanges, concentration, currenciesByWork,
   firstRecord, heatDepth, hourlyRates, revenueShare, soleCurrency, worthPerHour,
 } from "../domain/performance.js";
+import {
+  BY_PROJECT_ORDERS, keysOf, orderCompanyRows, orderProjectRows,
+} from "../domain/order.js";
 import { doneToday, todaysObjectives } from "../domain/objectives.js";
 import { byHourOfDay, byWeekday, timedOnly } from "../domain/rhythm.js";
 import { ByCompanyPanel, ByProjectPanel, TargetsPanel } from "./DashboardPanels.jsx";
@@ -34,7 +37,7 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, defaultPeriod = "last", asked, onSettleAsk, now, today,
+  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", asked, onSettleAsk, now, today,
   onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment, onMarkLines,
 }) {
   /** The row being given another date, and the date typed. One at a time. */
@@ -64,7 +67,10 @@ export default function DashboardView({
   const [offset, setOffset] = useState(0);
   const [heatScale, setHeatScale] = useState("work");
   const [heatBack, setHeatBack] = useState(0);
-  const [projectSort, setProjectSort] = useState("time");
+  // What was picked on a breakdown, or null to follow the synced default.
+  // Kept until the Overview is left, never written back.
+  const [projectPick, setProjectPick] = useState(null);
+  const [companyPick, setCompanyPick] = useState(null);
 
   /** Which rate values a session is the caller's question, and the answer is a
    *  task override when there is one, and a share of it for time over a task's
@@ -167,8 +173,19 @@ export default function DashboardView({
   // default order: not "where did the time go" but "which of these was worth
   // it" — and on work paid per accepted item those have different answers.
   const ranked = sole ? worthPerHour(rows, sole) : [];
-  const byRate = projectSort === "rate" && ranked.length > 1;
-  const shownRows = byRate ? ranked : rows;
+  // "An hour" divides money by hours, so it exists only inside one currency,
+  // and only once two rows clear the floor. Earned does not divide anything:
+  // it groups by currency instead, so it is always on offer.
+  const rateOffered = ranked.length > 1;
+  const projectOrders = rows.length > 1
+    ? BY_PROJECT_ORDERS.filter(([key]) => key !== "rate" || rateOffered)
+    : [];
+  const wanted = projectPick ?? defaultProjectSort;
+  const projectSort = keysOf(projectOrders).includes(wanted) ? wanted : "time";
+  const byRate = projectSort === "rate";
+  const shownRows = byRate ? ranked : orderProjectRows(rows, projectSort);
+  const companySort = companyPick ?? defaultCompanySort;
+  const shownCompanies = orderCompanyRows(companies, companySort);
   const top = sole ? concentration(rows, sole) : null;
 
   // Today's focus is the same whichever period is on screen: what is left to
@@ -206,12 +223,12 @@ export default function DashboardView({
         <DeskTime current={current} share={share} />
       )}
 
-      <ByCompanyPanel show={showCompanies} companies={companies} named={named}
-                      shares={shares} />
+      <ByCompanyPanel show={showCompanies} companies={shownCompanies} named={named}
+                      shares={shares} sort={companySort} setSort={setCompanyPick} />
 
-      <ByProjectPanel rows={rows} shownRows={shownRows} ranked={ranked} byRate={byRate}
+      <ByProjectPanel rows={rows} shownRows={shownRows} orders={projectOrders} byRate={byRate}
                       rateCurrency={sole} top={top} widest={widest} projectSort={projectSort}
-                      setProjectSort={setProjectSort} onOpenProject={onOpenProject} />
+                      setProjectSort={setProjectPick} onOpenProject={onOpenProject} />
 
       {offRows.length > 0 && (
         <OffClockList offRows={offRows} onOpenProject={onOpenProject} />

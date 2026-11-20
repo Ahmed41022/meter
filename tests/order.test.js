@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BY_COMPANY_ORDERS, BY_PROJECT_ORDERS, CARD_ORDERS, EARNINGS_ORDERS, LIFE_ORDERS,
   biggestFigure, currenciesOf, groupOrder, keysOf, opensDescending, orderByMoney,
-  orderByName, orderByNumber,
+  orderByName, orderByNumber, orderCompanyRows, orderProjectRows,
 } from "../src/domain/order.js";
 
 const row = (id, figures) => ({ id, figures });
@@ -204,5 +204,61 @@ describe("the order sets", () => {
     expect(opensDescending("name")).toBe(false);
     expect(["added", "earned", "recent", "time", "rate", "newest", "amount"].every(opensDescending))
       .toBe(true);
+  });
+});
+
+describe("orderProjectRows", () => {
+  const p = (id, billedCents, billedMsByCurrency = {}) => ({ id, billedCents, billedMsByCurrency });
+
+  it("leaves the arriving order for time", () => {
+    const rows = [p("a", { USD: 1 }), p("b", { USD: 9 })];
+    expect(orderProjectRows(rows, "time")).toBe(rows);
+  });
+
+  it("ranks earned by currency, most hours first, never across currencies", () => {
+    const rows = [
+      p("usd-big", { USD: 9_000_000 }, { USD: 1 }), p("none", {}),
+      p("egp", { EGP: 100 }, { EGP: 5 }), p("usd-small", { USD: 5 }, { USD: 1 }),
+    ];
+    expect(orderProjectRows(rows, "earned").map((r) => r.id))
+      .toEqual(["egp", "usd-big", "usd-small", "none"]);
+  });
+});
+
+describe("orderCompanyRows", () => {
+  const c = (company, billedCents, billedMs, extra = {}) =>
+    ({ company, billedCents, billedMs, billedMsByCurrency: {}, rateCents: null, currency: null, ...extra });
+
+  it("keeps the unassigned row last whatever the order", () => {
+    const rows = [
+      c("A", { USD: 1 }, 1, { currency: "USD", rateCents: 5 }), c(null, { USD: 999 }, 999,
+        { currency: "USD", rateCents: 999 }),
+    ];
+    for (const key of ["time", "rate", "earned"]) {
+      expect(orderCompanyRows(rows, key).map((r) => r.company)).toEqual(["A", null]);
+    }
+  });
+
+  it("earned with one currency keeps the arriving order, which is money then time", () => {
+    const rows = [c("X", { USD: 300 }, 5), c("Y", { USD: 200 }, 9), c("Z", { USD: 200 }, 2), c("W", {}, 1)];
+    expect(orderCompanyRows(rows, "earned").map((r) => r.company)).toEqual(["X", "Y", "Z", "W"]);
+  });
+
+  it("does not let money at or below zero rank", () => {
+    const rows = [c("Neg", { USD: -50 }, 9), c("Pos", { USD: 10 }, 1)];
+    expect(orderCompanyRows(rows, "earned").map((r) => r.company)).toEqual(["Pos", "Neg"]);
+  });
+
+  it("ranks the hourly rate inside one currency and sinks rows with no rate", () => {
+    const rows = [
+      c("Multi", { USD: 1, EGP: 1 }, 5), c("Usd", { USD: 1 }, 1, { currency: "USD", rateCents: 20 }),
+      c("Egp", { EGP: 1 }, 1, { currency: "EGP", rateCents: 9_000, billedMsByCurrency: { EGP: 9 } }),
+    ];
+    expect(orderCompanyRows(rows, "rate").map((r) => r.company)).toEqual(["Egp", "Usd", "Multi"]);
+  });
+
+  it("time sinks a row with no billed time", () => {
+    const rows = [c("None", { USD: 5 }, 0), c("Some", {}, 3)];
+    expect(orderCompanyRows(rows, "time").map((r) => r.company)).toEqual(["Some", "None"]);
   });
 });

@@ -126,3 +126,48 @@ export const orderByMoney = (rows, figuresOf, { desc = true, groups = [] } = {})
 export const currenciesOf = (rows, figuresOf) =>
   rows.flatMap((row) => Object.entries(figuresOf(row) ?? {})
     .filter(([, cents]) => present(cents) && cents !== 0).map(([c]) => c));
+
+/** Milliseconds per currency summed over rows, for laying groups out. */
+const hoursOf = (rows) => {
+  const ms = {};
+  for (const r of rows) {
+    for (const [c, v] of Object.entries(r.billedMsByCurrency ?? {})) ms[c] = (ms[c] || 0) + v;
+  }
+  return ms;
+};
+
+/** Order by money with groups laid out by the hours the rows themselves report. */
+const byMoneyAndHours = (rows, figuresOf) =>
+  orderByMoney(rows, figuresOf,
+    { groups: groupOrder(currenciesOf(rows, figuresOf), hoursOf(rows)) });
+
+/**
+ * The Overview's By project rows in the chosen order. "time" is the order they
+ * arrive in (busiest first), and "earned" ranks each row by what it reports as
+ * settled money for the period, one currency at a time. ("An hour" is ranked
+ * by worthPerHour, which has its own floor and sole-currency rule.)
+ */
+export const orderProjectRows = (rows, key) =>
+  key === "earned" ? byMoneyAndHours(rows, (r) => r.billedCents) : rows;
+
+/**
+ * The Overview's By company rows in the chosen order, with the unassigned row
+ * always last: it is a gap to fill, not a client to rank.
+ *
+ * "earned" with one currency is the order the rollup has always had (most
+ * money, then most time), because the rows arrive in that order and ties and
+ * the empty ones keep it. Only money above zero ranks, as before. "rate" is
+ * the blended hourly figure, which a row has only when its money is in one
+ * currency, so it is ranked inside that currency and rows with no rate sink.
+ */
+export const orderCompanyRows = (rows, key) => {
+  const named = rows.filter((r) => r.company !== null);
+  const gap = rows.filter((r) => r.company === null);
+  const sorted = key === "time"
+    ? orderByNumber(named, (r) => (r.billedMs > 0 ? r.billedMs : null))
+    : key === "rate"
+      ? byMoneyAndHours(named, (r) => (r.rateCents > 0 ? { [r.currency]: r.rateCents } : {}))
+      : byMoneyAndHours(named, (r) => Object.fromEntries(
+        Object.entries(r.billedCents).filter(([, c]) => c > 0)));
+  return [...sorted, ...gap];
+};

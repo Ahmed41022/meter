@@ -448,6 +448,8 @@ export default function App({ store: injectedStore }) {
             today={dayKey(now)}
             projects={projects}
             earnings={earningsFor(state, project.id)}
+            defaultEarningsSort={prefOf(state, "earningsSort")}
+            defaultSessionsSort={prefOf(state, "sessionsSort")}
             /* As stored, so a zone this browser does not know is shown and
                saved back rather than quietly dropped. */
             payPeriod={storedPeriodFor(state, project)}
@@ -479,6 +481,8 @@ export default function App({ store: injectedStore }) {
             pay={pay}
             /* The synced default, or "last" for this device's own memory. */
             defaultPeriod={prefOf(state, "overviewPeriod")}
+            defaultProjectSort={prefOf(state, "byProjectSort")}
+            defaultCompanySort={prefOf(state, "byCompanySort")}
             asked={payoutsAsked}
             onSettleAsk={() => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setPayoutsAsked(true); }}
             onAnswer={answerPayment}

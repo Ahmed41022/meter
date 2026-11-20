@@ -27,6 +27,7 @@ export default function ProjectView({
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
   onSetEarningTasks, onSubmitTasks, onAnswerTasks, onReopenTasks, onRewardTasks,
   payPeriod = null, companies = [], onSetPayPeriod, onOpenSettings,
+  defaultEarningsSort = "newest", defaultSessionsSort = "newest",
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
@@ -187,7 +188,7 @@ export default function ProjectView({
         <Earnings project={project} earnings={earnings} now={now}
                   onAdd={onAddEarning} onRemove={onRemoveEarning}
                   onSetTasks={onSetEarningTasks} payPeriod={payPeriod}
-                  onSetPayState={onSetPayState} />
+                  onSetPayState={onSetPayState} defaultSort={defaultEarningsSort} />
       )}
 
       {/* On a finished project the list is a record, not a plan — shown when
@@ -220,7 +221,7 @@ export default function ProjectView({
                     idleCents={idleCents} />
       )}
 
-      <Ledger
+      <Ledger defaultSort={defaultSessionsSort}
         project={project} sessions={sessions} idleSessions={idleSessions} now={now} price={price}
         whole={whole} totalCents={totalCents} totalMs={totalMs} currency={currency}
         offClock={offClock} piece={piece} settles={settles} stopped={stopped} w={w}

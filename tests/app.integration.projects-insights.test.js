@@ -390,7 +390,7 @@ describe("which work was worth the time, and how much rides on one project", () 
   it("orders by time until asked otherwise", async () => {
     const d = await open();
     expect(named(d)[0]).toBe("big");
-    expect(sorters(d).map((b) => b.textContent)).toEqual(["Time", "An hour"]);
+    expect(sorters(d).map((b) => b.textContent)).toEqual(["Time", "An hour", "Earned"]);
   }, 30_000);
 
   it("reorders by what an hour actually paid, and says the figure", async () => {
