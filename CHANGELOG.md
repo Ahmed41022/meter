@@ -17,6 +17,21 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Sorting on the project lists, with synced defaults.** Work and Life cards
+  have a Sort row: Added (today's order), Earned, Recently worked, Name and
+  Time, without Earned on Life. The Overview's By project gains Earned, and
+  By company gets Time, An hour and Earned, opening on Earned, with the
+  unassigned row always last. A project's Earnings list can be sorted Newest
+  or by Amount, and its Sessions ledger the same way. Money is never added or
+  compared across currencies: rows are grouped by currency, the one with most
+  hours first, biggest first inside each, a row with several currencies is
+  placed by its biggest single figure, and rows with no money stay at the
+  bottom. Settings → Defaults has one choice per list; six new preferences
+  (`cardsSort`, `lifeSort`, `byProjectSort`, `byCompanySort`, `earningsSort`,
+  `sessionsSort`) store the order's name, not its direction. A pick on a list
+  lasts until you leave it. With one currency every default is the order the
+  list already had, apart from By company with several currencies, which is
+  now grouped rather than ranked on bare amounts.
 - **A Settings tab**, after Life, in four sections. *Appearance* holds the
   theme switch, moved from the footer, which now keeps only the sync status
   and the version. *Defaults* holds choices that follow you between devices;

@@ -203,7 +203,7 @@ const earning = (id, cents, currency, daysBack, extra = {}) => ({
   note: "", createdAt: day(daysBack), deletedAt: null, ...extra,
 });
 // Project currency USD. Amounts, newest first:
-//   e1 EGP 20 (0 days back), e2 EGP 5,000 (1), e3 USD 100 (2), e4 USD -50 (3),
+//   e1 EGP 20 (0 days back), e2 EGP 5,000 (1), e3 USD 100 (2), e4 USD -200 (3),
 //   e5 USD 300 (4), e6 USD 400 cancelled (5).
 // 5,000 EGP is 500,000 cents against 30,000 for $300: a bare comparison puts
 // EGP first, grouping by the project's own currency puts USD first.
@@ -216,7 +216,7 @@ const pageSeed = (extra = {}) => ({
   ],
   earnings: [
     earning("e1", 2_000, "EGP", 0), earning("e2", 500_000, "EGP", 1),
-    earning("e3", 10_000, "USD", 2), earning("e4", -5_000, "USD", 3),
+    earning("e3", 10_000, "USD", 2), earning("e4", -20_000, "USD", 3),
     earning("e5", 30_000, "USD", 4), earning("e6", 40_000, "USD", 5, { status: "cancelled" }),
   ],
   ...extra,
@@ -237,7 +237,7 @@ const sessionAmounts = (d) => [...d.querySelectorAll(".row.pick .row-amt")].map(
 describe("a project's Earnings list", () => {
   const E = {
     e1: money(2_000, "EGP"), e2: money(500_000, "EGP"), e3: money(10_000, "USD"),
-    e4: money(-5_000, "USD"), e5: money(30_000, "USD"), e6: money(40_000, "USD"),
+    e4: money(-20_000, "USD"), e5: money(30_000, "USD"), e6: money(40_000, "USD"),
   };
   const bar = '[aria-label="Order the earnings by"] .sortbtn';
 
@@ -252,7 +252,8 @@ describe("a project's Earnings list", () => {
   it("Amount is grouped by currency, the project's own first, signed inside, nothing filtered", async () => {
     const { d } = await openProject(pageSeed());
     await click(d, bar, "Amount");
-    // USD: the cancelled 400, then 300, 100, and the deduction last. Then EGP.
+    // USD: the cancelled 400, then 300, 100, and the deduction last, though at
+    // 200 it is bigger in magnitude than the 100. Then EGP.
     expect(earningAmounts(d)).toEqual([E.e6, E.e5, E.e3, E.e4, E.e2, E.e1]);
   }, 30_000);
 
@@ -332,6 +333,21 @@ describe("a project's Sessions ledger", () => {
     btn(d, /^Select all 5$/).click();
     await settle();
     expect(d.querySelector(".selbar-count").textContent).toBe("5 selected");
+  }, 40_000);
+
+  it("selects exactly the rows shown when a task filter is on, under Amount", async () => {
+    const seed = pageSeed();
+    seed.projects[0].tasks = [{ id: "t1", label: "T-1", createdAt: T - 400 * DAY }];
+    seed.sessions = seed.sessions.map((s) => (s.id === "s2" || s.id === "s3" ? { ...s, taskId: "t1" } : s));
+    const { d } = await openProject(seed);
+    await click(d, bar, "Amount");
+    [...d.querySelectorAll(".trow")].find((r) => r.textContent.startsWith("T-1")).click();
+    await settle();
+    expect(sessionAmounts(d)).toEqual([A.s2, A.s3]);
+    btn(d, /^Select all 2$/).click();
+    await settle();
+    expect(d.querySelector(".selbar-count").textContent).toBe("2 selected");
+    expect(d.querySelectorAll(".row.pick.sel")).toHaveLength(2);
   }, 40_000);
 
   it("opens on the synced default after a reload", async () => {

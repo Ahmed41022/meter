@@ -149,6 +149,13 @@ describe("the list sort preferences", () => {
     expect(PREFS.earningsSort.valid("amount")).toBe(true);
     expect(PREFS.sessionsSort.valid("name")).toBe(false);
     expect(PREFS.cardsSort.valid("earned-asc")).toBe(false);
+    // Each key refuses what only another list offers.
+    expect(PREFS.cardsSort.valid("rate")).toBe(false);
+    expect(PREFS.cardsSort.valid("newest")).toBe(false);
+    expect(PREFS.byCompanySort.valid("name")).toBe(false);
+    expect(PREFS.earningsSort.valid("time")).toBe(false);
+    expect(setPref({}, "cardsSort", "rate", 1)).toEqual({});
+    expect(setPref({}, "byProjectSort", "name", 1)).toEqual({});
     expect(PREFS.cardsSort.valid(undefined)).toBe(false);
   });
 

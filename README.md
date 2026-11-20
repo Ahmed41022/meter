@@ -75,8 +75,8 @@ rates. `npm run shots` regenerates every one of them.</sub>
   Google Drive — including stopping, from whichever device is to hand, a meter
   the other one started.
 - **Follows your system's light or dark setting**, or whichever you pick,
-  from the Settings tab, which also lists every client's payday and holds
-  backup, restore and sync.
+  from the Settings tab, which also lists every client's payday, holds
+  backup, restore and sync, and sets the order each project list opens in.
 - **Exports** a JSON backup or a CSV of every line item.
 
 The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.

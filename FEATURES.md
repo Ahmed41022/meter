@@ -33,6 +33,7 @@ src/
     merge.js       sync: last write wins, record by record
     backup.js      how long since the ledger was last copied out
     prefs.js       synced preferences: one record per key, a default for each
+    order.js       how lists are sorted: money ranked inside one currency, never across
   storage/
     store.js       the only module that knows where data lives
     settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period)
@@ -69,6 +70,7 @@ src/
       RecoveryPrompt.jsx   close a meter left running by a crash
       PaydayNotice.jsx     the oldest passed payday that nobody has answered
       BackupReminder.jsx   a backup is overdue
+    SortBar.jsx    the Sort row above a list: one button per order, a second click turns it round
     project/       the parts of one project's page
       ProjectFace.jsx      the meter: name, rate, figures, rail, prompts and controls
       ClosingSummary.jsx   what a finished project came to
@@ -136,7 +138,7 @@ A sitting that crossed midnight is listed under **each** day it touched, and eac
 
 ## Reporting performance
 
-**Overview** reports every project at once for a chosen **Day**, **Week**, **Month**, **Year** or **All** of it. **Today**, **Work**, **Life** and **Settings** are the tabs beside it — the app opens on Today — and opening a project from any of them drills into its meter and ledger. The Overview opens on the period this device last looked at, unless **Settings → Defaults** names one, which every synced device then shares.
+**Work and Life** project cards carry a **Sort** row once there is more than one: *Added* (the order they came in, and the default), *Earned*, *Recently worked*, *Name* and *Time*; Life has no money, so no Earned. Clicking the order already on turns it round, and the Done list follows the same order. **Overview** reports every project at once for a chosen **Day**, **Week**, **Month**, **Year** or **All** of it. **Today**, **Work**, **Life** and **Settings** are the tabs beside it — the app opens on Today — and opening a project from any of them drills into its meter and ledger. The Overview opens on the period this device last looked at, unless **Settings → Defaults** names one, which every synced device then shares.
 
 Pick the period, then step back through it with the arrows — last week, the month before. Forward stops at the present, because there is nothing recorded ahead of now.
 
@@ -307,6 +309,8 @@ Sep 21 – Sep 27 · −92% vs last week
 
 Conservative on purpose: the number you glance at should be money you have, or a rejected week reads as a good one.
 
+**Sorting money never adds or compares two currencies.** *Earned* on the cards and the Overview, and *Amount* on a project's Earnings and Sessions, put the rows into one group per currency, the currency with most hours worked first (by code where there are no hours), and rank by amount inside each group, biggest first. A row with money in several currencies, such as a company, is placed by its biggest single figure and its currency; rows with no money sink to the bottom whichever way the sort points. On the Overview, **By project** offers *Time*, *An hour* (only inside one currency, as before) and *Earned*, and **By company** offers *Time*, *An hour* and *Earned*, opening on Earned; with one currency that is the order it always had, and the unassigned row stays last under every order. A project's **Earnings** list opens *Newest* and offers *Amount*, where deductions sort by their signed value and so come last; pending and cancelled lines stay in the list. The **Sessions** ledger opens *Newest* and offers *Amount*, valued as the rows show it, with idle and cancelled sittings at the bottom; selecting and the bulk actions work the same under either.
+
 **Cancelled work keeps its hours and loses its money.** It is dimmed rather than deleted — the hours were still worked, and erasing the record would leave them in the ledger with no account of where their money went. It still counts in every time figure, and the project card, By project and By company name what it cost beside the hours (*$991.63 cancelled*), so hours against a zero read as a fact about the month rather than a broken app.
 
 Most work moves between these states through its task's answer (see *Tasks and their answers*). **Mark paid** and **Mark pending** on rows ticked in the ledger stay for everything else, and where a mark would contradict the answer — paid on a rejected task's sessions, pending on an accepted one's — the bar says what the mark would claim and waits for *anyway*. Either can be meant; far more often it is a row ticked by mistake.
@@ -435,7 +439,7 @@ Every editor starts from the thing it was opened on. Opening one task's editor a
 The **Settings** tab, after Life, gathers what is set once and rarely touched. It is not a project's settings, which stay in the project.
 
 - **Appearance** is the theme: light, dark, or follow the system. It is per device, because what suits a phone at night and a desktop at noon differ, and it is not in the ledger.
-- **Defaults** are choices that sync, so every device agrees. For now one: what the Overview opens on, either the last period used on that device or a fixed one. They are stored as preferences in the ledger, one record per choice.
+- **Defaults** are choices that sync, so every device agrees. There are seven: what the Overview opens on, either the last period used on that device or a fixed one, and the order each list opens in: Work projects, Life projects, Overview By project, Overview By company, a project's earnings and a project's sessions. Each is named for its list in Settings. They are stored as preferences in the ledger, one record per choice, and a default stores which order, not which way round: a pick on the list itself lasts only until you leave it.
 - **Companies & paydays** is every client in one list, one row each, however its name was typed: the schedule in words or *No schedule*, how many projects use it, and the next payday. **Edit** opens the same schedule boxes the project uses, one client at a time, and says before Save that the schedule is shared by every project of that client. Saving has an Undo that writes the old schedule back as a new edit.
 - **Sync & backup** is what is described next.
 
