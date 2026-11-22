@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { elapsedMs, isRunning, lastActivityAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import {
-  companyOf, isDone as projectDone, isPaused, searchProjects, validateProject,
+  companyOf, isDone as projectDone, isPaused, searchProjects,
 } from "../domain/projects.js";
 import { isCancelled, isPending, isPieceOnly, perTask } from "../domain/earnings.js";
 import { isDone } from "../domain/objectives.js";
@@ -18,8 +18,9 @@ import { useCurrency, useDisplay } from "./CurrencyContext.jsx";
 import CurrencySwitch from "./CurrencySwitch.jsx";
 import { displayMoney } from "../domain/fxDisplay.js";
 import { moneyText, rateNote } from "./fxMoney.js";
+import NewProject from "./NewProject.jsx";
 
-export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
+export { CURRENCIES } from "./NewProject.jsx";
 
 /**
  * The Work tab and the Life tab are the same list asking different questions.
@@ -33,18 +34,11 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
  */
 export default function ProjectsView({
   scope = "work", projects, sessions, earnings = [], objectives = [], now,
-  defaultSort = "added", onOpen, onAdd,
+  defaultSort = "added", onOpen, onAdd, allProjects = null, companies = [],
 }) {
   const life = scope === "life";
   const w = wordsFor(life);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({
-    name: "", rate: "", perTask: "", currency: CURRENCIES[0],
-  });
-  /** Which price the form is asking for. Not a property of the project so much
-   *  as of the question: a project can end up carrying both. */
-  const [model, setModel] = useState("hourly");
-  const [error, setError] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
   // What was picked on the bar, or null to follow the synced default. It lasts
@@ -156,31 +150,6 @@ export default function ProjectsView({
 
   const openCount = (projectId) =>
     objectives.filter((o) => o.projectId === projectId && !isDone(o)).length;
-
-  const submit = () => {
-    const problem = validateProject(form, { needsRate: !life, model });
-    if (problem) return setError(problem);
-    const piece = !life && model === "perTask";
-    onAdd({
-      ...form,
-      // Off the clock carries no rate, and nothing reads its currency, but the
-      // record keeps the same shape so every accessor stays uniform. Work paid
-      // per item carries no rate either, and for a sharper reason: money is
-      // derived from rate x elapsed, so any rate invented to satisfy this form
-      // would report income that never arrived.
-      rate: life || piece ? 0 : Number(form.rate),
-      offClock: life,
-      perTask: piece ? Number(form.perTask) : null,
-      // Per-item work is, by definition, worth something only once the item is
-      // accepted — so its sessions start pending rather than counted.
-      paysOnAcceptance: piece,
-    });
-    setForm({ name: "", rate: "", perTask: "", currency: form.currency });
-    setError("");
-    setAdding(false);
-  };
-
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   /** One card. Defined once and handed to both groups, so a finished project
    *  reads exactly like a live one — it is filed away, not diminished. */
@@ -351,68 +320,10 @@ export default function ProjectsView({
 
       <div className="sec">
         {adding ? (
-          <div className="panel">
-            <span className="eyebrow">New {w.projectNoun}</span>
-            <div style={{ height: 14 }} />
-            <label className="field">
-              <span className="eyebrow">Name</span>
-              <input className="inp" value={form.name} autoFocus
-                     placeholder={life ? "Sleep" : "Acme dashboard"}
-                     onChange={set("name")} onKeyDown={(e) => e.key === "Enter" && submit()} />
-            </label>
-            {life ? (
-              <div className="hint">
-                No rate: this is time you track but don’t work. It stays out of earnings,
-                billed hours and the project breakdown.
-              </div>
-            ) : (
-              <>
-                <div className="field">
-                  <span className="eyebrow">How it pays</span>
-                  <div className="modes" role="tablist" aria-label="How this project pays">
-                    {[["hourly", "By the hour"], ["perTask", "Per task"]].map(([key, label]) => (
-                      <button key={key} role="tab" aria-selected={model === key}
-                              className={"seg-btn" + (model === key ? " on" : "")}
-                              onClick={() => { setModel(key); setError(""); }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="pair">
-                  <label className="field">
-                    <span className="eyebrow">
-                      {model === "perTask" ? "Per accepted task" : "Hourly rate"}
-                    </span>
-                    <input className="inp" type="number" min="0" step="any"
-                           value={model === "perTask" ? form.perTask : form.rate}
-                           placeholder={model === "perTask" ? "250" : "450"}
-                           onChange={set(model === "perTask" ? "perTask" : "rate")}
-                           onKeyDown={(e) => e.key === "Enter" && submit()} />
-                  </label>
-                  <label className="field">
-                    <span className="eyebrow">Currency</span>
-                    <select className="inp" value={form.currency} onChange={set("currency")}>
-                      {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </label>
-                </div>
-                {model === "perTask" && (
-                  <div className="hint">
-                    The clock still runs, so you can see what an hour of it came to — but the
-                    money comes from the tasks you log as accepted, not from the time.
-                  </div>
-                )}
-              </>
-            )}
-            {error && <div className="err">{error}</div>}
-            <div className="controls">
-              <button className="btn primary" onClick={submit}>Add {w.projectNoun}</button>
-              <button className="btn ghost" onClick={() => { setAdding(false); setError(""); }}>
-                Cancel
-              </button>
-            </div>
-          </div>
+          <NewProject life={life} noun={w.projectNoun} now={now}
+                      projects={allProjects ?? projects} companies={companies}
+                      onAdd={(fields, schedule) => { onAdd(fields, schedule); setAdding(false); }}
+                      onCancel={() => setAdding(false)} />
         ) : (
           <div className="controls">
             <button className="btn primary" onClick={() => setAdding(true)}>

@@ -646,6 +646,7 @@ export default function App({ store: injectedStore }) {
             objectives={liveObjectives(state)}
             now={now}
             defaultSort={prefOf(state, tab === "life" ? "lifeSort" : "cardsSort")}
+            companies={state.companies ?? []}
             onOpen={openProject}
             {...projectListActions({ commit })}
           />

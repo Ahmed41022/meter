@@ -87,9 +87,25 @@ export const companiesIn = (projects) => {
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
 };
 
+/**
+ * A new project, with whatever the create card was told about it.
+ *
+ * Everything past name, rate and currency is optional, and each field is
+ * written only when it says something, so a project made with the short form
+ * is exactly the record it always was. `company` is the client's name;
+ * `bonusPerHour` the extra an accepted hour earns; `taskLimit`
+ * (`{ ms, factor }`) the per-task time limit, which becomes the first entry of
+ * the project's terms, in force for all of its work; the goals are kept as
+ * `normaliseGoal` leaves them, null when no target was given. A client's
+ * payday is the client's, not the project's, and is written by
+ * `setPayPeriod`, never here.
+ */
 export const addProject = (
   state,
-  { name, rate, currency, offClock = false, perTask = null, paysOnAcceptance = false },
+  {
+    name, rate, currency, offClock = false, perTask = null, paysOnAcceptance = false,
+    company = "", bonusPerHour = null, taskLimit = null, sessionGoal = null, overallGoal = null,
+  },
   now,
   id,
 ) => ({
@@ -105,12 +121,19 @@ export const addProject = (
       currentRate: rate,
       currency,
       createdAt: now,
-      sessionGoal: null,
-      overallGoal: null,
+      sessionGoal: sessionGoal ?? null,
+      overallGoal: overallGoal ?? null,
       ...(offClock ? { offClock: true } : {}),
       // Absent unless asked for, like every other field added after the fact.
       ...(perTask ? { perTask } : {}),
       ...(paysOnAcceptance ? { paysOnAcceptance: true } : {}),
+      // Off the clock has no client: a company on sleep would land in the
+      // revenue breakdown.
+      ...(!offClock && String(company ?? "").trim() ? { company: company.trim() } : {}),
+      ...(!offClock && bonusPerHour > 0 ? { bonusPerHour } : {}),
+      ...(!offClock && taskLimit?.ms > 0
+        ? { taskLimits: [{ from: null, ms: taskLimit.ms, factor: taskLimit.factor ?? 0 }] }
+        : {}),
     },
   ],
 });

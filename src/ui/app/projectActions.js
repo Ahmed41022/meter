@@ -57,9 +57,17 @@ export function projectActions({ commit, flash, stateRef, project, setOpenProjec
   };
 }
 
-/** Adding a project, from the lists. */
+/**
+ * Adding a project, from the lists. `schedule` is a payday for a client that
+ * has none yet, set from the create card: one write with the project, so an
+ * Undo or a sync never sees the project without it.
+ */
 export function projectListActions({ commit }) {
   return {
-    onAdd: (fields) => commit((s) => addProject(s, fields, Date.now(), uid())),
+    onAdd: (fields, schedule = null) => commit((s) => {
+      const at = Date.now();
+      const next = addProject(s, fields, at, uid());
+      return schedule && fields.company?.trim() ? setPayPeriod(next, fields.company, schedule, at) : next;
+    }),
   };
 }

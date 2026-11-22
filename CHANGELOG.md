@@ -7,6 +7,20 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Added
+
+- **A project can be fully set up when it is made.** The create card now asks
+  for the company, suggesting the clients already known and filing the
+  project under a known client's own spelling. A client with a payday says
+  which, in words; a new client can be given one on the spot, which every
+  project under it then shares. "More settings", closed by default, holds the
+  rest of a project's own settings: a per-task time limit and what time over
+  it pays, the acceptance reward (a flat amount or more per hour), and the
+  session and overall goals. Every one of them is optional and can still be
+  changed later in the project's Settings; on the Life tab the card offers
+  only the goals. The new fields are the ones the project's Settings already
+  write, so nothing new is stored.
+
 ### Fixed
 
 - **A project with pending money no longer opens on a blank page with live
