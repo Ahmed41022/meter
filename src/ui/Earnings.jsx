@@ -163,7 +163,8 @@ export default function Earnings({
         <span className="eyebrow">{isPieceOnly(project) ? "Accepted work" : "Earned without the clock"}</span>
         <span className="eyebrow" title={rateNote(settledShown) || undefined}>
           {said(settledShown)}
-          {pendingShown.entries.length > 0 || pendingShown.mode === "converted"
+          {/* Mode first: a converted figure has no `entries` to count. */}
+          {pendingShown.mode === "converted" || pendingShown.entries.length > 0
             ? ` · ${said(pendingShown)} pending` : ""}
         </span>
       </div>

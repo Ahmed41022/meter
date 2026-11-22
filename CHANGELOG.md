@@ -7,6 +7,13 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A project with pending money no longer opens on a blank page with live
+  rates on.** The pending part of its Earnings heading counted the currencies
+  of a figure before asking whether it had been converted into one, and a
+  converted figure has none to count. Nothing stored was affected.
+
 ## [1.3.0] — 2026-11-22
 
 Minor rather than major: every field and record added here (`prefs`,

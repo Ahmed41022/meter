@@ -218,6 +218,22 @@ describe("summary figures in the display currency", () => {
     expect(names(d, ".ern-amt")).toEqual(["€5.00"]);
   }, 30_000);
 
+  // A converted figure has no `entries`, and the pending part of the Earnings
+  // heading read them before asking for the mode: a project with pending
+  // money left a blank page the moment it was opened, with rates on.
+  it("opens a project with pending money in a converted Earnings heading", async () => {
+    const state = rich();
+    state.earnings.push({ ...earning("e2", "o", 10_000, "USD"), status: "pending" });
+    const dom = await bootFx(withPrefs(state, [pref("displayCurrency", "EGP")]));
+    const d = dom.window.document;
+    await toProjects(d, "Work");
+    [...d.querySelectorAll(".card")].find((c) => c.textContent.includes("Orion")).click();
+    await settle();
+    const head = [...d.querySelectorAll(".sec-head")].find((h) => /Earned without the clock/.test(h.textContent));
+    // $100 at 53.83 to the dollar.
+    expect(head.textContent).toMatch(/≈ EGP.5,383\.00 pending/);
+  }, 30_000);
+
   it("shows all of it as earned under As earned", async () => {
     const dom = await bootFx(as("earned"));
     const d = dom.window.document;
