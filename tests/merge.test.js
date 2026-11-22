@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  COLLECTIONS, mergeList, mergeState, overlaps, stampChanges, stampOf,
+  COLLECTIONS, collectionKeys, mergeList, mergeState, overlaps, stampChanges, stampOf,
 } from "../src/domain/merge.js";
 import { KIND, addManualSession, startSession, stopSession } from "../src/domain/sessions.js";
 import {
@@ -31,13 +31,19 @@ describe("which version of a record wins", () => {
       .toBe("touched");
   });
 
-  it("breaks a tie the same way every time", () => {
-    // Otherwise the merge depends on which copy arrived first, and a merge that
-    // is not deterministic cannot be reasoned about.
-    const mine = [rec("a", 100, { v: "mine" })];
-    const theirs = [rec("a", 100, { v: "theirs" })];
-    expect(mergeList(mine, theirs)[0].v).toBe("mine");
-    expect(mergeList(mine, theirs)[0].v).toBe("mine");
+  it("breaks a tie the same way on every device", () => {
+    // It used to be "mine wins", which cannot converge: two devices that stamped
+    // one record in the same millisecond each kept their own copy for ever. The
+    // rule now is arbitrary but shared, so both sides land on the same record.
+    const a = [rec("a", 100, { v: "alpha" })];
+    const b = [rec("a", 100, { v: "beta" })];
+    expect(mergeList(a, b)[0].v).toBe("beta");
+    expect(mergeList(b, a)[0].v).toBe("beta");
+  });
+
+  it("keeps an identical copy untouched, which is the usual tie after a sync", () => {
+    const mine = rec("a", 100, { v: "same" });
+    expect(mergeList([mine], [{ ...mine }])[0]).toBe(mine);
   });
 
   it("keeps what only one side has, from either side", () => {
@@ -339,5 +345,114 @@ describe("a meter stopped from the other device", () => {
       sessions: [{ ...stillRunningHere.sessions[0], updatedAt: T + 10 * HOUR }],
     };
     expect(mergeState(ticking, stoppedThere).sessions[0].closedAt).toBeNull();
+  });
+});
+
+describe("records the build has not heard of", () => {
+  const ledger = (over = {}) => ({ projects: [], sessions: [], ...over });
+
+  it("merges a collection a newer build added, in both directions", () => {
+    // The old merge copied `mine` and visited only the known lists, so an older
+    // device dropped a newer one's collection on its next sync.
+    const newer = ledger({ widgets: [rec("w1", 5, { v: "new" }), rec("w2", 1)] });
+    const older = ledger();
+    expect(mergeState(older, newer).widgets.map((w) => w.id)).toEqual(["w1", "w2"]);
+    expect(mergeState(newer, older).widgets.map((w) => w.id)).toEqual(["w1", "w2"]);
+    const both = mergeState(
+      ledger({ widgets: [rec("w1", 1, { v: "old" })] }),
+      ledger({ widgets: [rec("w1", 9, { v: "new" })] }),
+    );
+    expect(both.widgets).toEqual([rec("w1", 9, { v: "new" })]);
+  });
+
+  it("survives going through an older device and back", () => {
+    const newer = ledger({ widgets: [rec("w1", 5)] });
+    const viaOlder = mergeState(ledger({ sessions: [rec("s1", 1)] }), newer);
+    expect(mergeState(newer, viaOlder).widgets).toEqual([rec("w1", 5)]);
+  });
+
+  it("stamps edits to an unknown collection", () => {
+    const before = ledger({ widgets: [rec("w1", 1, { v: "a" })] });
+    const after = { ...before, widgets: [{ ...before.widgets[0], v: "b" }, { id: "w2" }] };
+    const out = stampChanges(before, after, T);
+    expect(out.widgets.map((w) => w.updatedAt)).toEqual([T, T]);
+    expect(stampChanges(before, before, T).widgets[0]).toBe(before.widgets[0]);
+  });
+
+  it("does not mistake other arrays or objects for collections", () => {
+    const state = ledger({ tags: ["a", "b"], notes: [{ text: "no id" }], meta: { id: "x" } });
+    const out = stampChanges(state, state, T);
+    expect(out.tags).toBe(state.tags);
+    expect(out.notes).toBe(state.notes);
+    expect(out.meta).toBe(state.meta);
+    expect(collectionKeys(state)).toEqual(["projects", "sessions"]);
+    // Mine kept, as with any scalar; nothing throws or is merged by guesswork.
+    expect(mergeState(state, ledger({ tags: ["z"] })).tags).toEqual(["a", "b"]);
+  });
+
+  it("leaves a key that is a list on one side and not on the other to the scalar rule", () => {
+    const out = mergeState(ledger({ x: [rec("a", 1)] }), ledger({ x: "text" }));
+    expect(out.x).toEqual([rec("a", 1)]);
+  });
+
+  it("still merges a known collection that holds a record with no id", () => {
+    // Behaviour before this change, kept: the known lists are trusted.
+    const out = mergeState({ sessions: [{ v: 1 }], projects: [] }, { sessions: [], projects: [] });
+    expect(out.sessions).toHaveLength(1);
+  });
+});
+
+describe("merging scalars", () => {
+  const ledger = (over = {}) => ({ projects: [], sessions: [], ...over });
+
+  it("keeps mine where both have a value, and adopts theirs where mine has none", () => {
+    const out = mergeState(ledger({ mood: "mine" }), ledger({ mood: "theirs", schema: 3 }));
+    expect(out.mood).toBe("mine");
+    expect(out.schema).toBe(3);
+  });
+
+  it("does not treat a deliberate null as missing", () => {
+    expect(mergeState(ledger({ mood: null }), ledger({ mood: "theirs" })).mood).toBeNull();
+  });
+
+  it("ignores a non-numeric backup stamp rather than taking it", () => {
+    expect(mergeState(ledger({ lastBackupAt: "soon" }), ledger({ lastBackupAt: 5 })).lastBackupAt).toBe(5);
+  });
+});
+
+describe("two devices converging", () => {
+  const byId = (list) => [...list].sort((a, b) => (a.id < b.id ? -1 : 1));
+
+  it("gives the same records whichever way round they are merged, ties included", () => {
+    const a = {
+      sessions: [rec("s1", 10, { v: "a" }), rec("s2", 20, { v: "a2" }), rec("only-a", 1)],
+      widgets: [rec("w", 5, { v: "a" })],
+    };
+    const b = {
+      sessions: [rec("s1", 10, { v: "b" }), rec("s2", 30, { v: "b2" }), rec("only-b", 1)],
+      widgets: [rec("w", 5, { v: "b" })],
+    };
+    const ab = mergeState(a, b);
+    const ba = mergeState(b, a);
+    expect(byId(ab.sessions)).toEqual(byId(ba.sessions));
+    expect(byId(ab.widgets)).toEqual(byId(ba.widgets));
+    // And merging the result again changes nothing.
+    expect(mergeState(ab, ba).sessions).toEqual(ab.sessions);
+  });
+});
+
+describe("the size of a real ledger", () => {
+  it("merges ten thousand records against ten thousand in well under a quadratic scan", () => {
+    const make = (tag, stamp) =>
+      Array.from({ length: 10_000 }, (_, i) => rec(`s${i}`, stamp + (i % 3), { tag }));
+    const mine = { projects: [], sessions: make("a", 100) };
+    const theirs = { projects: [], sessions: make("b", 100) };
+    const t0 = performance.now();
+    const out = mergeState(mine, theirs);
+    const ms = performance.now() - t0;
+    expect(out.sessions).toHaveLength(10_000);
+    // The old scan did 10^8 comparisons (seconds). Generous so a slow CI runner
+    // does not flake: the indexed merge is tens of milliseconds.
+    expect(ms).toBeLessThan(2_000);
   });
 });
