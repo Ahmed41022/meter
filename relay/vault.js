@@ -287,6 +287,14 @@ export function createVault({
     return reply(200, { deviceId: id, epoch: st.epoch });
   };
 
+  /** Who a token belongs to, for the host to authenticate a WebSocket upgrade
+   *  with: a socket carries no headers, so the Durable Object turns the token it
+   *  was handed into a Bearer call and keeps the device id from the answer. */
+  handlers["GET /ws"] = (ctx) => {
+    const dev = authed(ctx);
+    return reply(200, { deviceId: dev.id, epoch: st.epoch, head: st.head });
+  };
+
   handlers["GET /devices"] = (ctx) => {
     authed(ctx);
     return reply(200, {
@@ -387,8 +395,13 @@ export function createVault({
     if (b.upto > st.head || (st.snapshotUpto !== null && b.upto < st.snapshotUpto)) throw new Reject(400, "bad_request", { field: "upto" });
     const added = parts.reduce((n, p) => n + p.length, 0);
     const old = q("SELECT COALESCE(SUM(length(blob)), 0) AS n FROM snapshot")[0].n;
-    // Bytes the log gives back are not credited: the check is conservative.
-    if (st.bytes - old + added > L.vaultBytes) throw new Reject(429, "vault_quota", { what: "bytes", max: L.vaultBytes, resetAt: null });
+    // Judged on what the vault holds AFTER the swap: the old snapshot goes and
+    // so do the log rows the prune below deletes. Judging before would refuse
+    // exactly the compaction that frees space, and a vault near its cap could
+    // never get out of it. (Like the log-rows cap, this PUT is not refused for
+    // the log being full: it is the way out of that too.)
+    const freed = q("SELECT COALESCE(SUM(length(blob)), 0) AS n FROM log WHERE seq <= ?", b.upto - L.tail)[0].n;
+    if (st.bytes - old - freed + added > L.vaultBytes) throw new Reject(429, "vault_quota", { what: "bytes", max: L.vaultBytes, resetAt: null });
     transaction(() => {
       run("DELETE FROM snapshot");
       parts.forEach((p, i) => run("INSERT INTO snapshot(upto, part, blob) VALUES(?, ?, ?)", b.upto, i, p));
@@ -468,9 +481,7 @@ export function createVault({
   /** Deleting the vault (DESIGN M5). The tombstone is all that is kept: it is
    *  how another device that still holds a token learns, with a 410, that the
    *  vault is gone and not merely unreachable. */
-  handlers["DELETE /"] = (ctx) => {
-    authed(ctx);
-    if (ctx.body?.confirm !== "delete") throw new Reject(400, "confirm_required");
+  const wipe = () => {
     transaction(() => {
       for (const t of ["devices", "log", "snapshot", "keybox", "pair"]) run(`DELETE FROM ${t}`);
       setMeta("deleted_at", now());
@@ -481,6 +492,22 @@ export function createVault({
     st.snapshotUpto = null;
     recount();
     tell("deleted", {});
+  };
+
+  handlers["DELETE /"] = (ctx) => {
+    authed(ctx);
+    if (ctx.body?.confirm !== "delete") throw new Reject(400, "confirm_required");
+    wipe();
+    return reply(200, {});
+  };
+
+  /** The admin's delete (DESIGN M3): the registry asks through the Worker, and an
+   *  admin holds no device token, so this is trusted-only. It also works on a
+   *  vault that was never claimed (a creation that died half way) and on one
+   *  already deleted, so an admin can always finish the job. */
+  handlers["POST /purge"] = (ctx) => {
+    if (!ctx.trusted) throw new Reject(404, "not_found");
+    if (st.deletedAt === null) wipe();
     return reply(200, {});
   };
 
@@ -642,8 +669,9 @@ export function createVault({
 
       const handler = handlers[`${method} ${path}`];
       if (!handler) return reply(404, { code: "not_found" });
-      if (st.deletedAt !== null && !(trusted && path === "/stats")) return reply(410, { code: "deleted" });
-      if (st.claimedAt === null && path !== "/claim") return reply(404, { code: "unclaimed" });
+      const admin = trusted && (path === "/stats" || path === "/purge");
+      if (st.deletedAt !== null && !admin) return reply(410, { code: "deleted" });
+      if (st.claimedAt === null && path !== "/claim" && !admin) return reply(404, { code: "unclaimed" });
       return handler(ctx);
     } catch (e) {
       if (e instanceof Reject) return reply(e.status, e.body);

@@ -1,0 +1,41 @@
+# Meter's sync relay: one Worker and two SQLite-backed Durable Object classes.
+# Deploy from this folder:  npx wrangler deploy --config relay/wrangler.toml
+# Local run:                npx wrangler dev --config relay/wrangler.toml
+#
+# SECRETS are never written here. Set them once with
+#     npx wrangler secret put ROUTE_KEY --config relay/wrangler.toml
+#     npx wrangler secret put ADMIN_TOKEN --config relay/wrangler.toml
+# ROUTE_KEY signs vault ids (16+ characters; changing it orphans every vault).
+# ADMIN_TOKEN guards /v1/admin/* (16+ characters from A-Z a-z 0-9 _ -).
+# For `wrangler dev`, put both in relay/.dev.vars (never committed).
+#
+# No account id is committed: wrangler takes it from `npx wrangler login`.
+
+name = "meter-sync"
+main = "worker.js"
+# Not verified against a workerd release from this machine; if wrangler says the
+# installed runtime is older, lower it to the date it prints.
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "VAULT"
+class_name = "VaultDO"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+# `new_sqlite_classes` (not `new_classes`) is what gives a Durable Object SQLite
+# storage, and the Workers Free plan only allows SQLite-backed ones. A class
+# added later needs a new [[migrations]] entry with its own tag.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VaultDO", "RegistryDO"]
+
+# Defaults used until an admin call overrides them (`relay:admin`). All optional.
+# [vars]
+# OPEN_SIGNUP = "false"
+# MAX_VAULTS = "25"
+# VAULT_BYTES_CAP = "52428800"
+# DAILY_CREATION_CAP = "50"
+# IP_DAILY_CAP = "3"

@@ -376,6 +376,31 @@ describe("quotas", () => {
     expect(w.core.state().bytes).toBeLessThan(300);
   });
 
+  it("judges a snapshot on the vault's size after the swap and the prune, so a vault near its cap can still compact", async () => {
+    const { w, a } = await claimed({ vaultBytes: 800, tail: 1, writesPerMin: 1000 });
+    for (let i = 0; i < 4; i += 1) expect((await push(w, a, i, bid(i + 1), blob("e".repeat(150)))).status).toBe(200);
+    const full = w.core.state().bytes;
+    const snap = [blob("s".repeat(300))];
+    const size = JSON.stringify(snap[0]).length;
+    // Before the fix: current bytes plus the new snapshot, over the cap.
+    expect(full + size).toBeGreaterThan(800);
+    expect((await put(w, a, null, 4, snap)).status).toBe(200);
+    expect(w.core.state().bytes).toBeLessThan(800);
+    // A snapshot that is still too big AFTER the prune is refused, and changes nothing.
+    const before = w.core.state().bytes;
+    const huge = await put(w, a, 4, 4, [blob("h".repeat(790))]);
+    expect(huge.body).toMatchObject({ code: "vault_quota", what: "bytes", max: 800 });
+    expect(w.core.state().bytes).toBe(before);
+  });
+
+  it("takes a snapshot even when the log is at its row cap, which is the way out of it", async () => {
+    const { w, a } = await claimed({ logRows: 3, tail: 1, writesPerMin: 1000 });
+    for (let i = 0; i < 3; i += 1) await push(w, a, i, bid(i + 1));
+    expect((await push(w, a, 3, bid(4))).body).toMatchObject({ what: "log_rows" });
+    expect((await put(w, a, null, 3)).status).toBe(200);
+    expect((await push(w, a, 3, bid(4))).status).toBe(200);
+  });
+
   it("limits the vault to six devices, at joining and at opening a slot", async () => {
     const { w, a, mk } = await claimed({ devices: 3 });
     for (const n of [2, 3]) {
@@ -819,6 +844,35 @@ describe("deleting the vault", () => {
     w.core = w.make();
     expect((await call(w, "GET", "/devices", { token: b.token })).status).toBe(410);
     expect((await claim(w, a)).status).toBe(410);
+  });
+});
+
+describe("the admin's purge and the socket identity call", () => {
+  it("purge is for the Worker only, empties the vault, keeps the tombstone and is repeatable", async () => {
+    const { w, a } = await claimed();
+    await push(w, a, 0, bid(1));
+    expect((await call(w, "POST", "/purge")).status).toBe(404);
+    expect((await call(w, "POST", "/purge", { token: a.token })).status).toBe(404);
+    expect((await call(w, "POST", "/purge", { trusted: true })).status).toBe(200);
+    expect(w.events).toContainEqual(["deleted", {}]);
+    const n = w.events.length;
+    expect((await call(w, "POST", "/purge", { trusted: true })).status).toBe(200);
+    expect(w.events).toHaveLength(n);
+    expect((await call(w, "GET", "/devices", { token: a.token })).status).toBe(410);
+    expect(w.sql.exec("SELECT v FROM meta WHERE k = 'deleted_at'").toArray()).toHaveLength(1);
+  });
+
+  it("purge works on a vault that was never claimed", async () => {
+    const w = await world();
+    expect((await call(w, "POST", "/purge", { trusted: true })).status).toBe(200);
+    expect((await claim(w, await device(1))).status).toBe(410);
+  });
+
+  it("GET /ws answers who a token is, and nothing for a stranger", async () => {
+    const { w, a } = await claimed();
+    expect(await call(w, "GET", "/ws", { token: a.token })).toEqual({ status: 200, body: { deviceId: a.id, epoch: 1, head: 0 } });
+    expect((await call(w, "GET", "/ws", { token: pad("nobody") })).status).toBe(401);
+    expect((await call(w, "GET", "/ws")).status).toBe(401);
   });
 });
 

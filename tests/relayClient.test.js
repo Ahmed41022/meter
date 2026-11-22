@@ -239,6 +239,21 @@ describe("two devices against the real core", () => {
     expect((await a.sync()).status).toBe("ok");
   });
 
+  it("get a vault out of a full log: the engine compacts itself against the real core, then pushes", async () => {
+    const w = await setup({ limits: { logRows: 3, tail: 1, writesPerMin: 1000 } });
+    const a = await engineDevice(w, w.A, ledger([rec("s0", 1)]));
+    await a.sync();
+    for (let i = 1; i <= 3; i += 1) { a.put(`s${i}`, 10 + i); expect((await a.sync()).status).toBe("ok"); }
+    // The log now holds three rows, the cap. Without the fix this is a quota for ever.
+    a.put("s4", 20);
+    const out = await a.sync();
+    expect(out).toMatchObject({ status: "ok", pushed: 1 });
+    const b = await engineDevice(w, (await pairDevice(w)).vault);
+    expect((await b.sync()).status).toBe("ok");
+    expect(byId(b.state)).toEqual(byId(a.state));
+    expect(Object.keys(byId(b.state))).toHaveLength(5);
+  });
+
   it("cut a removed device off at once and tell the others the key moved", async () => {
     const w = await setup();
     const a = await engineDevice(w, w.A, ledger([rec("s1", 5)]));

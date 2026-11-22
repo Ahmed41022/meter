@@ -87,7 +87,8 @@ export async function createBackend({ clock, limits = {}, defaults = {} } = {}) 
 
   const admin = async (method, path, body) => {
     const res = await fetch(`${RELAY_URL}/v1/admin${path}`, {
-      method, headers: { authorization: `Bearer ${ADMIN_TOKEN}` }, body: body ? JSON.stringify(body) : undefined,
+      method, headers: { authorization: `Bearer ${ADMIN_TOKEN}`, ...(body ? { "content-type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.json() };
   };
@@ -97,6 +98,8 @@ export async function createBackend({ clock, limits = {}, defaults = {} } = {}) 
 
 // ------------------------------------------------------------------ transports
 
+/** The real Worker refuses a body that is not declared as JSON (415). */
+const JSON_HEADER = { "content-type": "application/json" };
 const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
 /** HTTP status and body to the engine's failure vocabulary. */
@@ -107,7 +110,7 @@ function fail(res, body) {
   if (res.status === 410 && code === "gone") return new TransportError("gone", { snapshotUpto: body.snapshotUpto });
   if (res.status === 410) return new TransportError("gone", body);
   if (res.status === 401 || res.status === 403) return new TransportError("auth", body);
-  if (res.status === 429 && code === "vault_quota") return new TransportError("quota", { resetAt: body.resetAt ?? undefined });
+  if (res.status === 429 && code === "vault_quota") return new TransportError("quota", { resetAt: body.resetAt ?? undefined, what: body.what });
   if (res.status === 429) return new TransportError("paused", body);
   if (res.status >= 500) return new TransportError("paused", body);
   return new TransportError("network", body);
@@ -117,7 +120,8 @@ async function send(fetch, base, vaultId, method, path, { token, body } = {}) {
   let res;
   try {
     res = await fetch(`${base}/v1/v/${vaultId}${path}`, {
-      method, headers: token ? bearer(token) : {}, body: body === undefined ? undefined : JSON.stringify(body),
+      method, headers: { ...(token ? bearer(token) : {}), ...(body === undefined ? {} : JSON_HEADER) },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
     throw new TransportError("network");
@@ -194,6 +198,7 @@ export async function registerVault({ fetch, vault, invite }) {
   const { publicJwkOf } = await import("../src/sync/vault.js");
   const res = await fetch(`${vault.relay}/v1/vaults`, {
     method: "POST",
+    headers: JSON_HEADER,
     body: JSON.stringify({
       invite, tokenHash: await tokenHash(vault.token), pubkey: publicJwkOf(vault), nameCt: null,
       recoverHash: await recoverHashOf(vault), deviceId: vault.deviceId,

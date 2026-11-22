@@ -350,6 +350,39 @@ describe("no retry storms", () => {
     expect((await a.sync()).status).toBe("backoff");
   });
 
+  it("makes room itself when the relay's log is full, then pushes once more", async () => {
+    const { relay, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    await a.sync();
+    a.put("s2", 2);
+    relay.failNext("push", new TransportError("quota", { what: "log_rows" }));
+    const out = await a.sync();
+    expect(out).toMatchObject({ status: "ok", pushed: 1 });
+    // The snapshot was taken BEFORE the retry, covering the head it had caught up to.
+    expect(relay.count("putSnapshot")).toBe(2); // the first upload, then this one
+    expect(relay.count("push")).toBe(2);
+    expect(relay.log.map((e) => e.batch.changes[0].r.id)).toEqual(["s2"]);
+  });
+
+  it("tries that once only: a log still full afterwards is a plain quota, and other quotas never compact", async () => {
+    const { relay, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    await a.sync();
+    a.put("s2", 2);
+    relay.failNext("push", new TransportError("quota", { what: "log_rows" }));
+    relay.failNext("push", new TransportError("quota", { what: "log_rows" }));
+    expect((await a.sync()).status).toBe("quota");
+    expect(relay.count("putSnapshot")).toBe(2);
+
+    const { relay: r2, device: d2 } = world();
+    const b = d2("B", ledger([rec("s1", 1)]));
+    await b.sync();
+    b.put("s2", 2);
+    r2.failNext("push", new TransportError("quota", { what: "appends", resetAt: 5_000_000 }));
+    expect((await b.sync({ force: true })).status).toBe("quota");
+    expect(r2.count("putSnapshot")).toBe(1); // only the first upload
+  });
+
   it("caps a daily-limit wait, so a far-off reset is looked at again", async () => {
     const { relay, clock, device } = world();
     const a = device("A", ledger([rec("s1", 1)]));

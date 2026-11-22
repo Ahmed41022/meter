@@ -264,6 +264,27 @@ export function createEngine({
       return true;
     };
 
+    /** Compaction forced by a full log. Only when this device has seen all of
+     *  it (otherwise the snapshot would claim to cover entries it never read),
+     *  and unlike `compact` it does not wait for the batches it is about to push:
+     *  a snapshot holding records the log does not yet have is harmless, because
+     *  merging is order-independent and these are still pushed afterwards. */
+    let relieved = false;
+    const relieve = async () => {
+      await catchUp();
+      if (meta.cursor === null || out.head === null || meta.cursor !== out.head) return false;
+      try {
+        await transport.putSnapshot({ expectUpto: meta.snapshotUpto, upto: meta.cursor, state });
+        meta.snapshotUpto = meta.cursor;
+        await save();
+      } catch (e) {
+        // Someone else compacted first, which makes the same room.
+        if (!(e instanceof TransportError) || e.code !== "conflict") throw e;
+        await catchUp();
+      }
+      return true;
+    };
+
     const push = async () => {
       let conflicts = 0;
       for (;;) {
@@ -285,8 +306,20 @@ export function createEngine({
           meta.inflight = { bid, batch };
           await save();
           try {
-            const sent = await transport.push({ expect: ahead(), bid, batch });
-            await settle(batch, sent.seq);
+            try {
+              const sent = await transport.push({ expect: ahead(), bid, batch });
+              await settle(batch, sent.seq);
+            } catch (e) {
+              // The relay's hard cap on log rows. Compaction normally runs AFTER
+              // a push, so a vault that reached the cap could never push again
+              // and never compact: it would be stuck for good. So, once, make
+              // room first and go again.
+              if (!(e instanceof TransportError) || e.code !== "quota" || e.detail?.what !== "log_rows" || relieved) throw e;
+              relieved = true;
+              if (!(await relieve())) throw e;
+              const sent = await transport.push({ expect: ahead(), bid, batch });
+              await settle(batch, sent.seq);
+            }
           } catch (e) {
             if (!(e instanceof TransportError) || e.code !== "conflict") throw e;
             // Somebody else wrote first. Take what they wrote, then rebuild:
