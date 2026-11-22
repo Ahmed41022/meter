@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  CryptoError, KINDS, aadFor, b64uDecode, b64uEncode, comparisonCode, compressionAvailable,
+  CryptoError, KINDS, MAX_GUNZIP_BYTES, aadFor, b64uDecode, b64uEncode, comparisonCode, compressionAvailable,
   cryptoAvailable, deriveKeys, fromUtf8, generateDeviceKeys, gunzip, gzip, newVaultKey, open,
   openJson, pad, paddedSize, seal, sealJson, selfTest, sha256, snapCtx, unpad, unwrapKey, utf8,
   wrapKey,
@@ -518,3 +518,18 @@ describe("vault store", () => {
 // Frozen by the test above: recoverAuth for K = 0..31, epoch 1. If this changes,
 // every vault ever created stops being recoverable, so it is a deliberate break.
 const FROZEN_RECOVER_AUTH = "JMzYSRF8yCRBRPLl8wCcKFHFgy4DiMEKnOIghQDTiuA";
+
+describe("gunzip size limit", () => {
+  it("fails with format above maxBytes, and passes at it", async () => {
+    const packed = await gzip(new Uint8Array(1_000_000));
+    await fail(gunzip(packed, 1000), "format");
+    expect((await gunzip(packed, 1_000_000)).length).toBe(1_000_000);
+  });
+
+  it("defaults to 64 MB, which a normal ledger is nowhere near", async () => {
+    // Not exercised with 65 MB of data: that is slow when the suite runs in
+    // parallel, and the default goes through the same check as maxBytes above.
+    expect(MAX_GUNZIP_BYTES).toBe(64 * 1024 * 1024);
+    expect((await gunzip(await gzip(new Uint8Array(1_000_000)))).length).toBe(1_000_000);
+  });
+});

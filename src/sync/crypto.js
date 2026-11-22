@@ -251,7 +251,7 @@ export const openJson = async (encKey, where, envelope, env = {}) => {
 
 /** Compress-then-encrypt is acceptable here: nobody supplies chosen plaintext
  *  to this ledger, and the relay sees only a padded length. */
-async function through(bytes, stream) {
+async function through(bytes, stream, maxBytes = Infinity) {
   const writer = stream.writable.getWriter();
   // Started, not awaited: a large input fills the stream's buffer and the write
   // only finishes once the reader below drains it, so awaiting first deadlocks.
@@ -268,6 +268,10 @@ async function through(bytes, stream) {
     if (done) break;
     chunks.push(value);
     total += value.length;
+    if (total > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw new CryptoError("format", "output is larger than the limit");
+    }
   }
   await writing;
   const out = new Uint8Array(total);
@@ -281,11 +285,18 @@ export async function gzip(bytes) {
   return through(bytes, new CompressionStream("gzip"));
 }
 
-export async function gunzip(bytes) {
+/** Largest output gunzip will produce unless told otherwise. The input is
+ *  authenticated ciphertext, so a hostile relay cannot feed it, but a bug or a
+ *  corrupt vault should fail cleanly rather than exhaust memory. A ledger of
+ *  tens of thousands of sessions is a few MB, so this is generous. */
+export const MAX_GUNZIP_BYTES = 64 * 1024 * 1024;
+
+export async function gunzip(bytes, maxBytes = MAX_GUNZIP_BYTES) {
   if (!compressionAvailable()) throw new CryptoError("unsupported", "no gzip here");
   try {
-    return await through(bytes, new DecompressionStream("gzip"));
-  } catch {
+    return await through(bytes, new DecompressionStream("gzip"), maxBytes);
+  } catch (e) {
+    if (e instanceof CryptoError) throw e;
     throw new CryptoError("format", "not gzip");
   }
 }

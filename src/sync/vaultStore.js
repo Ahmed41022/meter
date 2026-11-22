@@ -41,9 +41,15 @@ const readJson = (key, win) => {
 };
 
 /** Enough to be usable; anything less is treated as no vault at all, because
- *  syncing with a missing key or token could only fail confusingly. */
+ *  syncing with a missing key or token could only fail confusingly. `vaultId`
+ *  may be null: a vault is minted on this device first and gets its id from the
+ *  relay afterwards, and an app closed between the two must come back to it. The
+ *  invite that is being spent is kept too (also optional), so a retry presents
+ *  the same one. */
 const validVault = (v) =>
-  isObject(v) && text(v.relay) && text(v.vaultId) && Number.isInteger(v.epoch) && v.epoch >= 1
+  isObject(v) && text(v.relay) && (v.vaultId === null || text(v.vaultId))
+  && (v.invite === undefined || v.invite === null || text(v.invite))
+  && Number.isInteger(v.epoch) && v.epoch >= 1
   && text(v.K) && text(v.deviceId) && text(v.token)
   && isObject(v.privateJwk) && text(v.privateJwk.d);
 
