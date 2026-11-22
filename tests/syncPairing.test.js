@@ -217,7 +217,12 @@ describe("a relay in the middle", () => {
   });
 
   it("is caught by the ack when it changes the epoch, or forges an ack", async () => {
-    for (const tamper of [(r) => ({ ...r, epoch: r.epoch + 1 }), (r) => ({ ...r, ack: `${r.ack.slice(0, -2)}AA` }), (r) => ({ ...r, ack: undefined })]) {
+    // The forged ack must differ from the real one: replacing the last two
+    // characters with a fixed "AA" left it unchanged whenever the real one
+    // already ended that way (about one run in 256), and the pairing then
+    // rightly succeeded. Flip the second-to-last character instead.
+    const flip = (ack) => `${ack.slice(0, -2)}${ack.at(-2) === "B" ? "C" : "B"}${ack.at(-1)}`;
+    for (const tamper of [(r) => ({ ...r, epoch: r.epoch + 1 }), (r) => ({ ...r, ack: flip(r.ack) }), (r) => ({ ...r, ack: undefined })]) {
       const w = await world();
       const { a, b } = await toConfirm(w);
       await b.poll();

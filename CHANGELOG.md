@@ -9,6 +9,27 @@ ledger changed such that an older build can no longer read it.
 
 ### Changed
 
+- **Upcoming payments moved from the Overview to a new Payments tab**, the
+  third tab, with every way of answering it intact (paid in full, not yet or
+  partly, cancelled, already paid, change date, single lines). The one-time
+  question about past paydays is asked from Payments now.
+- **Two devices that stamped the same record in the same millisecond now
+  agree.** On an exact tie in `updatedAt` the merge used to keep "mine", so each
+  device kept its own copy and they disagreed for ever. The copy whose JSON
+  sorts greater now wins, the same on every device; identical copies are left
+  as they are. Merging also indexes the other side once instead of scanning it
+  for every record, which a ledger of a few thousand sessions had made slow.
+- **Google Drive stays for now, beside Meter Sync.** A device with no Meter
+  Sync account syncs through Drive exactly as before. Once a device has an
+  account, Drive no longer syncs by itself there: its panel moves below Meter
+  Sync under "Google Drive (being replaced)". Drive keeps working through a
+  two-week grace period, and is then removed. Nothing is deleted from your
+  Drive.
+- **Node 24 is now the toolchain.** `.nvmrc` says 24 and CI, the Pages build
+  and the release build read it; `engines` asks for Node 22.13 or later. The
+  tests of the relay run on Node's built-in `node:sqlite`, which is why. The
+  app itself runs in a browser and is unaffected.
+
 - **Changing a client's payday no longer moves paydays that have passed.**
   Only paydays still to come follow the new schedule; past ones keep their
   dates, so the answers given about them stay with them instead of coming
@@ -16,6 +37,81 @@ ledger changed such that an older build can no longer read it.
   moment each was replaced, in an optional `history`.
 
 ### Added
+
+- **Meter Sync: encrypted sync through your own Cloudflare relay**, in Settings
+  → Sync & backup, replacing Google Drive. A phone and a desktop share one
+  account; the ledger is encrypted on the device before it leaves it, and the
+  relay only ever holds ciphertext, so its operator cannot read a project, a
+  client, an amount or a device name. It is invite-only (an invite code or a
+  `#invite=` link makes one account), and the built-in relay runs as "Meter
+  Sync". A privacy notice says what the relay can and cannot see before
+  anything is made, and an account can be deleted from Settings at any time.
+  Changes travel as small batches of whole records, not whole-file copies, and
+  while the app is visible a live connection brings another device's edit, or
+  a meter started or stopped there, within moments; without one Meter syncs on
+  open, after edits and every couple of minutes while a meter runs. A device
+  running a meter is shown on the others as "Running on <device>", never
+  stored. Local use never waits on any of it.
+- **Recovery code, and adding a device.** Creating an account shows a recovery
+  code, the vault key as eight groups of eight characters, and will not move on
+  until it is ticked as saved; it can be shown again from Settings. A new
+  device joins from a code the first one shows under Add a device: scan the QR
+  with the phone's camera, or paste or type the code. Both devices then show the
+  same six digits, and the first approves. The code holds no key and lives ten
+  minutes; it carries a one-time secret the relay never sees, so neither a
+  stranger holding the relay's address nor the relay itself can slip into
+  pairing. A device can be renamed, and Settings lists the devices with when
+  each was last seen.
+- **Not built yet, and said so on screen:** removing another device (it needs
+  the key changed for everyone who stays; until then a lost device is cut off
+  by deleting the account), a screen to type the recovery code on a fresh
+  install (the relay already accepts it), and the guided move off Google Drive.
+  Keep exporting backups: the recovery code, the JSON export and your other
+  devices are the only ways back if every device is lost.
+- **Everyone who syncs should run the same version.** A batch carries a format
+  number; a build that meets a newer one stops applying it and says "update
+  Meter to keep syncing" rather than guess. A list of records that a newer
+  build added now survives an older one's sync (see Fixed), and each record is
+  replaced whole, so a field an older build does not know is kept, not
+  stripped, but two devices on different versions can still show different
+  things.
+- **Per-account limits, so one account cannot use up a shared free relay:**
+  50 MB stored, 2,000 writes a day and 6 devices each, and 25 accounts on a
+  relay by default. Over its daily allowance, an account says when it resets
+  and keeps everything pending; nothing is lost. If the relay itself is at its
+  daily limit every device shows the same paused state and local use goes on.
+- **Operating your own relay.** The relay is one Cloudflare Worker and two
+  SQLite-backed Durable Objects in `relay/`, on the free plan. `npm run
+  relay:deploy` deploys it in one command, with the secrets made once into the
+  git-ignored `relay/.admin.json` and handed to Cloudflare without being
+  printed. `npm run relay:admin -- ...` makes and revokes invites, lists
+  accounts with their sizes and last-seen times (never any content), deletes an
+  account, and changes the caps or opens sign-up without an invite. `npm run
+  relay:init` is the manual version of the same set-up, and `npm run
+  relay:local` runs the real relay on `127.0.0.1:8788` for trying Meter Sync
+  with no Cloudflare account. "Use my own relay" points a device at any other
+  relay's address.
+- **A Payments tab**, third after Work and Life. Upcoming payments sits at the
+  top as it was on the Overview. Below it is the history of paydays that have
+  passed or been answered, newest first: **By payday**, with a subtotal for
+  each date and each month, or **By company**, a statement per currency of what
+  was expected, what came, what is still outstanding, what was cancelled and
+  the difference. Each payday is paid, partly paid, cancelled, not answered, or
+  paid line by line. A period filter (this month, last month, this year, last
+  year, all, or custom days; opening on this year) is remembered on the device
+  and applies to both views. **Print** (or Save as PDF) gives a black-on-white
+  statement, and **Export CSV** one row per line of each payday for an
+  accountant. Money is never added across currencies; with live rates on, a
+  "≈" total in the display currency appears beside them. The history is
+  derived from the ledger like the forecast and stores nothing new.
+- **Single lines marked paid now record the day they were paid**, the payday of
+  the row they were on, as `receivedOn` on an earning and `hoursReceivedOn` on
+  a task. Older ones, and money added as "already paid", have none, and are
+  dated by the payday rules from their hand-in, their acceptance or the day they
+  were added, on the client's schedule as it stood then. The statement CSV's
+  "Dated by" column says which dates were recorded and which came from the
+  schedule. A client with no schedule has no payday, so its money is not in the
+  history.
 
 - **Live exchange rates, off by default, and a display currency.** Settings →
   Currency turns them on. Meter then asks `cdn.jsdelivr.net` (and
@@ -92,6 +188,11 @@ ledger changed such that an older build can no longer read it.
 
 ### Fixed
 
+- **A device no longer drops records it did not recognise when it syncs.**
+  Merging only looked at the lists the build knew, so an older device threw
+  away, on its next sync, any list a newer build had added. Every list of records is now merged, known or
+  not, found by its shape; a value that is not a list keeps mine and takes
+  theirs only where mine has none, and the backup date still takes the later.
 - **Correcting a session that was paused and closed later billed the pause.**
   The editor offered the moment the session was closed as its end, so any
   correction stretched the last block across the break. It now offers the end

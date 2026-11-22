@@ -21,16 +21,19 @@ src/
     terms.js       a project's rate and time limit, and how far a change reaches
     earnings.js    money with no duration, pay states, how a project pays
     payPeriod.js   a client's payday: cutoff, zone, the run a time falls in, and the list of clients
-    payout.js      Upcoming payments: what lands on which day
+    payout.js      Upcoming payments: what lands on which day; its row builder (`forecastRows`) is shared with the history
     payouts.js     what you said about a payment: paid, cancelled, moved, partly received
-    paylines.js    single lines of a payment marked paid or moved, on their own records
+    paylines.js    single lines of a payment marked paid or moved, on their own records, with the day they were paid
+    payHistory.js  past paydays: paid, partly paid, cancelled, not answered; by payday, by company, totals per currency
+    statementPeriod.js  the spans a statement covers (this month ... custom) as days, and the remembered choice
+    paymentsCsv.js the payment history as CSV, one row per line of each payday
     performance.js windows, overlap splitting, trends, comparisons, rollups
     recent.js      Today's lists: what to restart, every day there was work
     rhythm.js      when in the day and week the work happens
     objectives.js  what you mean to do, estimates, today's focus
     todos.js       the general to-do list on Today
     csv.js         the line-item export
-    merge.js       sync: last write wins, record by record
+    merge.js       sync: last write wins, record by record, every list of records, the same winner on a tie on every device
     backup.js      how long since the ledger was last copied out
     prefs.js       synced preferences: one record per key, a default for each
     order.js       how lists are sorted: money ranked inside one currency, or in the display currency when every row converts
@@ -38,13 +41,40 @@ src/
     fxDisplay.js   what a total prints: one converted figure or each currency as earned, and why not
   fx/
     rates.js       fetching today's rates (two hosts, a timeout) and the per-device cache `meter:rates`
+  sync/            Meter Sync, and the Google Drive sync it is replacing. Nothing here imports React.
+    changes.js     which records a device still has to send, the batches they go in, applying a batch, reconciling against a snapshot
+    engine.js      one round: pull, push, now and then compact, against any transport; its statuses and retry waits
+    crypto.js      HKDF, AES-GCM with AAD and padding, gzip, ECDH wrapping of the vault key, the secure-context check
+    vault.js       making a vault identity on the device (key, device keys, token) before the relay knows of it
+    vaultStore.js  what this device keeps under `meter:sync*`; never in the ledger or the JSON export
+    codes.js       the recovery, join and invite codes (Crockford base32, checksums), with strict decoders
+    pairing.js     the pairing protocol, both devices: open, request, the six digits, approve, unwrap
+    qr.js          a QR encoder, hand-written, drawn as SVG
+    relay.js       the HTTP transport to a relay: log, snapshot, devices, pairing, creating and deleting an account
+    socket.js      the live connection: reconnect with backoff, closed while hidden, pings, entries applied directly
+    relayConfig.js the built-in relay's address, who runs it, and the page links point to
+    relayActions.js  creating an account, the recovery code, leaving: the order of the steps that change what the device holds
+    relayFragments.js  `#invite=` and `#join=` read from the address bar, then removed from it
+    relayWords.js  every status and failure as a sentence a person can act on
+    drive.js, google.js  Google Drive sync (being replaced)
   storage/
     store.js       the only module that knows where data lives
-    settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period, the rates cache)
+    settings.js    per-device choices that are not part of the ledger (theme, the Overview's last period, the Payments period, the rates cache)
   ui/              React components; all logic imported from domain/
     words.js       work vs off-clock wording, the only thing the flag changes
     TodayView      the Today tab: to-dos, today so far, and the days before it
     DashboardView  the Overview tab: what a day, week or month was worth (see dashboard/)
+    payments/      the Payments tab: Upcoming payments, and the history of paydays
+      PaymentsView.jsx     the tab: Upcoming payments on top, the history below, one payday open at a time
+      History.jsx          the period filter, the By payday / By company switch and the totals for the span
+      PeriodFilter.jsx     this month, last month, this year, last year, all, custom days; remembered on this device
+      ByPayday.jsx         dates newest first with a subtotal per currency, month subtotals, Print and Export CSV
+      ByCompany.jsx        one statement per company, per currency, with its paydays and lines
+      HistoryRow.jsx       a payday's row: status, expected, received, difference, and its lines when opened
+      Totals.jsx           the figures per currency, with the display-currency total beside them when live rates are on
+      StatementSheet.jsx   the black-on-white statement that Print (and Save as PDF) produces
+      Actions.jsx          the Print and Export CSV buttons, hidden on paper
+      words.js             the status and difference wording, month names
     SettingsTab    the Settings tab: appearance, defaults, currency, companies and paydays, sync and backup (see settingsTab/)
     CurrencyContext.jsx  the display currency and the rates, for any total to ask what to print
     CurrencySwitch.jsx   the ▾ beside a total and its menu
@@ -61,6 +91,7 @@ src/
       useHeartbeat.js      proof of life for a running meter, written without a stamp
       useOverLimit.js      says so when the running task crosses its time limit
       useRates.js          loads, refreshes and caches the rates while live rates are on; does nothing when off
+      useRelaySync.js      Meter Sync in the app: the engine, the live socket, what triggers a round, presence; does nothing without an account
       backup.js            export, CSV, restore and downloading an unreadable ledger
       sessionActions.js    start, pause, stop, re-file, correct and add time by hand
       taskActions.js       edit tasks, and hand in, answer and reopen them
@@ -94,7 +125,21 @@ src/
       DefaultsSection.jsx    choices shared by every synced device: what the Overview opens on
       CurrencySection.jsx    live rates on or off, the favourite currencies, the display currency
       CompaniesSection.jsx   every client and its payday, each editable in place
-      SyncBackupSection.jsx  Export backup, Restore, Export CSV, and the Sync panel
+      SyncBackupSection.jsx  Export backup, Restore, Export CSV, and the sync panels
+      SyncPanels.jsx         Meter Sync first, with Google Drive below it once a device has an account
+      relay/                 Meter Sync's screens
+        RelayPanel.jsx       which screen shows: not set up, create, recovery code, join, add a device, the account
+        NotSetUp.jsx         the privacy notice, Create an account, Join from another device, Use my own relay
+        PrivacyNotice.jsx    what the relay can and cannot see, and who runs it
+        CreateAccount.jsx    an invite code, a device name, and the button
+        RecoveryCode.jsx     the code in eight groups, with "I have saved it"
+        AddDevice.jsx        the QR and the typed code, the six digits, Approve and Deny
+        JoinDevice.jsx       paste or type the code, the six digits, waiting for approval
+        Account.jsx          status, Sync now, this device's name, the devices, show the code, leave, delete
+        DeviceList.jsx       the devices and when each was last seen
+        StatusLine.jsx       the sync state in words, live updates on or off, meters running elsewhere
+        RelayPip.jsx         the footer's one-line sync state
+        QrCode.jsx           draws the QR; parts.jsx holds the small pieces the screens share
     Settings.jsx   a project's settings panel, composed from `settings/`
     settings/      the parts of the settings panel
       form.js              the form's shape: what the inputs hold, and reading it back
@@ -114,13 +159,22 @@ src/
       Trend.jsx            the trend chart
       DeskTime.jsx         billed against idle for the period
       OffClockList.jsx     what was tracked off the clock
-      UpcomingPayments.jsx overdue, confirmed and waiting paydays, and their answers
+      UpcomingPayments.jsx overdue, confirmed and waiting paydays, and their answers (mounted by the Payments tab)
       PayLines.jsx         an opened payday's lines, ticked to mark paid or move
       Activity.jsx         the activity calendar with its scale and stepper
       WhenYouWork.jsx      the shape of the week and the day
       labels.js            period names, comparison wording, window dates
       model.js             the calendar, how far back it goes, and goal pacing
+relay/             Meter's sync relay, deployed on its own to Cloudflare; nothing here is bundled into the app
+  worker.js        the Worker (routing, CORS, size caps, the account-id check) and the two Durable Object classes
+  vault.js         one account's side: log, snapshot, devices, pairing, quotas; plain logic over an injected `sql`
+  registry.js      invites, the account cap, open sign-up and the admin settings, in the one registry object
+  ids.js           account ids and the signed check that keeps junk ids from waking anything
+  util.js          hashing, the constant-time compare, request parsing and validation
+  wrangler.toml    the Worker's name, its two SQLite-backed objects, optional defaults for the caps
+  README.md        the operator's guide: deploy, invites, stats, caps
 scripts/build.mjs  bundles everything into one HTML file, and the web app beside it
+scripts/relay-*.mjs  `relay:deploy`, `relay:init`, `relay:admin`, `relay:local`; their logic is in scripts/lib/
 tests/             unit tests on domain and storage, integration tests on the built file
 desktop/           optional Electron wrapper for a standalone .exe
 tools/             Windows desktop-shortcut installer
@@ -361,7 +415,7 @@ A payday belongs to the client, not to one project, so it is set in the **Payday
 
 Renaming a project's company takes the payday with it. Naming a company that already has a schedule brings that schedule in, since joining a client means joining its paydays; if you have changed the payday boxes and the company named has a different one, Settings says so before saving, because saving would change it for every project under that company.
 
-**Upcoming payments** on the Overview says what lands on which day:
+**Upcoming payments**, at the top of the **Payments** tab, says what lands on which day:
 
 ```
 UPCOMING PAYMENTS                                $640.00 confirmed
@@ -384,7 +438,38 @@ A client can pay part of a payday and hold the rest back, so every opened row, o
 
 The forecast is not stored. A forecast written down would be wrong the moment a schedule changed, and wrong silently. What you said about a payment is, because it is not something the ledger could work out.
 
+What has been paid, and when, is the history below it, described under **Payments**. A line marked paid now remembers the day it was paid on; one marked before that was kept, or added as "already paid", is dated by the payday rules instead.
+
 `docs/payments-seed.json` is a fictional ledger that shows all of it: paydays, bonuses of each kind, a shared reward, two currencies, overdue and answered payments. Restoring it from **Settings → Sync & backup → Restore** replaces your ledger, so try it on a spare profile or back up first.
+
+---
+
+---
+
+## Payments
+
+The **Payments** tab, third after Overview, is about money: what is coming, and what has come. At the top is **Upcoming payments**, the panel described under *Getting paid* above, moved here from the Overview with every way of answering it as it was. Below it is the **History**.
+
+The history lists every payday that has passed or been answered, newest first, and is worked out from the ledger like the forecast: nothing is stored beyond what you said about each payment. A payday is one client, one day and one currency, and it is in one of five states:
+
+- **Paid**, in full as said, with what came against what was expected: *$1.00 more*, *$2.00 less*, or *as expected*.
+- **Partly paid**: some came and the rest is still expected, so it has no difference yet.
+- **Cancelled**: the money is not coming, and whatever came regardless is shown.
+- **Not answered**: its day has passed on the client's clock and nobody has said what came. This is the overdue of Upcoming payments, listed on the day it was due, or on the day it was moved to.
+- **Paid line by line**: every line was ticked off one at a time, so there is no payment left to answer, only the lines.
+
+Opening a row lists the lines it is made of. A payment answered "already paid" a week early is in the history on the day it was answered; one moved to a day still ahead is not here yet, because it is still coming. A client with no payday schedule has no paydays, so its money is not in the history at all.
+
+Two views, over the same span:
+
+- **By payday** lists the dates, each with the paydays of that day and a subtotal for each currency, and a subtotal for each month.
+- **By company** is a statement for one company at a time, chosen from the ones that have anything in the span: per currency, what was **Received**, **Expected**, **Still owed**, **Cancelled** and the **Difference**, then its paydays and their lines.
+
+**The period** is *This month*, *Last month*, *This year*, *Last year*, *All* or *Custom*, with two days. The history opens on *This year*, and what you pick, custom days included, is remembered on this device and not synced. Both views follow it, and so do the totals and the printout. A span is a pair of whole days, on each client's own calendar, so a payday is never pushed a day either side of an edge by a time zone.
+
+**Money is never added across currencies.** Every total is one per currency. With live rates on, a total in the display currency is shown beside them, marked *≈* with the date of the rates, as everywhere else; it is only ever a figure for reading, and the CSV never contains it.
+
+**Print** (called *Print statement* in By company) opens the browser's print dialog, and *Save as PDF* there makes a file. Everything on the page that is not the statement is hidden, and the statement is plain black on white: the span in words, the totals per currency, and each payday with its lines. **Export CSV** gives one row per line of each payday, lines paid one at a time included, for an accountant or a tax return: date, company, currency, status, then the payday's expected, received and difference on its first row only (repeated down every line they would be summed several times by anyone who adds a column), then the line's kind, label, project and amount, whether it was paid line by line, and when. Amounts are plain decimals in their own currency, never converted. **Dated by** says where a paid line's day came from: *recorded* if it was marked paid with a day, *schedule* if it was worked out from the client's payday rules because none was kept. Like the other CSV it starts with a byte-order mark and cannot be run as a formula by a spreadsheet.
 
 ---
 
@@ -460,7 +545,7 @@ The **Settings** tab, after Life, gathers what is set once and rarely touched. I
 - **Defaults** are choices that sync, so every device agrees. There are seven: what the Overview opens on, either the last period used on that device or a fixed one, and the order each list opens in: Work projects, Life projects, Overview By project, Overview By company, a project's earnings and a project's sessions. Each is named for its list in Settings. They are stored as preferences in the ledger, one record per choice, and a default stores which order, not which way round: a pick on the list itself lasts only until you leave it.
 - **Currency** is live exchange rates. A switch turns them on (off by default), with the date of the rates in use, a *Refresh now* button and the last error; offline, the saved rates are used and their age is said. The **favourites** are the currencies the ▾ offers: add (only current ISO currencies in the feed are offered, from a built-in list until rates arrive; choosing one adds it), remove, reorder, with at least one always kept. *Show totals in* picks the display currency, a favourite or *As earned*. The switch, the favourites and the display currency sync; the rates themselves are per device. A line says which host is asked and that nothing from the ledger is sent, and credits the feed.
 - **Companies & paydays** is every client in one list, one row each, however its name was typed: the schedule in words or *No schedule*, how many projects use it, and the next payday. **Edit** opens the same schedule boxes the project uses, one client at a time, and says before Save that the schedule is shared by every project of that client. Saving has an Undo that writes the old schedule back as a new edit.
-- **Sync & backup** is what is described next.
+- **Sync & backup** is what is described next: backup and restore, and **Meter Sync**, which has a section of its own below.
 
 ---
 
@@ -468,9 +553,41 @@ The **Settings** tab, after Life, gathers what is set once and rarely touched. I
 
 The ledger lives in this browser's storage, which a cleared cache takes with it, so the app says when it has been a while since the last backup and how many records exist only here.
 
-These are in **Settings → Sync & backup**, with the Drive sync panel beside them.
+These are in **Settings → Sync & backup**, with **Meter Sync** above them: syncing is what keeps a second copy somewhere that is not this browser, but it is not a backup, and a backup file is the one thing that survives the account being deleted too.
 
 - **Export a backup** writes the whole ledger as plain JSON. **Restore** reads one back — after showing the ledger here beside the one in the file, in projects, sessions and payments and the dates they span, and saying that it replaces rather than merges. The Undo after it stays.
 - **Export CSV** writes every line item for a spreadsheet. It starts with a byte-order mark, so Excel reads names in Arabic or with emoji as they were typed, and a text cell that starts with `=`, `+`, `-` or `@` is written so Excel shows it rather than runs it as a formula. Time off the clock keeps its hours and carries no money, and says what it is.
 - Stored data that cannot be read is **kept, not saved over**. It is copied to a key of its own before anything is written, and a banner offers it as a download, or a backup to restore. If no copy can be made, nothing is saved until the original has been downloaded.
 - Settings typed and not saved are kept while the panel is closed or the project is left, and the closed panel says **Unsaved**. Closing the window asks first, in the desktop app as in a browser.
+
+---
+
+---
+
+## Meter Sync
+
+Meter Sync keeps your phone and your desktop on the same ledger. The ledger is **encrypted on your device before it is sent**, to a relay that is a small program on a free Cloudflare account, and the relay only ever holds what it cannot read. It replaces syncing through Google Drive. It is in **Settings → Sync & backup**, and in the footer a small light says how it is doing. It is invite-only: the built-in relay is run as *Meter Sync*, and an account needs an invite code (one account each, single use, expiring), which is a link or a code that starts with `MTR-`.
+
+**Setting up.** With nothing set up the panel opens on how your data is handled, then three choices: **Create an account**, **Join from another device**, and, folded away, **Use my own relay**, which takes the address of a relay somebody has deployed (see *Operating your own relay* in the README) and checks that it answers like one. A page that is not secure (plain `http` on a real address) says that it cannot encrypt and offers nothing.
+
+- **Create an account** asks for the invite and a name for this device. An invite link opens this screen with the code filled in; a link written for another relay says so instead of quietly sending your data there.
+- Then comes the **recovery code**: the key to the account, as eight groups of eight characters, with a Copy button. It has to be ticked *I have saved it* before the screen moves on, and a device that was closed halfway shows it again until it is. It can be shown again later from the account screen, after a warning to check nobody is looking.
+- **Join from another device** is for the second device. On the first, **Add a device** shows a QR code and the same thing as text, good for ten minutes. On the new device, scan the QR with the camera app, or open Meter and paste or type the code (a link opened on the new device fills it in). Both screens then show **six digits**; if they match, **Approve** on the first, or **Deny** if you were not adding anything. The new device then downloads the ledger and keeps whatever it already had: records on both are merged, newest edit wins, as always.
+
+**The account screen** has the sync state in words (up to date and when, syncing, paused, over its allowance for today and when it resets, a connection that is down and when it will try again), **Sync now**, **Add a device**, this device's name (editable), the list of devices with when each was last seen, **Show recovery code**, **Leave on this device** and **Delete account**. Leaving stops this device syncing and forgets the account, and leaves the ledger and the other devices alone. Deleting asks you to type a word, and erases the account and everything stored for it on the relay, for every device; the ledgers on the devices are untouched. A device that finds its account gone, or itself removed, says so and stops.
+
+**How it behaves.** Whatever you do is saved on the device first and sent afterwards; nothing ever waits on the network. While Meter is on screen it keeps a live connection, so an edit on one device shows on the other within moments: a meter stopped on the phone stops on the laptop. A meter running on another device shows as *Running on <name>, seen 12 s ago* on the account screen; that is a message passed along and forgotten, and is never in your ledger or a backup. With no live connection Meter syncs when it opens, after your edits, and every couple of minutes while a meter runs. Two devices that edit the same record in the same moment keep the later edit, and two meters that ran over the same hour are reported, as with Drive. A merged ledger also keeps lists of records that only a newer version of Meter knows.
+
+**What the relay can see, in plain words.** That an account exists, roughly how big it is (in size steps), how many devices it has, when each syncs, and from which network address, since Cloudflare sees that for any site. It cannot read a project, a client, an amount, a rate, a note or a device name, and it never has the key. It cannot forge or alter a record without it being noticed, because every message is sealed to its purpose and place. It can refuse to serve you, delete the account, or hold back or delay your newest edits, or hand a device an older copy of the ledger, without the device being able to tell; the devices keep the real ledger, so nothing is lost. The recovery code and your devices are the only ways to your data: if you lose **every** device and the recovery code, nobody can get it back, the relay's owner included.
+
+**Limits.** An account is allowed 50 MB stored, 2,000 writes a day and 6 devices; a relay holds 25 accounts by default. Over a limit nothing is lost: everything stays pending and Meter says when it resets. The owner of a relay can change the caps.
+
+**Updating.** Everyone on the account should run the same version of Meter. A device that meets a change written by a newer version stops and says *update Meter to keep syncing*, rather than guess.
+
+**Google Drive** keeps working, unchanged, on a device with no Meter Sync account, through a two-week grace period. Once a device has an account, Drive no longer syncs by itself there, and its panel is below Meter Sync under *Google Drive (being replaced)*. Nothing in your Drive is deleted.
+
+**Not built yet:**
+
+- **Removing another device.** The button is shown, off, with the reason beside it: it also has to change the key for everyone who stays. Until then, a lost device is cut off by deleting the account.
+- **Typing the recovery code on a fresh install** to get an account back with no device left. The relay accepts it; the screen for it does not exist yet, so keep a backup file as well.
+- **The move-off-Drive wizard**, and the removal of Drive.

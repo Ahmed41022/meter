@@ -10,8 +10,9 @@ accrue in real time, and keep an honest ledger of every session.
 ### [→ Try it in your browser](https://ahmed41022.github.io/meter/)
 
 Nothing to install, no account, no server. Your data stays in your browser
-unless you switch on sync — and sync goes to a hidden folder in *your* Google
-Drive, not to anyone else's machine.
+unless you switch on sync — and Meter Sync encrypts it on your device first,
+so the relay it passes through, which you can run yourself, never sees a
+project, a client or an amount.
 
 ![A session running: the elapsed time and the money both climbing in real time, in the meter face and in the bar that sits above every screen](docs/images/running.gif)
 
@@ -71,9 +72,16 @@ rates. `npm run shots` regenerates every one of them.</sub>
   against an expected $100 is a dollar more in your earnings. When a client
   pays only some of a payday, tick those lines and mark them paid, or move
   the rest to another day.
-- **Runs on a phone** as an installed app, offline, and syncs through your own
-  Google Drive — including stopping, from whichever device is to hand, a meter
-  the other one started.
+- **Runs on a phone** as an installed app, offline, and syncs with your other
+  devices through **Meter Sync**: end-to-end encrypted, through a relay on a
+  free Cloudflare account, with live updates — including stopping, from
+  whichever device is to hand, a meter the other one started. Pair a device with
+  a QR code; a recovery code gets the account back. Google Drive sync still
+  works for now and is being replaced.
+- **Keeps the history of what was paid.** The Payments tab holds Upcoming
+  payments and, below it, every past payday by date or by company: what was
+  expected, what came, what is still owed, per currency and never added across
+  them. Print it as a statement or export it as a CSV.
 - **Follows your system's light or dark setting**, or whichever you pick,
   from the Settings tab, which also lists every client's payday, holds
   backup, restore and sync, and sets the order each project list opens in.
@@ -82,7 +90,8 @@ rates. `npm run shots` regenerates every one of them.</sub>
   file is fetched, nothing from your ledger) and a ▾ beside each total picks a
   display currency from your favourites. Converted figures are marked ≈ with
   the rate date; the default stays each currency as earned, never added.
-- **Exports** a JSON backup or a CSV of every line item.
+- **Exports** a JSON backup or a CSV of every line item, and a payment
+  statement as a printout or a CSV.
 
 The full tour, with examples of every panel, is in **[FEATURES.md](FEATURES.md)**.
 
@@ -133,6 +142,10 @@ More on what is and isn't tested, and why: [ARCHITECTURE.md](ARCHITECTURE.md#tes
 
 ## Getting started
 
+Meter needs **Node 24** (`.nvmrc` says 24; `engines` asks for 22.13 or later),
+because the relay's tests run on Node's built-in `node:sqlite`. The app itself
+runs in a browser and needs no Node.
+
 ```bash
 npm install
 npm run build      # produces dist/meter.html
@@ -149,8 +162,37 @@ npm test
 | `npm run icons` | Regenerate the icon set from `scripts/make-icons.py` |
 | `npm run shots` | Recapture the README's screenshots and GIF |
 | `npm run desktop` | Package a standalone Windows `.exe` |
+| `npm run relay:deploy` | Deploy your own sync relay to Cloudflare, in one command |
+| `npm run relay:admin -- <command>` | Invites, accounts, caps and open sign-up on your relay |
+| `npm run relay:local` | Run the relay on `127.0.0.1:8788` for development, with no Cloudflare account |
 
 `npm run build` must run before `npm test`, because the integration suite drives the built file rather than the source.
+
+---
+
+## Operating your own relay
+
+Meter Sync goes through a **relay**: one Cloudflare Worker and two small
+SQLite-backed Durable Objects, in `relay/`, which fit on a free Cloudflare
+account. It stores ciphertext it cannot read. The built-in relay at
+`https://meter-sync.ahmedsaad41022.workers.dev` is invite-only and run as
+"Meter Sync"; if you would rather hold your own, deploy another and point a
+device at it with **Use my own relay** in Settings → Sync & backup.
+
+```bash
+npm run relay:deploy                         # first deploy, and any redeploy
+npm run relay:admin -- invite --label "me"   # an invite code and link for one account
+npm run relay:admin -- stats                 # accounts, sizes, devices, last seen: never content
+```
+
+`relay:deploy` signs in to Cloudflare in your browser if it must, makes the
+relay's two secrets into the git-ignored `relay/.admin.json` (never printed:
+keep a copy in a password manager), deploys, and checks that it answers. Run it
+again to redeploy with the same secrets. Never `relay:init --force` on a relay
+that holds accounts: new secrets orphan every one of them. The full guide, with
+the caps, open sign-up and the Cloudflare notes, is in
+**[relay/README.md](relay/README.md)**; how it works and what it can see is in
+[ARCHITECTURE.md](ARCHITECTURE.md#sync).
 
 ---
 
@@ -197,6 +239,7 @@ Windows desktop app. See [CHANGELOG.md](CHANGELOG.md).
 - **No archiving.** A task leaves the start prompt once it is handed in, but the task list keeps every task, finished or not. Delete is the only way to take one off it, and that unfiles its sessions.
 - **No cross-project task view.** Tasks belong to one project, so a task number spanning two projects reports as two separate tasks.
 - **No billing increments.** Time is billed to the second. If you invoice in 15-minute blocks, the ledger and your invoice will disagree.
+- **No way yet to remove another device from a Meter Sync account**, and no screen to restore an account from the recovery code on a fresh install. Until then a lost device is cut off by deleting the account, and the JSON backup is the fallback if every device is lost. Devices that sync should run the same version.
 - **No cross-tab locking.** Two tabs are detected and warned about, but not prevented.
 - **Idle time isn't in goals.** Deliberate — a money goal fed by unbilled time is meaningless. If it belongs in goals later, the right shape is a utilisation target, not a second money target.
 - **Fonts load from Google Fonts.** First run with no internet falls back to system faces. Layout is unaffected.
