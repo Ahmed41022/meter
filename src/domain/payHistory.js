@@ -36,9 +36,14 @@
  * `paidLinesCents`, on top. Where the day they were marked on was recorded
  * (`receivedOn`, the payday of the row they were on) that is the payday, and
  * where that payday no longer has a payment of its own they stand as a
- * `lines-paid` row on it. Where no day was recorded they are filed under the
- * payday worked out now and flagged `dateUnknown`: a guess that moves if the
- * schedule does, and says so.
+ * `lines-paid` row on it. Where no day was recorded (a line marked before dates
+ * were kept, or money added as "already paid") the payday the rules give it IS
+ * its date: the payday worked out from its hand-in, its acceptance or the day
+ * it was added, on the client's schedule as it stood then (`paydayThrough`).
+ * Such a line has `receivedOn` set to that payday like any other, and
+ * `inferred: true`, so an export can say which dates were recorded and which
+ * were worked out. A client with no schedule has no payday to give, so its
+ * money has no place in the history at all.
  *
  * Money in different currencies is never added together: every total is a map
  * by currency.
@@ -151,7 +156,9 @@ export const paymentHistory = (state, now) => {
           expectedCents: 0, receivedCents: 0, differenceCents: null,
         });
       }
-      found.paidLines.push({ ...line, dateUnknown: line.receivedOn === null });
+      // `scheduled` is the recorded day or, failing one, the row's payday, so
+      // every paid line carries a date; `inferred` keeps where it came from.
+      found.paidLines.push({ ...line, receivedOn: scheduled, inferred: line.receivedOn === null });
       found.paidLinesCents += line.cents;
     }
   }
@@ -187,7 +194,7 @@ const tally = (totals, row) => {
   else if (row.status === STATUS.PAID) t.difference += row.differenceCents;
 };
 
-const totalsOf = (rows) => {
+export const totalsOf = (rows) => {
   const totals = {};
   for (const row of rows) tally(totals, row);
   return totals;

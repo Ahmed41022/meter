@@ -130,7 +130,7 @@ describe("the published page actually runs", () => {
     // The landing screen, whatever it happens to be — the claim here is that
     // the published bundle runs, not which tab it chose.
     expect([...d.querySelectorAll(".tabs [role=tab]")].map((b) => b.textContent))
-      .toEqual(["Today", "Overview", "Work", "Life", "Settings"]);
+      .toEqual(["Today", "Overview", "Payments", "Work", "Life", "Settings"]);
   }, 25_000);
 
   it("registers the worker without breaking a browser that has none", async () => {

@@ -649,6 +649,19 @@ export const CSS = `
   transition:background .15s,color .15s;}
 .tab:hover{color:var(--ink-2);}
 .tab.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,22,19,.07);}
+/* Six tabs, not five. The measured bar of five fitted 320px with 5px sides, so
+   the sixth word ("Payments", about 58px at 13px) has to come out of the type
+   and the padding on a phone: 12px type and 5px sides make the bar about 336px
+   against the 351px a 375px screen leaves (12px page padding each side), and
+   11px type at 350px and under keeps 320px fitting. Wider than 420px is exactly
+   as before. */
+@media (max-width:420px){
+  .tabs{gap:2px;}
+  .tab{font-size:12px;padding:8px clamp(3px,calc((100vw - 300px) / 15),6px);}
+}
+@media (max-width:350px){
+  .tab{font-size:11px;}
+}
 
 .dash-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   margin-bottom:24px;flex-wrap:wrap;}
@@ -904,5 +917,64 @@ export const CSS = `
     padding-bottom:calc(90px + env(safe-area-inset-bottom));
     padding-left:calc(12px + env(safe-area-inset-left));
   }
+}
+/* ── payments: history and statements ─────────────────────────────────── */
+.stmt-period{display:flex;flex-direction:column;gap:10px;margin:12px 0 4px;}
+.stmt-period .segmented{flex-wrap:wrap;}
+.stmt-dates{display:flex;gap:8px;flex-wrap:wrap;}
+.stmt-dates .inp{width:auto;min-width:0;flex:1 1 140px;}
+.stmt-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
+.stmt-actions .btn{padding-top:8px;padding-bottom:8px;font-size:13px;}
+.stmt-pick{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0;}
+.stmt-pick .inp{width:auto;min-width:0;flex:1 1 180px;margin:0;}
+.stmt-pick .stmt-actions{margin:0;}
+.stmt-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:0 0 6px;}
+.stmt-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;}
+.stmt-card dl{margin:8px 0 0;}
+.stmt-fig{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:3px 0;
+  font-size:12.5px;}
+.stmt-fig dt{color:var(--muted);}
+.stmt-fig dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
+  overflow-wrap:anywhere;}
+.stmt-approx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.hist-month{margin-top:22px;}
+.hist-month-total{text-align:right;text-transform:none;letter-spacing:0;font-family:var(--mono);}
+.hist-date{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.06em;padding:12px 0 2px;}
+.hist-day:first-child .hist-date{padding-top:0;}
+.hist-row{border-bottom:1px solid var(--line-2);}
+.hist-row > .trow{border-bottom:0;padding:9px 0;}
+.hist-co{margin-right:8px;}
+.stat{display:inline-block;font-size:10.5px;font-weight:600;border-radius:999px;padding:2px 8px;
+  background:var(--line-2);color:var(--muted);vertical-align:1px;white-space:nowrap;}
+.stat-paid,.stat-lines-paid{background:var(--jade-soft);color:var(--jade);}
+.stat-partial{background:var(--amber-soft);color:var(--amber);}
+.stat-cancelled{background:var(--flag-soft);color:var(--flag);}
+.payline-tag{font-size:10.5px;color:var(--jade);white-space:nowrap;}
+.print-sheet{display:none;}
+
+/* Printing: only the statement, black on white whatever the theme. The screen
+   part of the Payments tab, the tabs, the footer, the notices and the running
+   bar are hidden, and each payday is kept on one page. */
+@media print{
+  @page{margin:16mm;}
+  /* Paper has one palette whatever the screen's theme, kept as tokens like
+     every other colour here. */
+  .mtr{--print-paper:#fff;--print-ink:#000;--print-rule:#888;}
+  html,body{background:white !important;}
+  .mtr{background:var(--print-paper) !important;padding:0 !important;min-height:0 !important;}
+  .mtr, .mtr *{color:var(--print-ink) !important;background:transparent !important;
+    box-shadow:none !important;border-color:var(--print-rule) !important;}
+  .print-hide,.topbar,.foot,.toast,.runbar,.banner{display:none !important;}
+  .print-sheet{display:block;font-size:11pt;line-height:1.4;font-family:var(--sans);}
+  .print-sheet h1{font-size:17pt;margin:0 0 4pt;}
+  .print-sheet p{margin:0 0 6pt;}
+  .print-sheet table{width:100%;border-collapse:collapse;margin:6pt 0;}
+  .print-sheet th,.print-sheet td{text-align:left;padding:2pt 6pt 2pt 0;vertical-align:top;
+    font-size:10pt;}
+  .print-sheet td:last-child,.sheet-totals td:not(:first-child){text-align:right;}
+  .sheet-day{break-inside:avoid;page-break-inside:avoid;border-top:1px solid var(--print-rule);
+    padding-top:6pt;margin-top:8pt;}
+  .sheet-day h3{font-size:11pt;margin:0 0 2pt;break-after:avoid;page-break-after:avoid;}
 }
 `;

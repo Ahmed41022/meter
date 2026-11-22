@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  ALL_TIME, boot, bootDash, btn, guardBuiltApp, settle, toProjects,
+  ALL_TIME, boot, bootPayments, btn, guardBuiltApp, settle, toProjects,
 } from "./app.integration.helpers.js";
 
 guardBuiltApp();
@@ -262,7 +262,7 @@ describe("Upcoming payments in the display currency", () => {
       }],
     };
   };
-  const dash = (choice) => bootDash(
+  const dash = (choice) => bootPayments(
     withPrefs(owed(), [pref("displayCurrency", choice)]),
     { ...ASKED, "meter:rates": rates() },
   );

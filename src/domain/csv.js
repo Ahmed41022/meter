@@ -72,7 +72,14 @@ const inert = (v) => {
   const text = String(v ?? "");
   return FORMULA.test(text) ? `'${text}` : text;
 };
-const row = (values) => values.map((v, i) => cell(NUMERIC.has(i) ? v : inert(v))).join(",");
+/**
+ * One encoded line. `numeric` is the set of column positions that hold numbers
+ * and so skip the formula guard. Exported so every CSV the app makes shares
+ * this quoting and this guard rather than growing its own.
+ */
+export const csvRow = (values, numeric = new Set()) =>
+  values.map((v, i) => cell(numeric.has(i) ? v : inert(v))).join(",");
+const row = (values) => csvRow(values, NUMERIC);
 
 /** Hours to three places: a six-minute task is 0.100, and rounding it to two
  *  would make a column of short tasks add up visibly wrong. */

@@ -4,7 +4,7 @@
  */
 export default function TopBar({ project, tab, setTab, setOpenProjectId, setFocusSession }) {
   return (
-    <div className="topbar">
+    <div className="topbar print-hide">
       <span className="mark">Meter</span>
       {project
         ? <button className="linkbtn"
@@ -12,7 +12,7 @@ export default function TopBar({ project, tab, setTab, setOpenProjectId, setFocu
             ← All projects
           </button>
         : <nav className="tabs" role="tablist" aria-label="Views">
-            {[["today", "Today"], ["overview", "Overview"], ["work", "Work"], ["life", "Life"], ["settings", "Settings"]].map(([key, label]) => (
+            {[["today", "Today"], ["overview", "Overview"], ["payments", "Payments"], ["work", "Work"], ["life", "Life"], ["settings", "Settings"]].map(([key, label]) => (
               <button key={key} role="tab" aria-selected={tab === key}
                       className={"tab" + (tab === key ? " on" : "")}
                       onClick={() => setTab(key)}>

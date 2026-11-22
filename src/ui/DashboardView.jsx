@@ -22,7 +22,6 @@ import StatTiles from "./dashboard/StatTiles.jsx";
 import Trend from "./dashboard/Trend.jsx";
 import DeskTime from "./dashboard/DeskTime.jsx";
 import OffClockList from "./dashboard/OffClockList.jsx";
-import UpcomingPayments from "./dashboard/UpcomingPayments.jsx";
 import Activity from "./dashboard/Activity.jsx";
 import WhenYouWork from "./dashboard/WhenYouWork.jsx";
 import { BEFORE, SO_FAR } from "./dashboard/labels.js";
@@ -38,19 +37,10 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  * past midnight is counted in both days for exactly the minutes it spent in each.
  */
 export default function DashboardView({
-  projects, sessions, earnings = [], objectives = [], companyRules = [], pay, defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", asked, onSettleAsk, now, today,
-  onOpenProject, onToggleObjective, onPaid, onAnswer, onMovePayment, onMarkLines,
+  projects, sessions, earnings = [], objectives = [], defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", now, today,
+  onOpenProject, onToggleObjective, pastUnanswered = false, onOpenPayments,
 }) {
   const fx = useMoney();
-  /** The row being given another date, and the date typed. One at a time. */
-  const [moving, setMoving] = useState(null);
-  /** The row whose "Already paid" form is open: a future payment marked paid
-   *  asks what came, as an overdue one does. */
-  const [paying, setPaying] = useState(null);
-  // Which payday is open, by its own key. One at a time: these are read one
-  // at a time, and all of them open at once is a wall of task names.
-  const [openPay, setOpenPay] = useState(null);
-  const togglePay = (key) => setOpenPay((cur) => (cur === key ? null : key));
   // Remembered, because reopening the app to a span you did not choose is a
   // small daily annoyance and the answer is one string. Validated on read: a
   // stored value from a future version, or a hand-edited one, must not leave
@@ -198,6 +188,16 @@ export default function DashboardView({
 
   return (
     <>
+      {/* Upcoming payments moved to its own tab. This says so only where it
+          matters: past paydays nobody has answered, whose one-time question
+          lives there and holds back the app-wide notice until it is answered. */}
+      {pastUnanswered && (
+        <p className="hint" role="status">
+          <button type="button" className="linkish" onClick={onOpenPayments}>
+            Upcoming payments are now in Payments →
+          </button>
+        </p>
+      )}
       <PeriodHeader period={period} setPeriod={setPeriod} setOffset={setOffset} offset={offset} />
 
       <Headline
@@ -234,16 +234,6 @@ export default function DashboardView({
 
       {offRows.length > 0 && (
         <OffClockList offRows={offRows} onOpenProject={onOpenProject} />
-      )}
-
-      {(pay.due.length > 0 || pay.waiting.length > 0 || pay.overdue.length > 0) && (
-        <UpcomingPayments
-          pay={pay} asked={asked} onSettleAsk={onSettleAsk} onPaid={onPaid} onAnswer={onAnswer}
-          onMovePayment={onMovePayment} onMarkLines={onMarkLines} companyRules={companyRules}
-          now={now} openPay={openPay}
-          togglePay={togglePay} moving={moving} setMoving={setMoving} paying={paying}
-          setPaying={setPaying}
-        />
       )}
 
       <Activity

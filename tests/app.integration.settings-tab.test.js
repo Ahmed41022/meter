@@ -21,11 +21,11 @@ const tabNames = (d) => [...d.querySelectorAll("[role=tab]")]
 const CONTROLS = [/^Export backup$/, /^Restore$/, /^Export CSV$/];
 
 describe("the Settings tab", () => {
-  it("is the fifth tab, after Life, and opens its own view", async () => {
+  it("is the sixth tab, after Life, and opens its own view", async () => {
     const dom = await boot(seed);
     const d = dom.window.document;
     await settle();
-    expect(tabNames(d)).toEqual(["Today", "Overview", "Work", "Life", "Settings"]);
+    expect(tabNames(d)).toEqual(["Today", "Overview", "Payments", "Work", "Life", "Settings"]);
     await toProjects(d, "Settings");
     expect(d.querySelector("[role=tab][aria-selected=true]").textContent).toBe("Settings");
     const titles = [...d.querySelectorAll(".settings-title")].map((h) => h.textContent);

@@ -145,7 +145,7 @@ describe("lines paid one by one", () => {
     const [row] = hist(s);
     // The other task is still unanswered on the same payday.
     expect(row).toMatchObject({ date: "2026-11-11", status: "unanswered", expectedCents: 4_000, paidLinesCents: 4_000 });
-    expect(row.paidLines.map((l) => [l.key, l.cents, l.receivedOn, l.dateUnknown]))
+    expect(row.paidLines.map((l) => [l.key, l.cents, l.receivedOn, l.inferred]))
       .toEqual([["task:t9:hours", 4_000, "2026-11-11", false]]);
     expect(row.lines.map((l) => l.key)).toEqual(["task:t9b:hours"]);
   });
@@ -166,19 +166,19 @@ describe("lines paid one by one", () => {
     expect(hist(s).map((r) => [r.date, r.status])).toEqual([["2026-10-28", "lines-paid"]]);
   });
 
-  it("files lines with no recorded day under the payday worked out now, and says it is a guess", () => {
+  it("dates lines with no recorded day by the payday the rules give them, and marks them inferred", () => {
     let s = ledger([t9, t9b]);
     s = markLines(s, [lineOf(s, "task:t9:hours")], { received: true });
     const [row] = hist(s);
     expect(row.date).toBe("2026-11-11");
-    expect(row.paidLines).toMatchObject([{ key: "task:t9:hours", receivedOn: null, dateUnknown: true }]);
+    expect(row.paidLines).toMatchObject([{ key: "task:t9:hours", receivedOn: "2026-11-11", inferred: true }]);
   });
 
   it("reads a line marked before dates were kept as received with no day", () => {
     const old = { ...t9, hoursReceived: true };
     const s = ledger([old]);
     expect(hist(s)[0]).toMatchObject({ status: "lines-paid", date: "2026-11-11" });
-    expect(hist(s)[0].paidLines[0].dateUnknown).toBe(true);
+    expect(hist(s)[0].paidLines[0]).toMatchObject({ receivedOn: "2026-11-11", inferred: true });
   });
 
   it("keeps a payment's own adjustment out of its paid lines", () => {
@@ -193,7 +193,34 @@ describe("lines paid one by one", () => {
     s = { ...s, projects: [project("p", [{ ...t9, hoursReceived: true }])] };
     const [row] = hist(s);
     expect(row.paidLines.map((l) => [l.key, l.cents, l.receivedOn]).sort())
-      .toEqual([["task:t9:bonus", 500, "2026-11-11"], ["task:t9:bonus", 700, null], ["task:t9:hours", 4_000, null]].sort());
+      .toEqual([["task:t9:bonus", 500, "2026-11-11"], ["task:t9:bonus", 700, "2026-11-11"], ["task:t9:hours", 4_000, "2026-11-11"]].sort());
+  });
+});
+
+describe("money paid before dates were kept", () => {
+  it("dates a task-less earning added as already paid from when it was added, by the schedule then", () => {
+    // Added Thu 5 Nov, so the Wednesday after: the 11th.
+    const loose = { id: "x1", projectId: "p", kind: "bonus", cents: 900, currency: "USD", taskIds: [],
+      at: at(5), createdAt: at(5), deletedAt: null, received: true };
+    let s = ledger([], [loose]);
+    const [row] = hist(s);
+    expect(row).toMatchObject({ date: "2026-11-11", status: "lines-paid", paidLinesCents: 900 });
+    expect(row.paidLines).toMatchObject([{ key: "extra:x1", receivedOn: "2026-11-11", inferred: true }]);
+    // A schedule changed afterwards leaves it on the payday it had, not the new rule's.
+    s = setPayPeriod(s, "Larkspur", { ...utcWeekly, payday: 5 }, NOW);
+    expect(hist(s)[0]).toMatchObject({ date: "2026-11-11", status: "lines-paid" });
+  });
+
+  it("leaves a company with no schedule out of the history", () => {
+    const loose = { id: "x1", projectId: "p", kind: "bonus", cents: 900, currency: "USD", taskIds: [],
+      at: at(5), createdAt: at(5), deletedAt: null, received: true };
+    expect(hist(ledger([t9], [loose], { companies: [] }))).toEqual([]);
+  });
+
+  it("marks a recorded date as recorded, not inferred", () => {
+    let s = ledger([t9]);
+    s = markLines(s, [lineOf(s, "task:t9:hours")], { received: true, on: "2026-11-11" });
+    expect(hist(s)[0].paidLines[0].inferred).toBe(false);
   });
 });
 
