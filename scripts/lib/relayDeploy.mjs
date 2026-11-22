@@ -71,6 +71,12 @@ export async function deployRelay({ run, fs, fetch, log, sleep = (ms) => new Pro
   log("3/5  Deploying");
   const deployed = await run(["deploy", ...WRANGLER_CONFIG], { capture: true });
   if (deployed.code !== 0) {
+    // A new Cloudflare account has no workers.dev subdomain yet, and wrangler
+    // asks for one interactively, which it cannot do here (its output is being
+    // read for the address), so it answers "no" on the owner's behalf.
+    if (/workers\.dev subdomain/i.test(deployed.output)) {
+      fail("Deploying", "This Cloudflare account has no workers.dev subdomain yet. Open the dashboard link wrangler printed above (or Workers & Pages in the dashboard), pick a subdomain name, then run `npm run relay:deploy` again.");
+    }
     fail("Deploying", "Read wrangler's message above. If it mentions the compatibility date or new_sqlite_classes, send it over.");
   }
   const url = relayUrlIn(deployed.output) ?? config.url;

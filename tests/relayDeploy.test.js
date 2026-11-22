@@ -90,6 +90,16 @@ describe("relay:deploy", () => {
       .rejects.toMatchObject({ step: "Finding the relay's address" });
   });
 
+  it("says what to do when the account has no workers.dev subdomain yet", async () => {
+    const w = world({ ROUTE_KEY: "", ADMIN_TOKEN: "" });
+    const { run } = fakeWrangler(w);
+    const noSubdomain = async (args, opts) => (args[0] === "deploy"
+      ? { code: 1, output: "WARNING You need to register a workers.dev subdomain before publishing to workers.dev" }
+      : run(args, opts));
+    await expect(deployRelay({ run: noSubdomain, fs: memoryFs(), fetch: w.fetch, log: quiet, sleep: noSleep }))
+      .rejects.toThrow(/pick a subdomain name, then run `npm run relay:deploy` again/);
+  });
+
   it("reports a relay that never answers admin requests instead of claiming success", async () => {
     const w = world({ ROUTE_KEY: "", ADMIN_TOKEN: "" });
     const { run } = fakeWrangler(w);
