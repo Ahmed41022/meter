@@ -20,6 +20,10 @@ import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
 import { SETTING, THEME, deviceId, loadSetting, saveSetting } from "../storage/settings.js";
 import Sync, { SyncPip } from "./Sync.jsx";
+import SyncPanels from "./settingsTab/SyncPanels.jsx";
+import RelayPip from "./settingsTab/relay/RelayPip.jsx";
+import { readFragment, stripFragment } from "../sync/relayFragments.js";
+import { useRelaySync } from "./app/useRelaySync.js";
 import { pricer } from "../domain/terms.js";
 import RunningBar from "./RunningBar.jsx";
 import { offClockProjects, workProjects } from "../domain/projects.js";
@@ -110,7 +114,13 @@ export default function App({ store: injectedStore }) {
   // a month went — that nobody asks first. The project list is a tab of its
   // own, and a project opens as a drill-down from it, so closing one returns
   // there rather than to a screen the user was not looking at.
-  const [tab, setTab] = useState("today");
+  //
+  // An invite or join link opens on Settings instead, where its code is waiting:
+  // read once here, removed from the address on mount (see relayFragments.js),
+  // and held as `intent` until the Meter Sync panel has taken it.
+  const [intent, setIntent] = useState(() => readFragment(window.location.hash));
+  const [intentSeq, setIntentSeq] = useState(0);
+  const [tab, setTab] = useState(intent ? "settings" : "today");
   const [now, setNow] = useState(() => Date.now());
   const [recoveryId, setRecoveryId] = useState(null);
   const [conflict, setConflict] = useState(false);
@@ -177,6 +187,11 @@ export default function App({ store: injectedStore }) {
   });
 
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
+  /** The meter this device holds, if any: what it tells its other devices it is running. */
+  const heldSession = useMemo(
+    () => liveSessions(state.sessions).find((s) => isRunning(s) && ownedBy(s, device))?.id ?? null,
+    [state.sessions, device],
+  );
   /** A meter THIS device is holding. Only it may write proof of life. */
   const meterHere = useMemo(
     () => liveSessions(state.sessions).some((s) => isRunning(s) && ownedBy(s, device)),
@@ -266,27 +281,45 @@ export default function App({ store: injectedStore }) {
     }
   }, [clientId, write]);
 
+  /**
+   * Meter Sync (the relay), which runs INSTEAD of Drive on a device that has an
+   * account. What it does with a pulled state is what Drive's round does: say so
+   * when a merge makes time count twice or shows a meter running in two places.
+   */
+  const noteMerge = useCallback((next) => {
+    const clashes = overlaps(liveSessions(next.sessions), Date.now());
+    if (clashes.length) setMerged({ overlaps: clashes });
+    if (liveSessions(next.sessions).filter(isRunning).length > 1) setConflict(true);
+  }, []);
+  const relay = useRelaySync({
+    ready, stateRef, write, anyRunning, presenceSession: heldSession, device, onMerged: noteMerge,
+  });
+  const relayOn = relay.active;
+  const { schedulePush } = relay;
+
   /** Debounced, so a burst of edits is one upload. Long enough that typing a
-   *  project name is not a dozen round trips. */
+   *  project name is not a dozen round trips. With an account the relay's own
+   *  shorter debounce takes over, and Drive is not touched. */
   useEffect(() => {
     pushRef.current = () => {
+      if (relayOn) { schedulePush(); return; }
       if (!clientId) return;
       clearTimeout(pushTimer.current);
       pushTimer.current = setTimeout(() => runSync(), PUSH_DELAY_MS);
     };
     return () => clearTimeout(pushTimer.current);
-  }, [clientId, runSync]);
+  }, [clientId, runSync, relayOn, schedulePush]);
 
   /** On opening, and whenever the app comes back to the foreground — which on a
    *  phone is the moment it matters, because it is how it learns what the other
    *  device did while it was closed. */
   useEffect(() => {
-    if (!ready || !clientId) return;
+    if (!ready || !clientId || relayOn) return;
     runSync();
     const onShow = () => { if (!document.hidden) runSync(); };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
-  }, [ready, clientId, runSync]);
+  }, [ready, clientId, runSync, relayOn]);
 
   useClock(anyRunning, setNow);
 
@@ -297,10 +330,27 @@ export default function App({ store: injectedStore }) {
   /** While something is going, look for news on a timer — a stop made on the
    *  other device has to reach the one that is still counting. */
   useEffect(() => {
-    if (!anyRunning || !clientId) return;
+    if (!anyRunning || !clientId || relayOn) return;
     const id = setInterval(() => runSync(), LIVE_PULL_MS);
     return () => clearInterval(id);
-  }, [anyRunning, clientId, runSync]);
+  }, [anyRunning, clientId, runSync, relayOn]);
+
+  /** An invite or join link: take its fragment off the address now that it is
+   *  held, and take a new one pasted into an already-open page. */
+  useEffect(() => {
+    if (intent) stripFragment();
+    const onHash = () => {
+      const next = readFragment(window.location.hash);
+      if (!next) return;
+      stripFragment();
+      setIntent(next);
+      setIntentSeq((n) => n + 1);
+      setOpenProjectId(null);
+      setTab("settings");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: the first intent is stripped on mount
 
   const { exportBackup, exportCsv, importBackup, confirmRestore, downloadUnreadable } = backupHandlers({
     stateRef, commit, flash, write, store, unreadable, restoring, setRestoring, setOpenProjectId,
@@ -542,6 +592,11 @@ export default function App({ store: injectedStore }) {
             /* The Sync panel sits with Export and Restore: the three are the
                answers to "where else does this exist". */
             sync={(
+              <SyncPanels
+                key={intentSeq} relay={relay} intent={intent} onIntentUsed={() => setIntent(null)}
+                hasData={projects.length > 0 || liveSessions(state.sessions).length > 0}
+                driveConfigured={Boolean(clientId)}
+                drive={(
               <Sync
                 clientId={clientId} draft={clientDraft} onDraft={setClientDraft}
                 onSaveClientId={() => {
@@ -565,6 +620,8 @@ export default function App({ store: injectedStore }) {
                   await authRef.current?.signOut();
                   setSync({ state: "idle", at: null });
                 }}
+              />
+                )}
               />
             )}
           />
@@ -590,7 +647,9 @@ export default function App({ store: injectedStore }) {
             only the one that configures it. Nothing at all before it is set
             up: there is no state to report, and a permanent "off" is
             furniture. */}
-        {clientId && originAllowed() && (
+        {relayOn ? (
+          <RelayPip status={relay.status} onSync={relay.syncNow} onOpenSettings={openSettings} />
+        ) : clientId && originAllowed() && (
           <SyncPip status={sync} now={now} signedIn={Boolean(authRef.current?.hasToken())}
                    onSync={() => runSync({ interactive: true })} />
         )}

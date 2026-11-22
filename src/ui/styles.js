@@ -20,6 +20,9 @@ export const CSS = `
      pair of their own rather than reusing --ink: inverting text colour for a
      surface breaks the moment the page itself goes dark. */
   --pill:#FFFFFF;
+  /* A QR code stays white in both themes (it will not scan inverted), so this
+     token is deliberately not redefined in the dark palette. */
+  --qr-paper:#FFFFFF;
   --inverse:#101613; --on-inverse:#F1F3EF;
   --jade-on-inverse:#8FD9BB; --amber-on-inverse:#E8C98A;
   --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -891,6 +894,73 @@ export const CSS = `
 .clash-ok{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:13px;
   font-weight:600;cursor:pointer;}
 .clash-ok input{width:16px;height:16px;accent-color:var(--flag);cursor:pointer;}
+
+/* Meter Sync (Settings > Sync & backup). Everything is prefixed rl- so it cannot
+   collide with the Drive panel's classes, which tests look up by name. */
+.rl-h{margin:0 0 12px;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--ink);}
+.rl-h:focus{outline:none;}
+.rl-h:focus-visible{outline:2px solid var(--jade);outline-offset:3px;border-radius:4px;}
+.rl-h2{margin:34px 0 8px;font-size:15px;font-weight:600;color:var(--ink);}
+.rl-sub{display:block;margin:20px 0 8px;}
+.rl-mono{font-family:var(--mono);font-size:13px;letter-spacing:.02em;}
+textarea.inp{resize:vertical;line-height:1.5;}
+.rl-hint{display:block;margin-top:6px;font-size:12px;color:var(--muted);line-height:1.5;min-height:0;}
+.rl-hint:empty{display:none;}
+.rl-problem{margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--flag);}
+.rl-warn{color:var(--flag);}
+.rl-notice{border:1px solid var(--line);background:var(--raise);border-radius:12px;padding:14px 16px;margin:0 0 18px;}
+.rl-notice-title{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--ink);}
+.rl-notice ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--ink-2);}
+.rl-notice li + li{margin-top:7px;}
+.rl-notice-by{margin:10px 0 0;font-size:12.5px;color:var(--muted);}
+.rl-choices{display:flex;gap:9px;flex-wrap:wrap;margin:6px 0 12px;}
+.rl-choices .btn{flex:1 1 180px;}
+.rl-own{margin-top:16px;border-top:1px solid var(--line-2);padding-top:14px;}
+.rl-own summary{cursor:pointer;font-size:13px;color:var(--jade);}
+.rl-own summary:hover{color:var(--jade-hi);}
+.rl-own form{margin-top:12px;}
+.rl-steps{margin:0 0 16px;padding-left:20px;font-size:13px;line-height:1.6;color:var(--ink-2);}
+.rl-steps li + li{margin-top:4px;}
+/* A QR code is black on white in BOTH themes: an inverted one will not scan on
+   many phones. Never narrower than 220 px, never wider than the screen. */
+.rl-qr{background:var(--qr-paper);border-radius:12px;width:min(100%,320px);min-width:220px;margin:0 auto 16px;
+  border:1px solid var(--line);overflow:hidden;}
+.rl-qr svg{display:block;width:100%;height:auto;}
+.rl-codebox{display:block;font-family:var(--mono);font-size:12.5px;line-height:1.6;word-break:break-all;
+  background:var(--raise);border:1px solid var(--line);border-radius:9px;padding:11px 12px;user-select:all;color:var(--ink);}
+.rl-copyrow{margin-top:12px;align-items:center;}
+.rl-copyrow .btn{flex:0 0 auto;}
+.rl-copied{font-size:12.5px;color:var(--muted);}
+.rl-digits{margin:14px 0;font-family:var(--mono);font-size:clamp(34px,11vw,46px);letter-spacing:.14em;
+  text-align:center;color:var(--ink);font-variant-numeric:tabular-nums;}
+.rl-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 4px;}
+@media (min-width:520px){.rl-groups{grid-template-columns:repeat(4,minmax(0,1fr));}}
+.rl-group{display:block;font-family:var(--mono);font-size:14px;letter-spacing:.06em;color:var(--ink);
+  background:var(--raise);border:1px solid var(--line);border-radius:9px;padding:9px 10px;user-select:all;}
+.rl-ix{display:inline-block;width:1.4em;font-size:10.5px;color:var(--muted);letter-spacing:0;}
+.rl-status{margin:0 0 4px;}
+.rl-status.tone-bad .sync-read strong{color:var(--flag);}
+.rl-status.tone-warn .sync-read strong{color:var(--amber);}
+.rl-presence{list-style:none;margin:10px 0 0;padding:0;font-size:13px;color:var(--ink-2);}
+.rl-presence li::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--jade);margin-right:8px;vertical-align:middle;}
+.rl-name{margin-top:18px;}
+.rl-inline{display:flex;gap:9px;align-items:stretch;}
+.rl-inline .inp{flex:1;min-width:0;}
+.rl-inline .btn{flex:0 0 auto;min-width:0;}
+.rl-devices{list-style:none;margin:0;padding:0;}
+.rl-device{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;
+  border-bottom:1px solid var(--line-2);}
+.rl-device:last-child{border-bottom:0;}
+.rl-device-main{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 9px;min-width:0;}
+.rl-device-name{font-size:14.5px;color:var(--ink);overflow-wrap:anywhere;}
+.rl-tag{font-size:11px;font-weight:600;color:var(--jade);background:var(--jade-soft);border-radius:999px;padding:2px 8px;}
+.rl-device-meta{flex-basis:100%;font-size:12px;color:var(--muted);}
+.rl-remove{flex:0 0 auto;min-width:0;padding:7px 12px;font-size:12.5px;}
+.rl-confirm{margin-top:22px;border:1px solid var(--flag-line);background:var(--card);border-radius:12px;padding:16px;}
+.rl-more{flex-wrap:wrap;}
+.rl-drive{margin-top:30px;}
+.rl-drive .sec{margin-top:12px;}
 
 @media (prefers-reduced-motion: reduce){
   .mtr *{animation:none !important;transition:none !important;}

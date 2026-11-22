@@ -31,6 +31,11 @@ export const SYNC_KEY = {
   SENT: "meter:sync:sent",
   /** A join that has been started and not finished (see pairing.js). */
   JOIN: "meter:sync:join",
+  /** "pending" from the moment a vault is created here until the person says
+   *  the recovery code is saved. Kept on the device, not in memory, so leaving
+   *  the screen (or closing the app) cannot skip it: the code is shown again
+   *  until it is acknowledged. Removed with the vault. */
+  ACK: "meter:sync:ack",
 };
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);

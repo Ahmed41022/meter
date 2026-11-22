@@ -48,10 +48,13 @@ export class CryptoError extends Error {
   }
 }
 
-const enc = new TextEncoder();
-const dec = new TextDecoder();
-export const utf8 = (s) => enc.encode(s);
-export const fromUtf8 = (b) => dec.decode(b);
+// Made on first use, not when the module loads: the app imports this file on
+// every page, and a page without TextEncoder (jsdom, which the app's own tests
+// run in) must still open. Sync itself is only used where it exists.
+let enc = null;
+let dec = null;
+export const utf8 = (s) => (enc ??= new TextEncoder()).encode(s);
+export const fromUtf8 = (b) => (dec ??= new TextDecoder()).decode(b);
 
 // ---------------------------------------------------------------- base64url
 
@@ -130,7 +133,8 @@ const checkEpoch = (epoch) => {
   if (!Number.isInteger(epoch) || epoch < 1) throw new CryptoError("input", "bad epoch");
 };
 
-const SALT = utf8("meter-v1");
+let salt = null;
+const SALT = () => (salt ??= utf8("meter-v1"));
 
 /**
  * The two keys K stands for in one epoch. Deterministic: the same K and epoch
@@ -144,7 +148,7 @@ export async function deriveKeys(K, epoch, env = {}) {
   checkEpoch(epoch);
   const subtle = subtleOf(env);
   const base = await subtle.importKey("raw", K, "HKDF", false, ["deriveKey", "deriveBits"]);
-  const params = (info) => ({ name: "HKDF", hash: "SHA-256", salt: SALT, info: utf8(info) });
+  const params = (info) => ({ name: "HKDF", hash: "SHA-256", salt: SALT(), info: utf8(info) });
   const encKey = await subtle.deriveKey(params(`enc|${epoch}`), base,
     { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
   const recoverAuth = new Uint8Array(await subtle.deriveBits(params(`recover|${epoch}`), base, 256));
