@@ -7,6 +7,15 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-11-22
+
+Minor rather than major: nothing about how the ledger is stored changed. The
+create card writes only fields a project's Settings already wrote, and a
+batch's build stamp is information that older builds ignore. The desktop app
+now loads its page from the hosted address instead of a bundled copy, and
+carries its storage there once on first launch; that moves where the ledger
+lives on the machine, not what it is.
+
 ### Added
 
 - **Every device keeps itself on the newest version.** Each build is stamped
@@ -772,7 +781,8 @@ is recorded here as the baseline rather than as a set of changes.
 - JSON backup export and restore, a CSV export of every line item, and a nudge
   when the ledger has gone too long without being written to a file.
 
-[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Ahmed41022/meter/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Ahmed41022/meter/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ahmed41022/meter/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ahmed41022/meter/compare/v1.0.0...v1.1.0
