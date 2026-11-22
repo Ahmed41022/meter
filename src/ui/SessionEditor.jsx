@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { elapsedMs, startedAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
-import { wasCorrected } from "../domain/sessions.js";
+import { correctedSegments, wasCorrected, workEndedAt } from "../domain/sessions.js";
 import { centsAsIf } from "../domain/terms.js";
 import { Clashes } from "./ManualSession.jsx";
 
@@ -26,13 +26,20 @@ const fromInput = (value) => {
 export default function SessionEditor({
   session, project, findOverlaps = () => [], onSave, onRevert, onCancel, sessions = [],
 }) {
-  const recordedEnd = session.closedAt ?? startedAt(session);
-  const [from, setFrom] = useState(toInput(startedAt(session)));
+  // When the work ended, not when the session was closed: a session paused
+  // and closed later would otherwise offer the pause back as worked time.
+  const recordedStart = startedAt(session);
+  const recordedEnd = workEndedAt(session);
+  const [from, setFrom] = useState(toInput(recordedStart));
   const [to, setTo] = useState(toInput(recordedEnd));
   const [confirmed, setConfirmed] = useState(false);
 
-  const start = fromInput(from);
-  const end = fromInput(to);
+  /* The boxes hold whole minutes. A box left as it was keeps the exact time
+     the meter recorded, seconds and all; only a box that was changed is read
+     back from the minute typed. Rounding an untouched start down to its
+     minute added up to 59 seconds to every correction. */
+  const start = from === toInput(recordedStart) ? recordedStart : fromInput(from);
+  const end = to === toInput(recordedEnd) ? recordedEnd : fromInput(to);
   const readable = start !== null && end !== null;
   /**
    * An end at or before the start is a slip to point out, not one to repair.
@@ -43,20 +50,8 @@ export default function SessionEditor({
   const backwards = readable && end <= start;
   const valid = readable && !backwards;
 
-  // Mirror the domain rule rather than assuming end - start.
-  const preview = valid
-    ? (() => {
-        const lo = Math.min(start, end), hi = Math.max(start, end);
-        const ordered = [...session.segments].sort((a, b) => a.startedAt - b.startedAt);
-        const rebuilt = ordered
-          .map((seg, i) => ({
-            startedAt: i === 0 ? lo : Math.max(seg.startedAt, lo),
-            endedAt: i === ordered.length - 1 ? hi : Math.min(seg.endedAt ?? hi, hi),
-          }))
-          .filter((seg) => seg.endedAt > seg.startedAt);
-        return { segments: rebuilt.length ? rebuilt : [{ startedAt: lo, endedAt: hi }] };
-      })()
-    : null;
+  // The domain's own rule, so the preview is exactly what Save stores.
+  const preview = valid ? { segments: correctedSegments(session, start, end) } : null;
 
   /**
    * Other records the corrected time would lie across, asked of the blocks

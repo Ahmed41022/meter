@@ -91,6 +91,44 @@ describe("fixes: editors and entry forms", () => {
     expect(t1.rate ?? null).toBeNull();
   }, 30_000);
 
+  it("corrects a paused session closed later without billing the pause or moving the seconds", async () => {
+    // Reported: pause, resume, and a later correction came out wrong. Two
+    // blocks with a break, then paused and only closed two hours after the
+    // last block, which is what starting another meter while it sits paused
+    // does. Times carry seconds, as real ones do.
+    const at = minute(Date.now()) - 9 * HOUR + 17_000;
+    const first = { startedAt: at, endedAt: at + HOUR + 23_000 };
+    const second = { startedAt: at + 2 * HOUR + 5_000, endedAt: at + 3 * HOUR + 41_000 };
+    const seed = {
+      projects: [project("p1", "Acme", { tasks: [{ id: "t1", label: "T-1", createdAt: at }] })],
+      sessions: [sitting("s1", "p1", "t1", at, at + 5 * HOUR, { segments: [first, second] })],
+    };
+    const { dom, d } = await openProject(seed, "Acme");
+    await press(ledgerRow(d, "T-1"), "edit");
+    const form = d.querySelector(".prompt");
+    const [from, to] = form.querySelectorAll('input[type="datetime-local"]');
+    // The end offered is when the work stopped, not when the session closed.
+    expect(to.value).toBe(stamp(second.endedAt));
+    const worked = first.endedAt - first.startedAt + second.endedAt - second.startedAt;
+    const was = form.querySelector(".preview-was").textContent;
+    expect(form.querySelector(".preview-now").textContent.split(" · ")[0])
+      .toBe(was.replace(/^was /, "").split(" · ")[0]);
+
+    // Move only the start, ten minutes later.
+    setValue(dom.window, from, stamp(minute(at) + 10 * 60_000));
+    await settle();
+    btn(d, /Save correction/).click();
+    await settle();
+    const saved = stored(dom).sessions.find((x) => x.id === "s1");
+    expect(saved.segments).toHaveLength(2);
+    expect(saved.segments[0].startedAt).toBe(minute(at) + 10 * 60_000);
+    // The untouched end keeps its exact time, and the pause stays unbilled.
+    expect(saved.segments[1]).toEqual(second);
+    expect(saved.closedAt).toBe(second.endedAt);
+    const total = saved.segments.reduce((n, g) => n + g.endedAt - g.startedAt, 0);
+    expect(total).toBe(worked - (minute(at) + 10 * 60_000 - at));
+  }, 30_000);
+
   it("corrects the session it was last opened on, not the one before", async () => {
     const seed = twoTasks();
     const [a, b] = seed.sessions;

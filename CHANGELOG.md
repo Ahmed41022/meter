@@ -92,6 +92,11 @@ ledger changed such that an older build can no longer read it.
 
 ### Fixed
 
+- **Correcting a session that was paused and closed later billed the pause.**
+  The editor offered the moment the session was closed as its end, so any
+  correction stretched the last block across the break. It now offers the end
+  of the last block. A time box left untouched also keeps its exact seconds
+  instead of being rounded down to the minute.
 - **Currencies are no longer added together on a project card, a project's
   ledger total or its Earnings heading.** A project holding money in more
   than one currency printed one sum in the project's currency. Each now shows

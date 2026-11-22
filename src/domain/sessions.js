@@ -340,26 +340,50 @@ export const assignTask = (state, sessionId, taskId) =>
 export const correctSession = (state, sessionId, { startedAt, endedAt }, now) =>
   mapSessions(state, (s) => {
     if (s.id !== sessionId || s.deletedAt || isOpen(s)) return s;
-
-    const start = Math.min(startedAt, endedAt);
     const end = Math.max(startedAt, endedAt);
-    const ordered = [...s.segments].sort((a, b) => a.startedAt - b.startedAt);
-
-    const rebuilt = ordered
-      .map((seg, i) => ({
-        ...seg,
-        startedAt: i === 0 ? start : Math.max(seg.startedAt, start),
-        endedAt: i === ordered.length - 1 ? end : Math.min(seg.endedAt ?? end, end),
-      }))
-      .filter((seg) => seg.endedAt > seg.startedAt);
-
     return {
       ...s,
-      segments: rebuilt.length ? rebuilt : [{ startedAt: start, endedAt: end }],
+      segments: correctedSegments(s, startedAt, endedAt),
       closedAt: end,
       original: s.original ?? { segments: s.segments, closedAt: s.closedAt, correctedAt: now },
     };
   });
+
+/**
+ * When the work in a finished session ended: the end of its last block.
+ *
+ * Not `closedAt`. A session paused and then closed later — by Stop pressed
+ * after the break, or by starting another meter while it sat paused — closes
+ * at that later moment, but nobody worked the pause. An editor that offered
+ * `closedAt` as the end and saved it back stretched the last block across the
+ * whole break and billed it.
+ */
+export const workEndedAt = (session) => {
+  const ends = (session.segments ?? []).map((g) => g.endedAt).filter(Number.isFinite);
+  return ends.length ? Math.max(...ends) : (session.closedAt ?? startedAtOf(session));
+};
+
+const startedAtOf = (session) => session.segments?.[0]?.startedAt ?? session.createdAt;
+
+/**
+ * The blocks a session would have with a new start and end, pauses kept. The
+ * first block moves to the new start and the last to the new end; a block the
+ * new span leaves out is dropped, and one it cuts is trimmed. Shared by the
+ * editor's preview and the save, so what is shown is what is stored.
+ */
+export const correctedSegments = (session, startedAt, endedAt) => {
+  const start = Math.min(startedAt, endedAt);
+  const end = Math.max(startedAt, endedAt);
+  const ordered = [...(session.segments ?? [])].sort((a, b) => a.startedAt - b.startedAt);
+  const rebuilt = ordered
+    .map((seg, i) => ({
+      ...seg,
+      startedAt: i === 0 ? start : Math.max(seg.startedAt, start),
+      endedAt: i === ordered.length - 1 ? end : Math.min(seg.endedAt ?? end, end),
+    }))
+    .filter((seg) => seg.endedAt > seg.startedAt);
+  return rebuilt.length ? rebuilt : [{ startedAt: start, endedAt: end }];
+};
 
 export const wasCorrected = (session) => !!session.original;
 

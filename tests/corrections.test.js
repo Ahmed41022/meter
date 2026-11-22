@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   correctSession, revertCorrection, wasCorrected, startSession, stopSession,
-  pauseSession, resumeSession, deleteSession, KIND,
+  pauseSession, resumeSession, deleteSession, KIND, correctedSegments, workEndedAt,
 } from "../src/domain/sessions.js";
 import { elapsedMs, isOpen } from "../src/domain/time.js";
 import { earningsCents } from "../src/domain/money.js";
@@ -145,5 +145,38 @@ describe("reverting", () => {
   it("is a no-op on a session that was never corrected", () => {
     const s = forgotten();
     expect(revertCorrection(s, "s1")).toEqual(s);
+  });
+});
+
+describe("a session paused and closed later", () => {
+  // Worked 1h, a 1h break, worked 1h, then paused and only closed two hours
+  // later, as starting another meter does to a paused one.
+  const paused = () => {
+    let s = startSession(empty, project, { now: T, id: "s1" });
+    s = pauseSession(s, "s1", T + HOUR);
+    s = resumeSession(s, "s1", T + 2 * HOUR);
+    s = pauseSession(s, "s1", T + 3 * HOUR);
+    return stopSession(s, "s1", T + 5 * HOUR);
+  };
+
+  it("ended its work at the end of its last block, not when it was closed", () => {
+    const s = paused().sessions[0];
+    expect(s.closedAt).toBe(T + 5 * HOUR);
+    expect(workEndedAt(s)).toBe(T + 3 * HOUR);
+  });
+
+  it("keeps the break and bills nothing of the trailing pause when corrected", () => {
+    const s = correctSession(paused(), "s1", { startedAt: T + 0.5 * HOUR, endedAt: T + 3 * HOUR }, T + 6 * HOUR);
+    expect(s.sessions[0].segments.map(({ startedAt, endedAt }) => ({ startedAt, endedAt }))).toEqual([
+      { startedAt: T + 0.5 * HOUR, endedAt: T + HOUR },
+      { startedAt: T + 2 * HOUR, endedAt: T + 3 * HOUR },
+    ]);
+    expect(elapsedMs(s.sessions[0], T + 6 * HOUR)).toBe(1.5 * HOUR);
+  });
+
+  it("shares one rule between the preview and the save", () => {
+    const before = paused();
+    const after = correctSession(before, "s1", { startedAt: T, endedAt: T + 2.5 * HOUR }, T + 6 * HOUR);
+    expect(correctedSegments(before.sessions[0], T, T + 2.5 * HOUR)).toEqual(after.sessions[0].segments);
   });
 });
