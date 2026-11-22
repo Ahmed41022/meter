@@ -36,12 +36,19 @@ export const CSS = `
      notch and the gesture bar OVER the content unless it pays them back. The
      shorthand above stays as the fallback: a browser without env() drops these
      four and keeps it. */
-  padding-top:calc(26px + env(safe-area-inset-top));
+  padding-top:calc(26px + env(safe-area-inset-top) + env(titlebar-area-height, 0px));
   padding-right:calc(16px + env(safe-area-inset-right));
   padding-bottom:calc(96px + env(safe-area-inset-bottom));
   padding-left:calc(16px + env(safe-area-inset-left));
 }
 .mtr *{box-sizing:border-box;}
+/* The desktop window draws no title bar of its own, only its three buttons
+   over the page (desktop/main.js), and the page gives back the strip they sit
+   in: this bar, in the page's colour, is what the window is dragged by. Its
+   height is the window's to say, and nothing in a browser, so there it is
+   nothing at all. */
+.titlebar{position:fixed;top:0;left:0;right:0;height:env(titlebar-area-height, 0px);
+  background:var(--paper);z-index:60;-webkit-app-region:drag;app-region:drag;}
 .mtr :focus-visible{outline:2px solid var(--jade); outline-offset:2px;}
 .wrap{max-width:720px;margin:0 auto;}
 .eyebrow{font-weight:600;text-transform:uppercase;letter-spacing:.1em;
@@ -301,7 +308,8 @@ export const CSS = `
   text-overflow:ellipsis;}
 .runbar-time{font-family:var(--mono);font-size:13px;white-space:nowrap;}
 .runbar-amt{font-family:var(--mono);font-size:13px;font-weight:500;white-space:nowrap;}
-.runbar-tag{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;}
+.runbar-tag{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.08em;
+  max-width:14em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* How much of a task's time limit is left, then what the time over it pays.
    Muted until the line is crossed, then the colour that flags a cost. */
 .runbar-limit{font-size:11.5px;color:var(--muted);white-space:nowrap;}

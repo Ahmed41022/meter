@@ -229,7 +229,7 @@ describe("opening the app while it is already open", () => {
    * answers the lock question and never becomes ready.
    */
   const launch = (holdsLock) => {
-    const asked = { quit: 0, ready: 0, on: [], windows: 0, dialogs: 0 };
+    const asked = { quit: 0, ready: 0, on: [], ipc: [], windows: 0, dialogs: 0 };
     const app = {
       requestSingleInstanceLock: () => holdsLock,
       quit: () => { asked.quit += 1; },
@@ -245,6 +245,8 @@ describe("opening the app while it is already open", () => {
         showMessageBoxSync: () => { asked.dialogs += 1; return 0; },
       },
       shell: { openExternal: () => {} },
+      ipcMain: { on: (event) => { asked.ipc.push(event); } },
+      nativeTheme: { shouldUseDarkColors: false },
     };
     const crashEvents = ["uncaughtException", "unhandledRejection"];
     const had = crashEvents.map((event) => process.listeners(event));
@@ -277,6 +279,7 @@ describe("opening the app while it is already open", () => {
     expect(asked.quit).toBe(1);
     expect(asked.ready).toBe(0);
     expect(asked.on).toEqual([]);
+    expect(asked.ipc).toEqual([]);
     expect(asked.windows + asked.dialogs).toBe(0);
   });
 
@@ -285,6 +288,53 @@ describe("opening the app while it is already open", () => {
     expect(asked.quit).toBe(0);
     expect(asked.ready).toBe(1);
     expect(asked.on.sort()).toEqual(["second-instance", "will-quit", "window-all-closed"]);
+    expect(asked.ipc).toEqual(["meter:title-bar"]);
+  });
+});
+
+describe("opening the hosted app", () => {
+  const { webMigrationPlan, readPrefixScript } = req("../desktop/migrate.js");
+  const { APP_URL, isAppPage, titleBarColors, offlinePage } = req("../desktop/web.js");
+  const LOCAL = "http://127.0.0.1:47823";
+
+  it("carries every meter: key, the sync account included, into an empty store", () => {
+    const source = {
+      "meter:v1": "{}", "meter:sync": "{vault}", "meter:sync:meta": "{}", "meter:theme": "dark", other: "x",
+    };
+    expect(webMigrationPlan({}, source).map(([k]) => k))
+      .toEqual(["meter:sync", "meter:sync:meta", "meter:theme", "meter:v1"]);
+  });
+
+  it("never writes over a ledger already at the hosted origin, nor carries an empty one", () => {
+    expect(webMigrationPlan({ "meter:v1": "live" }, { "meter:v1": "old", "meter:sync": "s" })).toEqual([]);
+    expect(webMigrationPlan({}, { "meter:sync": "s" })).toEqual([]);
+  });
+
+  it("reads only the app's own keys", () => {
+    expect(readPrefixScript()).toContain('"meter:"');
+  });
+
+  it("keeps the window on the app and sends anything else to the browser", () => {
+    expect(isAppPage(APP_URL, LOCAL)).toBe(true);
+    expect(isAppPage(`${APP_URL}#invite=abc`, LOCAL)).toBe(true);
+    expect(isAppPage(`${LOCAL}/`, LOCAL)).toBe(true);
+    expect(isAppPage("https://ahmed41022.github.io/other-site/", LOCAL)).toBe(false);
+    expect(isAppPage("https://example.com/", LOCAL)).toBe(false);
+    expect(isAppPage("not a url", LOCAL)).toBe(false);
+  });
+
+  it("takes only plain colours from the page for the title bar", () => {
+    expect(titleBarColors({ color: "#0E1210", symbol: "#E7EDE9" }))
+      .toEqual({ color: "#0E1210", symbolColor: "#E7EDE9" });
+    expect(titleBarColors({ color: "red", symbol: "#E7EDE9" })).toBeNull();
+    expect(titleBarColors({ color: "#0E1210;x", symbol: "#E7EDE9" })).toBeNull();
+    expect(titleBarColors(null)).toBeNull();
+  });
+
+  it("offers a way back when it has never loaded and cannot", () => {
+    const page = decodeURIComponent(offlinePage(true));
+    expect(page).toContain(APP_URL);
+    expect(page).toContain("#0E1210");
   });
 });
 

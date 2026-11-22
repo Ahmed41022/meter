@@ -210,7 +210,8 @@ describe("a meter running on the other device", () => {
     const bar = d.querySelector(".runbar");
     expect(bar).not.toBeNull();
     expect(bar.textContent).toMatch(/Overnight/);
-    expect(bar.textContent).toMatch(/elsewhere/);
+    // No Meter Sync here to say which device, so only that it is another one.
+    expect(bar.textContent).toMatch(/on another device/);
   }, 20_000);
 
   it("stops from here, and the stop is a real edit that will travel", async () => {

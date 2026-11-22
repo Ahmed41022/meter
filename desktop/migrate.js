@@ -67,4 +67,43 @@ function writeScript(entries) {
   })()`;
 }
 
-module.exports = { migrationPlan, readScript, writeScript, CARRY, LEDGER };
+/* ── the second move: from the bundled copy to the hosted app ─────────────────
+ *
+ * The desktop app now opens the hosted app, so it updates itself from every
+ * deploy exactly as the browser does, and the ledger moves once more: from
+ * http://127.0.0.1:47823 to the hosted origin. The same three rules hold
+ * (an empty target only, a flag the caller keeps, nothing deleted), with one
+ * difference: EVERY `meter:` key goes, not two. By now the app keeps more than
+ * the ledger (Meter Sync's account and its progress, preferences, rates), and
+ * leaving the sync account behind would make this machine a stranger to its
+ * own vault. Keys without the prefix are not the app's and stay.
+ */
+const PREFIX = "meter:";
+
+function webMigrationPlan(target = {}, source = {}) {
+  if (filled(target[LEDGER])) return [];
+  if (!filled(source[LEDGER])) return [];
+  return Object.keys(source)
+    .filter((key) => key.startsWith(PREFIX) && filled(source[key]) && !filled(target[key]))
+    .sort()
+    .map((key) => [key, source[key]]);
+}
+
+/** Reads every `meter:` key of the origin the window is on. */
+function readPrefixScript(prefix = PREFIX) {
+  return `(() => {
+    const out = {};
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(${JSON.stringify(prefix)})) out[key] = localStorage.getItem(key);
+      }
+    } catch {}
+    return out;
+  })()`;
+}
+
+module.exports = {
+  migrationPlan, readScript, writeScript, CARRY, LEDGER,
+  webMigrationPlan, readPrefixScript, PREFIX,
+};

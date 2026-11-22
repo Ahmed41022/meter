@@ -32,7 +32,7 @@
  * produce a few requests, not a storm.
  */
 import {
-  UnsupportedBatch, acknowledge, applyBatch, pending, reconcile, toBatches,
+  UnsupportedBatch, acknowledge, applyBatch, buildOf, pending, reconcile, toBatches,
 } from "./changes.js";
 
 /** Every way the far end can fail that the engine acts on. `code` is one of
@@ -93,7 +93,7 @@ class Gap extends Error {}
  */
 export function createEngine({
   transport, store, device = null, now = () => Date.now(), random = Math.random,
-  sleep = sleepFor, newBid = defaultBid, limits = {},
+  sleep = sleepFor, newBid = defaultBid, limits = {}, build = null,
 }) {
   const L = { ...LIMITS, ...limits };
   let failures = 0;
@@ -131,7 +131,7 @@ export function createEngine({
     let state = local;
     const out = {
       state, changed: false, pushed: 0, pulled: 0, adopted: false, uploaded: false,
-      raced: false, head: null,
+      raced: false, head: null, newestBuild: null,
     };
     const save = async () => { await store.save(meta); };
     const ahead = () => (meta.cursor ?? 0);
@@ -149,7 +149,11 @@ export function createEngine({
           meta.sent = applied.sent;
           if (applied.changed) out.changed = true;
           meta.cursor = entry.seq;
-          if (entry.dev !== device) out.pulled += 1;
+          if (entry.dev !== device) {
+            out.pulled += 1;
+            const theirs = buildOf(entry.batch);
+            if (theirs !== null && theirs > (out.newestBuild ?? 0)) out.newestBuild = theirs;
+          }
         }
       } finally {
         await save();
@@ -292,6 +296,9 @@ export function createEngine({
       for (;;) {
         const batches = toBatches(pending(state, meta.sent));
         if (!batches.length) return "ok";
+        // Which build wrote them, so the other devices can tell when they are
+        // behind. On the first batch only, like the other scalars.
+        if (build) batches[0] = { ...batches[0], meta: { ...batches[0].meta, build } };
         // A relay with nothing on it takes the ledger as ONE snapshot. As
         // batches it would be dozens of requests to say what one can.
         if (out.head === 0 && meta.snapshotUpto === null) {
@@ -425,7 +432,7 @@ export function createEngine({
 
   const result = (fields) => ({
     status: "ok", changed: false, pushed: 0, pulled: 0, adopted: false, uploaded: false,
-    raced: false, head: null, cursor: null, retryAt: 0, ...fields,
+    raced: false, head: null, cursor: null, retryAt: 0, newestBuild: null, ...fields,
   });
 
   /**
@@ -452,7 +459,7 @@ export function createEngine({
       inflight: saved.inflight ?? null,
       snapshotUpto: saved.snapshotUpto ?? null,
     });
-    return { state: applied.state, changed: applied.changed, cursor: seq };
+    return { state: applied.state, changed: applied.changed, cursor: seq, build: buildOf(batch) };
   }
 
   return { sync, receive, get retryAt() { return retryAt; } };

@@ -21,6 +21,9 @@ const drafts = new Map();
 /** Whether a project has settings typed and not saved. */
 export const unsavedSettings = (projectId) => drafts.has(projectId);
 
+/** Whether any project has, so an update knows to wait before reloading. */
+export const anyUnsavedSettings = () => drafts.size > 0;
+
 /**
  * The window is about to go, and every draft with it, so the browser is asked
  * to check with the user first. Inside the desktop app the shell hears the

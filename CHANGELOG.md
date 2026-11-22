@@ -9,6 +9,31 @@ ledger changed such that an older build can no longer read it.
 
 ### Added
 
+- **Every device keeps itself on the newest version.** Each build is stamped
+  with the time of its commit. A device that syncs says which build it runs, in
+  each batch it sends and once whenever its live connection opens, and a
+  device that hears of a newer one fetches the hosted page past the browser's
+  cache and reloads into it, saying "Updating Meter to the latest version…".
+  It waits while settings are typed and not saved; a running meter carries on
+  through the reload, which no longer raises "Already running". With nobody to
+  hear from, it still checks a little after opening, every half hour and on
+  coming back on screen. Older builds ignore the stamp.
+- **The desktop app runs the hosted app**, so it updates the way a phone does
+  instead of waiting to be rebuilt. On its first launch it carries everything
+  it keeps (the ledger, the Meter Sync account, preferences) to the hosted
+  app's address, once, only into an empty store, and leaves the old copy where
+  it was. Offline on that launch, it opens the bundled copy as before and tries
+  again next time. A hosted app never loaded and with no connection shows a
+  page saying so, with a way to try again.
+- **The desktop window matches the app.** No system title bar: the page runs
+  to the top in its own colour, with the window's buttons drawn over it in the
+  theme the app shows, and the strip they sit in still drags the window. F11
+  is real full screen (Escape leaves it). The page's scrollbar and background
+  now follow a theme picked in Settings, not only the system's, in the browser
+  too.
+- **The running bar names the device a meter was started on** ("on Pixel 8"),
+  where Meter Sync has heard from it lately, and says "on another device"
+  otherwise, instead of "elsewhere".
 - **A project can be fully set up when it is made.** The create card now asks
   for the company, suggesting the clients already known and filing the
   project under a known client's own spelling. A client with a payday says

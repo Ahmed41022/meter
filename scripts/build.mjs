@@ -19,6 +19,7 @@ import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { buildServiceWorker } from "./sw.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,6 +27,20 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** One version, from one place, for all three builds. The app shows it, the
  *  release is tagged with it, and the changelog explains it. */
 const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+
+/**
+ * When the code was committed, in milliseconds: how two devices that sync tell
+ * which of them runs the newer build (src/ui/app/autoUpdate.js). The commit's
+ * time rather than the build's, so the same commit built twice, by Pages and
+ * on this machine, is the same build. Outside a git checkout it is the build's.
+ */
+const BUILT_AT = (() => {
+  try {
+    const s = Number(execFileSync("git", ["log", "-1", "--format=%ct"], { cwd: root, encoding: "utf8" }).trim());
+    if (Number.isFinite(s) && s > 0) return s * 1000;
+  } catch { /* not a checkout */ }
+  return Date.now();
+})();
 const asset = (p) => join(root, "assets", p);
 const b64 = async (p) => (await readFile(asset(p))).toString("base64");
 
@@ -39,6 +54,7 @@ const result = await build({
   define: {
     "process.env.NODE_ENV": '"production"',
     __METER_VERSION__: JSON.stringify(version),
+    __METER_BUILT_AT__: String(BUILT_AT),
   },
   write: false,
 });
@@ -67,6 +83,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="meter-build" content="${BUILT_AT}">
 <meta name="theme-color" content="#F1F3EF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1210" media="(prefers-color-scheme: dark)">
 <title>Meter</title>

@@ -209,8 +209,9 @@ the caps, open sign-up and the Cloudflare notes, is in
 
 **As a desktop app.** Run `tools/Setup Meter.bat` from a folder containing `meter.html` and `meter.ico`. It creates a Desktop shortcut that launches Edge or Chrome in `--app` mode with its own `--user-data-dir`, so you get a separate process, its own taskbar entry, and no browser chrome.
 
-**As a real executable.** `npm run desktop` packages a standalone `Meter.exe` — its own process, its own taskbar entry, no browser involved. The shell in `desktop/` is more than a wrapper:
+**As a real executable.** `npm run desktop` packages a standalone `Meter.exe` — its own process, its own taskbar entry, no browser involved. It opens the hosted app, so it updates itself from every deploy like a phone does, and keeps it for working offline; on its first launch it carries what the bundled copy held across, once. The shell in `desktop/` is more than a wrapper:
 
+- its title bar is the app's own colour, with the window's buttons drawn over the page, and F11 is real full screen
 - it remembers window size and position between launches
 - a second launch focuses the existing window instead of starting a rival process that would fight over the same storage
 - closing with a meter still running asks first, since that is exactly how a session ends up billing overnight

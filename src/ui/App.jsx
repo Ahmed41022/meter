@@ -46,6 +46,8 @@ import { useWakeCatchUp } from "./app/useWakeCatchUp.js";
 import { useHeartbeat } from "./app/useHeartbeat.js";
 import UnreadableBanner from "./app/UnreadableBanner.jsx";
 import AlreadyRunning from "./app/AlreadyRunning.jsx";
+import { useAutoUpdate } from "./app/useAutoUpdate.js";
+import { useShellTheme } from "./app/useShellTheme.js";
 import { sessionActions } from "./app/sessionActions.js";
 import { taskActions } from "./app/taskActions.js";
 import { moneyActions, paymentActions } from "./app/moneyActions.js";
@@ -297,6 +299,11 @@ export default function App({ store: injectedStore }) {
   });
   const relayOn = relay.active;
   const { schedulePush } = relay;
+  // Every device on the newest build: see app/autoUpdate.js.
+  useAutoUpdate({ newerSeen: relay.newerBuild, flash });
+  // The page around the app, and the desktop window's title bar, in the theme
+  // the app is showing rather than the one the system is.
+  useShellTheme(theme, ready);
 
   /** Debounced, so a burst of edits is one upload. Long enough that typing a
    *  project name is not a dozen round trips. With an account the relay's own
@@ -398,6 +405,7 @@ export default function App({ store: injectedStore }) {
         system, and "light" is what overrides a system set to dark. */}
     <div className="mtr" data-theme={theme === THEME.SYSTEM ? undefined : theme}>
       <style>{CSS}</style>
+      <div className="titlebar print-hide" aria-hidden="true" />
       <div className="wrap">
         {/* Above everything, because it is about right now and the rest of the
             page is about what has already happened. */}
@@ -405,6 +413,7 @@ export default function App({ store: injectedStore }) {
           <RunningBar
             project={runningProject} session={runningSession} now={now} price={price}
             elsewhere={!ownedBy(runningSession, device)}
+            runningOn={relayOn ? relay.runningOn(runningSession.id, now) : null}
             onOpen={openProject}
             onStop={() => commit((s) => stopSession(s, runningSession.id, Date.now()))}
           />

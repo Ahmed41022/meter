@@ -79,6 +79,17 @@ export const pending = (state, sent = {}) => {
   return { changes, meta };
 };
 
+/**
+ * The build that wrote a batch: the commit time its sender was built from, in
+ * `meta.build`, or null. Carried so a device can tell another runs a newer
+ * Meter (ui/app/autoUpdate.js). Information only: nothing about applying a
+ * batch depends on it, and a build that predates it never reads it.
+ */
+export const buildOf = (batch) => {
+  const b = batch?.meta?.build;
+  return Number.isFinite(b) && b > 0 ? b : null;
+};
+
 /** One batch, as the plaintext that gets encrypted. */
 export const toBatch = (changes, meta = {}) => ({ v: BATCH_VERSION, changes, meta });
 

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeState } from "../../domain/merge.js";
 import { TransportError, createEngine } from "../../sync/engine.js";
-import { createTransport, socketUrl } from "../../sync/relay.js";
+import { createTransport, listDevices, socketUrl } from "../../sync/relay.js";
 import { createSocket } from "../../sync/socket.js";
 import { cryptoAvailable } from "../../sync/crypto.js";
 import { leaveVault } from "../../sync/relayActions.js";
 import { relayFetch } from "../../sync/relayConfig.js";
 import { loadVault, progressStore } from "../../sync/vaultStore.js";
+import { BUILT_AT, stampOf } from "./autoUpdate.js";
 
 /**
  * Meter Sync, wired into the app: the engine, the live socket and the triggers
@@ -42,6 +43,9 @@ const CLOSED_FOR_GOOD = new Set(["auth", "deleted", "rekey", "needs-update"]);
 /** States where waiting and trying again is the right response. */
 const RETRIES = new Set(["busy", "backoff", "network", "paused", "quota"]);
 
+/** As the Settings list has it: two missed minutes means gone, not slow. */
+const PRESENCE_FRESH_MS = 150_000;
+
 const validPresence = (p) => p && typeof p === "object" && typeof p.sessionId === "string" && Number.isFinite(p.tick);
 
 export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSession, device, onMerged }) {
@@ -50,6 +54,17 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
   const [status, setStatus] = useState({ state: "idle", at: null });
   const [socketState, setSocketState] = useState("off");
   const [, setPresenceVersion] = useState(0);
+  /** The newest build another device was heard running, for useAutoUpdate. */
+  const [newerBuild, setNewerBuild] = useState(null);
+  /** Device names by sync id, opened with the vault key, for naming the
+   *  device a meter is running on. Fetched when the engine starts, and again
+   *  when a device nobody has named yet is heard from. */
+  const [deviceNames, setDeviceNames] = useState({});
+  const namesAsked = useRef(0);
+  const heardBuild = useCallback((stamp) => {
+    const b = stampOf(stamp);
+    if (b !== null) setNewerBuild((was) => (was !== null && was >= b ? was : b));
+  }, []);
 
   const presenceRef = useRef({});
   /** What the running effect offers the rest of the hook: `{ sync, sendPresence, kill }`. */
@@ -114,7 +129,9 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
         getSnapshot: watch(transport.getSnapshot),
         putSnapshot: watch(transport.putSnapshot),
       };
-      const engine = createEngine({ transport: watched, store, device: vault.deviceId });
+      const engine = createEngine({
+        transport: watched, store, device: vault.deviceId, build: stampOf(BUILT_AT),
+      });
 
       const take = (out) => {
         const next = mergeState(stateRef.current, out.state);
@@ -142,6 +159,7 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
           return { status: "error" };
         }
         if (dead) return out;
+        heardBuild(out.newestBuild);
         // Merged into what is on screen NOW: the person may have edited while
         // the round was out.
         if (out.changed) {
@@ -169,12 +187,28 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
       const receive = async (entry) => {
         const out = await engine.receive(stateRef.current, entry);
         if (!out) return false;
+        if (entry.dev !== vault.deviceId) heardBuild(out.build);
         if (out.changed) take(out);
         return true;
       };
 
+      const learnNames = () => {
+        if (Date.now() - namesAsked.current < 60_000) return;
+        namesAsked.current = Date.now();
+        listDevices({ fetch: relayFetch, vault })
+          .then((list) => {
+            if (!dead) setDeviceNames(Object.fromEntries(list.filter((d) => d.name).map((d) => [d.id, d.name])));
+          })
+          .catch(() => { namesAsked.current = 0; });
+      };
+
       const onPresence = ({ dev, payload }) => {
-        if (dead || !validPresence(payload)) return;
+        if (dead) return;
+        if (!(dev in namesRef.current)) learnNames();
+        // The hello a device sends when its connection opens says only which
+        // build it runs. A build from before it drops it as not a presence.
+        if (dev !== vault.deviceId && payload && typeof payload === "object") heardBuild(payload.build);
+        if (!validPresence(payload)) return;
         presenceRef.current = { ...presenceRef.current, [dev]: { sessionId: payload.sessionId, tick: payload.tick, at: Date.now() } };
         setPresenceVersion((v) => v + 1);
       };
@@ -217,6 +251,7 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
       };
       socket?.start();
       live.current.sync();
+      learnNames();
     };
     boot();
 
@@ -245,6 +280,13 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
     return () => clearInterval(id);
   }, [active, anyRunning, socketState]);
 
+  /** Which build this device runs, said once each time the connection opens,
+   *  so a device that is behind hears of it without waiting for an edit. */
+  useEffect(() => {
+    if (!active || socketState !== "connected" || !stampOf(BUILT_AT)) return;
+    live.current?.sendPresence({ dev: device, build: BUILT_AT });
+  }, [active, socketState, device]);
+
   /** The device holding a meter says so once a minute. Sent, not stored: see the
    *  header. Sent at once when the socket comes up, so a receiver need not wait. */
   useEffect(() => {
@@ -254,6 +296,21 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
     const id = setInterval(send, PRESENCE_MS);
     return () => clearInterval(id);
   }, [active, presenceSession, socketState, device]);
+
+  const namesRef = useRef(deviceNames);
+  namesRef.current = deviceNames;
+
+  /**
+   * The name of the device running the session `sessionId`, from the presence
+   * it sends while it runs: null when none has been heard from lately, or it
+   * has no name.
+   */
+  const runningOn = useCallback((sessionId, now = Date.now()) => {
+    for (const [dev, p] of Object.entries(presenceRef.current)) {
+      if (p.sessionId === sessionId && now - p.at < PRESENCE_FRESH_MS) return namesRef.current[dev] ?? null;
+    }
+    return null;
+  }, []);
 
   // ----------------------------------------------------------------- outputs
   /** Called after an edit made here. Debounced. */
@@ -284,7 +341,7 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
   }, []);
 
   return {
-    vault, active, status, socketState, presence: presenceRef.current,
+    vault, active, status, socketState, presence: presenceRef.current, newerBuild, runningOn,
     syncNow, schedulePush, reload, leave, subscribe,
   };
 }

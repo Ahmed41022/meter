@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { isRunning, isStale } from "../../domain/time.js";
 import { liveSessions, ownedBy } from "../../domain/sessions.js";
+import { cameFromUpdate } from "./autoUpdate.js";
 
 /**
  * Opening the ledger and deciding what the first screen has to say about it:
@@ -48,7 +49,9 @@ export function useStartup({
         .filter((s) => isRunning(s) && ownedBy(s, device));
       const stale = running.find((s) => isStale(s, t, STALE_MS));
       if (stale) setRecoveryId(stale.id);
-      else if (running.length) setConflict(true); // fresh heartbeat: another tab
+      // fresh heartbeat: another tab, unless this tab just reloaded itself
+      // into an update and the meter was its own a second ago.
+      else if (running.length && !cameFromUpdate()) setConflict(true);
     });
     return () => { alive = false; clearTimeout(toastTimer.current); }; // eslint-disable-line react-hooks/exhaustive-deps -- the timer is cleared as it stands, on purpose
   }, [store, device]); // eslint-disable-line react-hooks/exhaustive-deps -- setters and refs passed in are stable; load once for a store and device

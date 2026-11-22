@@ -24,12 +24,12 @@ function world({ limits = {}, relayOptions } = {}) {
   const clock = { t: 1_000_000 };
   const sleeps = [];
   let bids = 0;
-  const device = (id, state = ledger()) => {
+  const device = (id, state = ledger(), build = null) => {
     const d = { id, state, store: memoryStore(), transport: relay.transport(id) };
     d.engine = createEngine({
       transport: d.transport, store: d.store, device: id, now: () => clock.t,
       random: () => 0.5, sleep: async (ms) => { sleeps.push(ms); },
-      newBid: () => `${id}-${(bids += 1)}`, limits,
+      newBid: () => `${id}-${(bids += 1)}`, limits, build,
     });
     d.sync = async (options) => {
       const out = await d.engine.sync(d.state, options);
@@ -502,5 +502,34 @@ describe("taking in one entry from a socket", () => {
     expect(await b.engine.receive(b.state, entry)).toBeNull(); // skipped one
     expect(await b.engine.receive(b.state, { ...entry, seq: 0 })).toBeNull(); // already past
     expect(b.store.peek()).toEqual(before);
+  });
+});
+
+describe("which build wrote a batch", () => {
+  it("rides on what a device pushes, and reaches the others as the newest heard", async () => {
+    const { device } = world();
+    const a = device("A", ledger([rec("s1", 5)]), 2_000);
+    const b = device("B", ledger(), 1_000);
+    await a.sync();
+    await b.sync();
+    a.put("s2", 9);
+    const pushed = await a.sync();
+    // A device never reports its own build back to itself.
+    expect(pushed.newestBuild).toBeNull();
+    const heard = await b.sync();
+    expect(heard).toMatchObject({ status: "ok", pulled: 1, newestBuild: 2_000 });
+  });
+
+  it("changes nothing about what is applied, and is absent from a build that has none", async () => {
+    const { device } = world();
+    const a = device("A", ledger([rec("s1", 5)]));
+    const b = device("B");
+    await a.sync();
+    await b.sync();
+    a.put("s2", 9);
+    await a.sync();
+    const out = await b.sync();
+    expect(out.newestBuild).toBeNull();
+    expect(byId(b.state).s2).toEqual(rec("s2", 9));
   });
 });

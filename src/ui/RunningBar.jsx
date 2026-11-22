@@ -17,7 +17,7 @@ import { isPieceOnly } from "../domain/earnings.js";
  * screen in the app, so it has to earn the row it occupies.
  */
 export default function RunningBar({
-  project, session, now, elsewhere = false, onOpen, onStop,
+  project, session, now, elsewhere = false, runningOn = null, onOpen, onStop,
   price = (s) => rateFor(project, s),
 }) {
   if (!project || !session) return null;
@@ -58,8 +58,14 @@ export default function RunningBar({
       )}
       {idling && <span className="runbar-tag">idle</span>}
       {/* Said out loud, because the strip is otherwise indistinguishable from
-          a meter running here — and Stop reaches across either way. */}
-      {elsewhere && <span className="runbar-tag">elsewhere</span>}
+          a meter running here, and Stop reaches across either way. Named when
+          that device has said so lately (Meter Sync's presence), which also
+          says it is still there; otherwise only that it is another one. */}
+      {elsewhere && (
+        <span className="runbar-tag" title={runningOn ? `Started on ${runningOn}` : "Started on another device"}>
+          {runningOn ? `on ${runningOn}` : "on another device"}
+        </span>
+      )}
       <button className="runbar-stop" onClick={onStop}>Stop</button>
     </div>
   );
