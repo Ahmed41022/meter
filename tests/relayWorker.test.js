@@ -13,7 +13,8 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import worker_, { RegistryDO, VaultDO } from "../relay/worker.js";
-import { createRelay, LIMITS_TTL_MS, WS_PROTOCOL, tokenFromProtocols } from "../relay/worker.js";
+import { LIMITS_TTL_MS, WS_PROTOCOL, tokenFromProtocols } from "../relay/worker.js";
+import { admin, read, request, world } from "./relayWorld.js";
 import { mintVaultId } from "../relay/ids.js";
 import { createEngine } from "../src/sync/engine.js";
 import { createApprover, createJoiner } from "../src/sync/pairing.js";
@@ -21,123 +22,11 @@ import { createLocalVault, withVaultId } from "../src/sync/vault.js";
 import { loadVault } from "../src/sync/vaultStore.js";
 import { mergeState } from "../src/domain/merge.js";
 import {
-  ADMIN_TOKEN, RELAY_URL, ROUTE_KEY, httpApproverTransport, httpEngineTransport, httpJoinerTransportFor, registerVault,
+  RELAY_URL, ROUTE_KEY, httpApproverTransport, httpEngineTransport, httpJoinerTransportFor, registerVault,
 } from "./relayShim.js";
-import { openSql } from "./relaySql.js";
 
 const MIN = 60_000;
 const DIGEST = "d".repeat(43);
-
-// -------------------------------------------------------------- fake runtime
-class FakeSocket {
-  constructor() { this.sent = []; this.closed = null; this.att = null; this.peer = null; }
-  send(text) {
-    if (this.closed) throw new Error("socket closed");
-    this.sent.push(text);
-  }
-  close(code, reason) {
-    if (this.closed) throw new Error("already closed");
-    this.closed = { code, reason };
-  }
-  serializeAttachment(v) { this.att = structuredClone(v); }
-  deserializeAttachment() { return this.att === null ? null : structuredClone(this.att); }
-  get messages() { return this.sent.map((s) => JSON.parse(s)); }
-}
-
-/** A namespace of objects: `get(id)` gives a stub, each name its own database. */
-function fakeNamespace(label, makeInstance) {
-  const entries = new Map();
-  const ns = {
-    label, entries, gets: [], calls: [], failNext: 0,
-    idFromName: (name) => name,
-    get(name) {
-      ns.gets.push(name);
-      return { fetch: (request) => ns.deliver(name, request) };
-    },
-    async entry(name) {
-      if (!entries.has(name)) {
-        entries.set(name, (async () => {
-          const db = await openSql();
-          const sockets = [];
-          const ctx = {
-            sockets, auto: null,
-            storage: {
-              sql: db.sql, transactionSync: db.transaction,
-              // The tombstone must survive a delete: nothing may call this.
-              deleteAll() { throw new Error("deleteAll() must never be called"); },
-            },
-            acceptWebSocket(ws) { sockets.push(ws); },
-            getWebSockets() { return sockets.filter((s) => !s.closed); },
-            setWebSocketAutoResponse(pair) { ctx.auto = pair; },
-          };
-          return { db, ctx, instance: null };
-        })());
-      }
-      const e = await entries.get(name);
-      e.instance ??= makeInstance(e.ctx);
-      return e;
-    },
-    async deliver(name, request) {
-      if (label === "registry" && ns.failNext > 0) { ns.failNext -= 1; throw new Error("registry unreachable"); }
-      const e = await ns.entry(name);
-      if ((request.headers.get("upgrade") ?? "").toLowerCase() !== "websocket") {
-        const env = await request.clone().json();
-        ns.calls.push({ name, method: env.method, path: env.path.split("?")[0], trusted: env.trusted, ip: env.ip });
-      }
-      return e.instance.fetch(request);
-    },
-    /** Drops the live instance, keeping storage and sockets: what hibernation does. */
-    evict(name) { return ns.entries.get(name).then((e) => { e.instance = null; }); },
-    async socketMessage(name, ws, message) { return (await ns.entry(name)).instance.webSocketMessage(ws, message); },
-    async socketClose(name, ws, code) { return (await ns.entry(name)).instance.webSocketClose(ws, code); },
-  };
-  return ns;
-}
-
-const platformWith = (clock) => ({
-  now: () => clock.t,
-  pair: () => {
-    const client = new FakeSocket();
-    const server = new FakeSocket();
-    client.peer = server;
-    return [client, server];
-  },
-  // Node's Response refuses status 101, so the upgrade is a plain object with the same fields.
-  upgraded: (client) => ({ status: 101, webSocket: client, headers: new Headers({ "sec-websocket-protocol": WS_PROTOCOL }) }),
-  autoResponse: () => ({ request: "ping", response: "pong" }),
-});
-
-function world(secrets = {}) {
-  const clock = { t: Date.UTC(2026, 0, 5, 12) };
-  const relay = createRelay(platformWith(clock));
-  const env = { ROUTE_KEY, ADMIN_TOKEN, ...secrets };
-  env.VAULT = fakeNamespace("vault", (ctx) => new relay.VaultDO(ctx, env));
-  env.REGISTRY = fakeNamespace("registry", (ctx) => new relay.RegistryDO(ctx, env));
-  const w = {
-    clock, env, relay,
-    touched: () => [...env.VAULT.gets, ...env.REGISTRY.gets],
-    /** `fetch` as the client sees it: a URL and an init, answered by the Worker. */
-    fetch: (url, init) => relay.worker.fetch(new Request(url, init), env),
-    vaultName: (vault) => `v:${vault.vaultId}`,
-    registryCalls: (path) => env.REGISTRY.calls.filter((c) => c.path === path),
-  };
-  return w;
-}
-
-const request = (w, path, { method = "GET", token, body, headers = {}, ip } = {}) =>
-  w.fetch(`${RELAY_URL}${path}`, {
-    method,
-    headers: {
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-      ...(ip ? { "cf-connecting-ip": ip } : {}),
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-
-const read = async (res) => ({ status: res.status, body: await res.json(), res });
-const admin = (w, path, opts = {}) => request(w, `/v1/admin${path}`, { ...opts, token: opts.token ?? ADMIN_TOKEN }).then(read);
 
 const forgedId = async () => mintVaultId(ROUTE_KEY, (n) => crypto.getRandomValues(new Uint8Array(n)));
 
@@ -551,7 +440,7 @@ describe("WebSocket", () => {
     sa.sent.length = 0; sb.sent.length = 0;
 
     expect((await rawLog(w, A, 0, "bid-000000001", "first-blob")).status).toBe(200);
-    for (const s of [sa, sb]) expect(s.messages).toEqual([{ t: "entry", seq: 1, dev: A.deviceId, blob: "first-blob" }]);
+    for (const s of [sa, sb]) expect(s.messages).toEqual([{ t: "entry", seq: 1, dev: A.deviceId, bid: "bid-000000001", blob: "first-blob" }]);
 
     sa.sent.length = 0; sb.sent.length = 0;
     expect((await request(w, `/v1/v/${A.vaultId}/device`, { method: "PUT", token: A.token, body: { nameCt: "new-name" } })).status).toBe(200);
@@ -608,7 +497,7 @@ describe("WebSocket", () => {
 
     await w.env.VAULT.evict(name); // hibernation: no instance, same storage and sockets
     expect((await rawLog(w, A, 0, "bid-000000001", "after-wake")).status).toBe(200);
-    expect(sb.messages).toEqual([{ t: "entry", seq: 1, dev: A.deviceId, blob: "after-wake" }]);
+    expect(sb.messages).toEqual([{ t: "entry", seq: 1, dev: A.deviceId, bid: "bid-000000001", blob: "after-wake" }]);
 
     await w.env.VAULT.evict(name);
     await w.env.VAULT.socketMessage(name, sa, JSON.stringify({ t: "presence", blob: "hello" }));

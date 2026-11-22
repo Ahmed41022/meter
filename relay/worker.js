@@ -418,7 +418,7 @@ export function createRelay(platform = workersPlatform) {
     onEvent(type, payload) {
       switch (type) {
         case "entry":
-          for (const ws of this.sockets()) this.send(ws, { t: "entry", seq: payload.seq, dev: payload.dev, blob: payload.blob });
+          for (const ws of this.sockets()) this.send(ws, { t: "entry", seq: payload.seq, dev: payload.dev, bid: payload.bid, blob: payload.blob });
           break;
         case "rotated":
           for (const ws of this.sockets()) this.send(ws, { t: "rotated", epoch: payload.epoch });

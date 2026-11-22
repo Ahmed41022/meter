@@ -61,6 +61,7 @@ const describe = (e) => {
     auth: ["The relay refused this request.", false],
     gone: ["This code has expired or was already used. Start again on the other device.", false],
     conflict: ["This code has already been used by another device.", false],
+    deleted: ["This vault was deleted on the relay.", false],
   };
   const [message, retry] = table[code] ?? ["The relay returned an error.", false];
   return { code, message, retry };

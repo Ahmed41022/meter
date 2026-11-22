@@ -425,3 +425,82 @@ describe("losing the sent map", () => {
     expect(byId(b.state)).toEqual(byId(a.state));
   });
 });
+
+describe("a deleted vault", () => {
+  it("is its own status, and is never asked again", async () => {
+    const { relay, clock, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    relay.failNext("pull", new TransportError("deleted"));
+    expect(await a.sync()).toMatchObject({ status: "deleted", retryAt: Infinity });
+    clock.t += 7 * 24 * 3_600_000;
+    expect((await a.sync()).status).toBe("backoff");
+    // The local ledger is what the caller still holds, untouched.
+    expect(byId(a.state)).toHaveProperty("s1");
+  });
+});
+
+describe("a relay that says how long to wait", () => {
+  it("is believed when it asks for more than the engine's own backoff", async () => {
+    const { relay, clock, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    // The first round is the snapshot, which is not a push: fail the next round's.
+    await a.sync();
+    a.put("s2", 2);
+    const at = clock.t;
+    relay.failNext("push", new TransportError("paused", { retryAfterMs: 20_000 }));
+    expect(await a.sync()).toMatchObject({ status: "paused", retryAt: at + 20_000 });
+  });
+
+  it("never lets it ask for less than the backoff, or for more than a limit is waited out", async () => {
+    const { relay, clock, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    const at = clock.t;
+    relay.failNext("pull", new TransportError("paused", { retryAfterMs: 0 }));
+    const first = await a.sync();
+    expect(first.retryAt).toBe(at + 750); // base 1 s, jitter 0.5 + 0.5 * 0.5
+    relay.failNext("pull", new TransportError("paused", { retryAfterMs: 99 * 3_600_000 }));
+    expect((await a.sync({ force: true })).retryAt).toBe(at + 30 * 60_000);
+  });
+});
+
+describe("taking in one entry from a socket", () => {
+  const newest = (relay) => relay.log[relay.log.length - 1];
+
+  it("applies exactly the next entry without a round trip, and moves the cursor", async () => {
+    const { relay, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    const b = device("B");
+    await a.sync();
+    await b.sync();
+    a.put("s2", 5, { note: "new" });
+    await a.sync();
+    const entry = newest(relay);
+    const calls = relay.calls.length;
+    const got = await b.engine.receive(b.state, entry);
+    expect(relay.calls.length).toBe(calls);
+    expect(got.changed).toBe(true);
+    expect(byId(got.state).s2).toMatchObject({ note: "new" });
+    expect(b.store.peek().cursor).toBe(entry.seq);
+    // And the next ordinary round finds nothing left to pull.
+    b.state = got.state;
+    expect((await b.sync()).pulled).toBe(0);
+  });
+
+  it("refuses anything that is not the next one, and a device with no cursor", async () => {
+    const { relay, device } = world();
+    const a = device("A", ledger([rec("s1", 1)]));
+    const b = device("B");
+    await a.sync();
+    expect(await b.engine.receive(b.state, { seq: 1, batch: { v: 1, changes: [], meta: {} } })).toBeNull();
+    await b.sync();
+    a.put("s2", 5);
+    await a.sync();
+    a.put("s3", 6);
+    await a.sync();
+    const entry = newest(relay);
+    const before = structuredClone(b.store.peek());
+    expect(await b.engine.receive(b.state, entry)).toBeNull(); // skipped one
+    expect(await b.engine.receive(b.state, { ...entry, seq: 0 })).toBeNull(); // already past
+    expect(b.store.peek()).toEqual(before);
+  });
+});

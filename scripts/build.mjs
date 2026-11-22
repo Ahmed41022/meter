@@ -19,6 +19,7 @@ import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
+import { buildServiceWorker } from "./sw.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -109,34 +110,8 @@ await writeFile(join(web, "manifest.webmanifest"), JSON.stringify({
   ],
 }, null, 2));
 
-/**
- * Network first, cache only as a fallback.
- *
- * The whole app is one document, so a cache-first worker would pin whichever
- * version a phone happened to install and keep serving it after every deploy —
- * the failure that makes people uninstall a web app. This way an online phone
- * always runs the current build, and an offline one runs the last it saw.
- */
-const sw = `const CACHE = "meter-${VERSION}";
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(${JSON.stringify(["./", "./manifest.webmanifest", ...ICONS])})).then(() => self.skipWaiting()));
-});
-self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-    .then(() => self.clients.claim()));
-});
-self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
-  e.respondWith(fetch(e.request)
-    .then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-      return res;
-    })
-    .catch(() => caches.match(e.request).then((hit) => hit ?? caches.match("./"))));
-});
-`;
+/** Network first, and never the relay: the rules and the reasons are in sw.mjs. */
+const sw = buildServiceWorker({ version: VERSION, precache: ["./", "./manifest.webmanifest", ...ICONS] });
 await writeFile(join(web, "sw.js"), sw);
 
 const webHtml = html

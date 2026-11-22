@@ -241,7 +241,7 @@ describe("the log", () => {
   it("tells a connected socket about each new entry", async () => {
     const { w, a } = await claimed();
     await push(w, a, 0, bid(1), blob("hello"));
-    expect(w.events).toContainEqual(["entry", { seq: 1, dev: a.id, blob: blob("hello") }]);
+    expect(w.events).toContainEqual(["entry", { seq: 1, dev: a.id, bid: bid(1), blob: blob("hello") }]);
   });
 
   it("does not let a failing socket hook break the request", async () => {

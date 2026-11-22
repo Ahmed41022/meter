@@ -364,7 +364,9 @@ export function createVault({
     st.writes += 1;
     st.dirty += 1;
     if (st.dirty >= L.persistEvery) persistCounters();
-    tell("entry", { seq, dev: dev.id, blob: parseStored(blob) });
+    // The bid travels too: it is the AAD context of the entry, so a client cannot
+    // open the blob it is pushed over a socket without it.
+    tell("entry", { seq, dev: dev.id, bid: b.bid, blob: parseStored(blob) });
     return reply(200, { seq });
   };
 

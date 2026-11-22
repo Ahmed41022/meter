@@ -36,8 +36,10 @@ import {
 } from "./changes.js";
 
 /** Every way the far end can fail that the engine acts on. `code` is one of
- *  conflict, gone, epoch, auth, quota, paused, network; `detail` carries what
- *  the code needs (the entries of a conflict, a quota's `resetAt`). */
+ *  conflict, gone, epoch, auth, deleted, quota, paused, network (and "protocol",
+ *  a reply this build cannot make sense of); `detail` carries what the code
+ *  needs (the entries of a conflict, a quota's `resetAt`, a paused relay's
+ *  `retryAfterMs`). */
 export class TransportError extends Error {
   constructor(code, detail = {}) {
     super(detail.message ?? code);
@@ -398,11 +400,22 @@ export function createEngine({
         retryAt = at + Math.min(Math.max(wait, L.FAIL_BASE_MS), L.QUOTA_CAP_MS);
         return { status: "quota", retryAt };
       }
+      case "deleted":
+        // Gone for good: nothing the engine does can bring the vault back, so
+        // it must not keep asking. The app offers to leave the relay.
+        retryAt = Infinity;
+        return { status: "deleted", retryAt };
       case "network":
-      case "paused":
+      case "paused": {
         failures += 1;
-        retryAt = at + backoff(failures - 1, L.FAIL_BASE_MS, L.FAIL_CAP_MS, random);
+        const own = backoff(failures - 1, L.FAIL_BASE_MS, L.FAIL_CAP_MS, random);
+        // A relay that says how long to wait (429 rate, 503) is believed when it
+        // asks for more than the engine's own backoff, never for less, and never
+        // beyond the longest a limit is waited out.
+        const asked = Number.isFinite(e.detail?.retryAfterMs) ? Math.min(Math.max(e.detail.retryAfterMs, 0), L.QUOTA_CAP_MS) : 0;
+        retryAt = at + Math.max(own, asked);
         return { status: e.code, retryAt };
+      }
       default:
         failures += 1;
         retryAt = at + backoff(failures - 1, L.FAIL_BASE_MS, L.FAIL_CAP_MS, random);
@@ -415,5 +428,32 @@ export function createEngine({
     raced: false, head: null, cursor: null, retryAt: 0, ...fields,
   });
 
-  return { sync, get retryAt() { return retryAt; } };
+  /**
+   * Takes in ONE entry that a socket delivered, without a round trip: only when
+   * it is exactly the next one (`seq == cursor + 1`), because anything else
+   * means this device missed something and has to pull. Returns the merged
+   * `{ state, changed, cursor }`, or null when it was not the next one (the
+   * caller then calls `sync`). It never touches the network, so it cannot fail
+   * the way a round can; an entry written by a newer Meter throws
+   * UnsupportedBatch and the caller's `sync` reports it.
+   *
+   * Like `sync`, the caller must merge the returned state into its current one
+   * and must not run the two at the same moment: both read and write the same
+   * saved cursor.
+   */
+  async function receive(local, { seq, batch }) {
+    const saved = (await store.load()) ?? {};
+    const cursor = saved.cursor ?? null;
+    if (cursor === null || seq !== cursor + 1) return null;
+    const applied = applyBatch(local, batch, saved.sent ?? {});
+    await store.save({
+      cursor: seq,
+      sent: applied.sent,
+      inflight: saved.inflight ?? null,
+      snapshotUpto: saved.snapshotUpto ?? null,
+    });
+    return { state: applied.state, changed: applied.changed, cursor: seq };
+  }
+
+  return { sync, receive, get retryAt() { return retryAt; } };
 }

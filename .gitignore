@@ -19,3 +19,5 @@ Thumbs.db
 # Local secrets and state for `wrangler dev` (relay/). Never committed.
 relay/.dev.vars
 relay/.wrangler/
+# The admin token and ROUTE_KEY made by `npm run relay:init`. Never committed.
+relay/.admin.json

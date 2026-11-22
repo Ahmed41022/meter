@@ -15,6 +15,8 @@
     "coverage": "vitest run --coverage",
     "lint": "eslint .",
     "icons": "python3 scripts/make-icons.py",
+    "relay:init": "node scripts/relay-init.mjs",
+    "relay:admin": "node scripts/relay-admin.mjs",
     "shots": "npm run build && node scripts/shots.mjs",
     "desktop": "npm run build && node desktop/package.mjs",
     "check": "npm run lint && npm run build && npm run test"
