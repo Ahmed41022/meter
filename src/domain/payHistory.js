@@ -265,8 +265,16 @@ const addWorkedLines = (state, now, index, base, clocks) => {
     const cents = lines.reduce((n, l) => n + l.cents, 0);
     const found = index.get(key);
     if (found) {
-      found.lines = [...found.lines, ...lines];
-      if (found.status === STATUS.UNANSWERED) found.expectedCents += cents;
+      /*
+       * Paid on top of whatever was said about the payday, like a line marked
+       * paid one by one. An answer given before this work was dated could only
+       * have been about what the forecast listed then, often a lone bonus, so
+       * its figures say nothing about these hours. Folding the hours into the
+       * answer's own figures, or leaving them out of the totals, put thousands
+       * of dollars of paid work in the lines and nowhere in what was received.
+       */
+      found.paidLines.push(...lines.map((l) => ({ ...l, receivedOn: row.date, inferred: true, worked: true })));
+      found.paidLinesCents += cents;
       continue;
     }
     index.set(key, {

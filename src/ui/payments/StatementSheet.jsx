@@ -62,7 +62,7 @@ export default function StatementSheet({ title, rows, totals, now }) {
                     return (
                       <tr key={`${l.key}|${i}`}>
                         <td>{w.kind}{w.label ? ` · ${w.label}` : ""} · {l.project}</td>
-                        <td>{paid ? "paid line by line" : ""}</td>
+                        <td>{paid && !l.worked ? "paid line by line" : ""}</td>
                         <td>{money(l.cents)}</td>
                       </tr>
                     );

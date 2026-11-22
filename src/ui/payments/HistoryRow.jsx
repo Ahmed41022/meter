@@ -47,7 +47,7 @@ export default function HistoryRow({ row, open, onToggle, showCompany = true }) 
           {row.paidLines.map((t, i) => (
             <div className="payline paid" key={`${t.key}|${i}`}>
               <LineName t={t} />
-              <span className="payline-tag">paid line by line</span>
+              {!t.worked && <span className="payline-tag">paid line by line</span>}
               <span className="payline-amt">{money(t.cents)}</span>
             </div>
           ))}

@@ -62,7 +62,9 @@ export const paymentsCsv = (rows) => {
     ];
     const head = [
       r.date, r.company, r.currency, STATUS_WORD[r.status] ?? r.status,
-      amount(r.expectedCents), amount(r.receivedCents),
+      // Lines paid on top (one by one, or dated by the schedule) count in
+      // both, as they do on screen and in the totals.
+      amount(r.expectedCents + (r.paidLinesCents ?? 0)), amount(r.receivedCents + (r.paidLinesCents ?? 0)),
       // Only a paid payment has a difference: a cancellation has its own
       // figure on screen and in the totals, and is not a difference twice.
       r.status === STATUS.PAID && r.differenceCents !== null ? amount(r.differenceCents) : "",
@@ -73,7 +75,7 @@ export const paymentsCsv = (rows) => {
       out.push(csvRow([
         ...(i === 0 ? head : [r.date, r.company, r.currency, STATUS_WORD[r.status] ?? r.status, "", "", ""]),
         kind, label, l.project ?? "", amount(l.cents),
-        paid ? "Yes" : "No", paid ? l.receivedOn : "", paid ? (l.inferred ? "schedule" : "recorded") : "",
+        paid && !l.worked ? "Yes" : "No", paid ? l.receivedOn : "", paid ? (l.inferred ? "schedule" : "recorded") : "",
       ], NUMERIC));
     });
   }

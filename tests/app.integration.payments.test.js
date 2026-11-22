@@ -456,11 +456,11 @@ describe("CSV", () => {
     // the cancelled, the paid, and the bonus.
     expect(lines).toEqual([
       '"2026-11-25","Larkspur","EUR","Partly paid","40.00","15.00","","Hours","e1","Atlas","40.00","No","",""',
-      '"2026-11-11","Larkspur","USD","Not answered","40.00","0.00","","Hours","t9b","Gateway","40.00","No","",""',
+      '"2026-11-11","Larkspur","USD","Not answered","80.00","40.00","","Hours","t9b","Gateway","40.00","No","",""',
       '"2026-11-11","Larkspur","USD","Not answered","","","","Hours","t9","Gateway","40.00","Yes","2026-11-11","recorded"',
       '"2026-11-04","Larkspur","USD","Cancelled","40.00","0.00","","Hours","t8","Gateway","40.00","No","",""',
       '"2026-10-28","Larkspur","USD","Paid","40.00","39.00","-1.00","Hours","t7","Gateway","40.00","No","",""',
-      '"2026-10-14","Larkspur","USD","Paid line by line","0.00","0.00","","Bonus","Spot bonus","Gateway","9.00","Yes","2026-10-14","schedule"',
+      '"2026-10-14","Larkspur","USD","Paid line by line","9.00","9.00","","Bonus","Spot bonus","Gateway","9.00","Yes","2026-10-14","schedule"',
     ]);
   }, 30_000);
 

@@ -478,20 +478,25 @@ describe("work on tasks never handed in", () => {
     expect(rows[0].status).toBe("unanswered");
   });
 
-  it("gives an answered payday the lines behind it and keeps the answer's figures", () => {
-    let s = withSittings([open("o1")], [sitting("a", "o1", at(5))]);
-    s = answer(s, { scheduled: "2026-11-11", outcome: "paid", expectedCents: 3_900, receivedNow: 3_900 });
+  it("adds the work to an answered payday as paid on top, keeping what the answer said", () => {
+    // The owner's case: an answer given when only a bonus could be seen on that
+    // payday said $5 came. The hours dated since were paid too, and must count
+    // in what was received, not sit in the lines and nowhere in the totals.
+    let s = withSittings([open("o1")], [sitting("a", "o1", at(5))], { earnings: [bonus("b0", [], 500, { at: at(5) })] });
+    s = answer(s, { scheduled: "2026-11-11", outcome: "paid", expectedCents: 500, receivedNow: 500 });
     const [row] = hist(s);
-    expect(row).toMatchObject({ status: "paid", expectedCents: 3_900, receivedCents: 3_900 });
-    expect(row.inferred).toBeUndefined();
-    expect(row.lines.map((l) => l.cents)).toEqual([4_000]);
+    expect(row).toMatchObject({ status: "paid", expectedCents: 500, receivedCents: 500, paidLinesCents: 4_000 });
+    expect(row.paidLines).toMatchObject([{ key: "task:o1:hours", cents: 4_000, inferred: true, worked: true, receivedOn: "2026-11-11" }]);
+    expect(companyStatement(hist(s), "larkspur").totals.USD).toMatchObject({ received: 4_500, expected: 4_500, outstanding: 0 });
   });
 
-  it("adds open work to a payday already not answered, as money still owed", () => {
+  it("adds open work to a payday not answered as paid, leaving only the forecast's part owed", () => {
     const s = withSittings([t9, open("o1")], [...sittings("p", [t9]), sitting("a", "o1", at(6))]);
     const [row] = hist(s);
-    expect(row).toMatchObject({ status: "unanswered", expectedCents: 8_000 });
-    expect(row.lines.map((l) => l.key).sort()).toEqual(["task:o1:hours", "task:t9:hours"]);
+    expect(row).toMatchObject({ status: "unanswered", expectedCents: 4_000, paidLinesCents: 4_000 });
+    expect(row.lines.map((l) => l.key)).toEqual(["task:t9:hours"]);
+    expect(row.paidLines.map((l) => l.key)).toEqual(["task:o1:hours"]);
+    expect(companyStatement(hist(s), "larkspur").totals.USD).toMatchObject({ outstanding: 4_000, received: 4_000 });
   });
 
   it("leaves out pending, cancelled, idle, running and off-clock time, and clients with no schedule", () => {
@@ -520,5 +525,22 @@ describe("work on tasks never handed in", () => {
     let s = withSittings([open("o1")], [sitting("a", "o1", at(5))]);
     s = setPayPeriod(s, "Larkspur", { ...utcWeekly, payday: 5 }, NOW);
     expect(hist(s).map((r) => r.date)).toEqual(["2026-11-11"]);
+  });
+});
+
+describe("schedule-dated work in exports", () => {
+  it("counts it in the CSV's payday figures and does not call it paid line by line", async () => {
+    const { paymentsCsv } = await import("../src/domain/paymentsCsv.js");
+    const end = at(5);
+    let s = { ...ledger([]), projects: [project("p", [{ id: "o1", label: "o1", createdAt: at(1) }])],
+      sessions: [{ id: "a", projectId: "p", kind: "billed", taskId: "o1", rate: 40, currency: "USD", deletedAt: null,
+        createdAt: end - HOUR, closedAt: end, segments: [{ startedAt: end - HOUR, endedAt: end }] }],
+      earnings: [bonus("b0", [], 500, { at: at(5) })] };
+    s = answer(s, { scheduled: "2026-11-11", outcome: "paid", expectedCents: 500, receivedNow: 500 });
+    const lines = paymentsCsv(hist(s)).trim().split("\n");
+    const cells = (l) => l.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    expect(cells(lines[1]).slice(4, 6)).toEqual(["45.00", "45.00"]);
+    const worked = lines.find((l) => l.includes("\"o1\""));
+    expect(cells(worked).slice(-3)).toEqual(["No", "2026-11-11", "schedule"]);
   });
 });
