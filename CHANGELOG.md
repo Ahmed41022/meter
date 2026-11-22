@@ -188,6 +188,13 @@ ledger changed such that an older build can no longer read it.
 
 ### Fixed
 
+- **Payment history now goes back to the start of the ledger.** Work on
+  tasks that were never handed in or answered, and sittings with no task, had
+  no payday and so never reached the history, which then began only where
+  tasks started being handed in. Each such sitting is now dated by the period
+  it was worked in, on its client's schedule as it stood then, and counted as
+  paid on that payday unless an answer says otherwise; an answered payday also
+  gains the lines behind it. Only paydays already past are included.
 - **A device no longer drops records it did not recognise when it syncs.**
   Merging only looked at the lists the build knew, so an older device threw
   away, on its next sync, any list a newer build had added. Every list of records is now merged, known or

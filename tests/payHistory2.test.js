@@ -436,3 +436,89 @@ describe("a large ledger", () => {
     expect(performance.now() - t1).toBeLessThan(1_000);
   });
 });
+
+describe("work on tasks never handed in", () => {
+  // Open tasks (no hand-in, no answer) and sittings with no task: most of a
+  // ledger kept before tasks were handed in. Each sitting is dated by the
+  // period it was worked in, under the client's schedule.
+  const open = (id) => ({ id, label: id, createdAt: at(1) });
+  const sitting = (id, taskId, end, hours = 1, extra = {}) => ({
+    id, projectId: "p", kind: "billed", taskId, rate: 40, currency: "USD",
+    deletedAt: null, createdAt: end - hours * HOUR, closedAt: end,
+    segments: [{ startedAt: end - hours * HOUR, endedAt: end }], ...extra,
+  });
+  const withSittings = (tasks, sessions, extra = {}) => ({ ...ledger([]), projects: [project("p", tasks)], sessions, ...extra });
+
+  it("dates each sitting by when it was done and counts it as paid on that payday", () => {
+    // Worked Thu 5 Nov -> paid Wed 11th; Thu 29 Oct -> Wed 4th. One task, two paydays.
+    const s = withSittings([open("o1")], [sitting("a", "o1", at(5)), sitting("b", "o1", at(29, 12, 9), 2)]);
+    const rows = hist(s);
+    expect(rows.map((r) => [r.date, r.status, r.inferred, r.receivedCents])).toEqual([
+      ["2026-11-11", "paid", true, 4_000], ["2026-11-04", "paid", true, 8_000],
+    ]);
+    expect(rows[1].lines).toMatchObject([{ key: "task:o1:hours", part: "hours", label: "o1", cents: 8_000 }]);
+  });
+
+  it("includes sittings with no task at all", () => {
+    const rows = hist(withSittings([], [sitting("a", null, at(5))]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].lines[0]).toMatchObject({ label: "No task", cents: 4_000 });
+  });
+
+  it("leaves this period's open work out: it is still to be handed in", () => {
+    // Worked Mon 16 Nov after the cutoff -> paid Wed 25th, not past.
+    expect(hist(withSittings([open("o1")], [sitting("a", "o1", at(16, 12))]))).toEqual([]);
+  });
+
+  it("never counts a handed-in task twice: the forecast dates it, not this", () => {
+    const s = ledger([t9]);
+    const rows = hist(s);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].lines.map((l) => l.key)).toEqual(["task:t9:hours"]);
+    expect(rows[0].status).toBe("unanswered");
+  });
+
+  it("gives an answered payday the lines behind it and keeps the answer's figures", () => {
+    let s = withSittings([open("o1")], [sitting("a", "o1", at(5))]);
+    s = answer(s, { scheduled: "2026-11-11", outcome: "paid", expectedCents: 3_900, receivedNow: 3_900 });
+    const [row] = hist(s);
+    expect(row).toMatchObject({ status: "paid", expectedCents: 3_900, receivedCents: 3_900 });
+    expect(row.inferred).toBeUndefined();
+    expect(row.lines.map((l) => l.cents)).toEqual([4_000]);
+  });
+
+  it("adds open work to a payday already not answered, as money still owed", () => {
+    const s = withSittings([t9, open("o1")], [...sittings("p", [t9]), sitting("a", "o1", at(6))]);
+    const [row] = hist(s);
+    expect(row).toMatchObject({ status: "unanswered", expectedCents: 8_000 });
+    expect(row.lines.map((l) => l.key).sort()).toEqual(["task:o1:hours", "task:t9:hours"]);
+  });
+
+  it("leaves out pending, cancelled, idle, running and off-clock time, and clients with no schedule", () => {
+    const s = withSittings([open("o1")], [
+      sitting("pend", "o1", at(5), 1, { status: "pending" }),
+      sitting("canc", "o1", at(5), 1, { status: "cancelled" }),
+      sitting("idle", "o1", at(5), 1, { kind: "idle" }),
+      { ...sitting("run", "o1", at(5)), closedAt: null, segments: [{ startedAt: at(5), endedAt: null }] },
+    ]);
+    expect(hist(s)).toEqual([]);
+    const off = withSittings([open("o1")], [sitting("a", "o1", at(5))]);
+    off.projects[0].offClock = true;
+    expect(hist(off)).toEqual([]);
+    const none = withSittings([open("o1")], [sitting("a", "o1", at(5))], { companies: [] });
+    expect(hist(none)).toEqual([]);
+  });
+
+  it("takes an earning on an open task with it, dated by the day it was added", () => {
+    const s = withSittings([open("o1")], [], { earnings: [bonus("b1", ["o1"], 700, { at: at(5) })] });
+    const [row] = hist(s);
+    expect(row).toMatchObject({ date: "2026-11-11", receivedCents: 700, inferred: true });
+    expect(row.lines[0]).toMatchObject({ key: "task:o1:bonus", cents: 700 });
+  });
+
+  it("keeps past dates where they were after the client's schedule changed", () => {
+    let s = withSittings([open("o1")], [sitting("a", "o1", at(5))]);
+    s = setPayPeriod(s, "Larkspur", { ...utcWeekly, payday: 5 }, NOW);
+    expect(hist(s).map((r) => r.date)).toEqual(["2026-11-11"]);
+  });
+});

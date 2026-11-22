@@ -50,10 +50,15 @@
  *
  * Like the rest of `domain/`, nothing here reads the clock or storage.
  */
-import { fold } from "./projects.js";
+import { fold, isOffClock } from "./projects.js";
 import { OUTCOME, answersByPayment, payoutKey } from "./payouts.js";
 import { forecastRows, isClosed, listRow } from "./payout.js";
-import { isDay } from "./payPeriod.js";
+import { dayOnClock, isDay, payHistoryFor, payPeriodFor, paydayThrough } from "./payPeriod.js";
+import { isBilled, sessionCents } from "./sessions.js";
+import { tasksFor } from "./tasks.js";
+import { taskState } from "./taskState.js";
+import { pricer } from "./terms.js";
+import { isCancelled, isPending, tasksOf } from "./earnings.js";
 
 export const STATUS = {
   PAID: "paid", PARTIAL: "partial", CANCELLED: "cancelled",
@@ -140,6 +145,8 @@ export const paymentHistory = (state, now) => {
     });
   }
 
+  addWorkedLines(state, now, index, base, clocks);
+
   /*
    * Lines marked paid one by one, each filed under the payday it belonged to.
    * The day recorded when it was marked is that payday; failing one, the
@@ -164,6 +171,109 @@ export const paymentHistory = (state, now) => {
   }
 
   return [...index.values()].sort(byNewest);
+};
+
+/** When a sitting's work ended: its last block's end, or its close. */
+const workEnd = (session) => {
+  const ends = (session.segments ?? []).map((g) => g.endedAt).filter(Number.isFinite);
+  return ends.length ? Math.max(...ends) : session.closedAt;
+};
+
+/**
+ * Work on tasks that were never handed in or answered, dated by when it was
+ * done.
+ *
+ * The forecast dates a task's money by its hand-in or its answer, and a task
+ * still open has neither, so it has no payday and never reached the history.
+ * Most of a ledger kept before tasks were handed in and answered is exactly
+ * that: years of sittings on open tasks, or on none, under clients whose
+ * schedules were set later. Those were worked, and paid, so each sitting is
+ * dated the way work paid as it is done is dated: by the period it was done in,
+ * on its client's schedule as it stood then (`paydayThrough`). Only paydays
+ * already past are history; this period's open work is still to be handed in.
+ *
+ * Money in these rows is taken as paid on that payday unless the owner said
+ * otherwise for it: a payday with an answer keeps the answer's figures and only
+ * gains the lines that make it up; one already listed as not answered gains the
+ * money too; one with nothing yet becomes a paid row marked `inferred`, as a
+ * line dated by the rules is. Earnings naming one open task go with it, dated
+ * by the day they were added. Pending and cancelled money is left out, as it
+ * is everywhere, and only money coming in is listed.
+ */
+const addWorkedLines = (state, now, index, base, clocks) => {
+  const projects = (state.projects ?? []).filter((p) => !p.deletedAt && !isOffClock(p));
+  const answerAdjustments = new Set(
+    (state.payouts ?? []).filter((p) => !p.deletedAt).map((p) => p.adjustmentId).filter(Boolean),
+  );
+  const sessionsOf = new Map();
+  for (const s of state.sessions ?? []) {
+    if (s.deletedAt || !isBilled(s) || s.closedAt == null) continue;
+    if (!sessionsOf.has(s.projectId)) sessionsOf.set(s.projectId, []);
+    sessionsOf.get(s.projectId).push(s);
+  }
+  const rows = new Map();
+
+  for (const project of projects) {
+    const rule = payPeriodFor(state, project);
+    if (!rule) continue;
+    const history = payHistoryFor(state, project);
+    const named = (project.company ?? "").trim();
+    const client = fold(named);
+    const today = clocks.get(client)?.today ?? dayOnClock(rule, now);
+    const tasks = new Map(tasksFor(project).map((t) => [t.id, t]));
+    // Open means no hand-in and no answer: such a task's money is dated here,
+    // and every other task's by the forecast, so nothing is counted twice.
+    const open = (taskId) => !taskId || !tasks.has(taskId) || taskState(tasks.get(taskId)) === null;
+    const mine = (sessionsOf.get(project.id) ?? []).filter((s) => open(s.taskId));
+    const price = pricer([project], mine);
+
+    const add = (at, currency, line) => {
+      const pay = paydayThrough(history, rule, at);
+      if (!pay || !(pay.date < today) || !(line.cents > 0)) return;
+      const key = payoutKey(client, currency, pay.date);
+      if (!rows.has(key)) rows.set(key, { client, company: named, currency, date: pay.date, lines: new Map() });
+      const lines = rows.get(key).lines;
+      const id = `${line.key}`;
+      if (lines.has(id)) lines.get(id).cents += line.cents;
+      else lines.set(id, { ...line });
+    };
+
+    for (const s of mine) {
+      if (isCancelled(s) || isPending(s)) continue;
+      const task = s.taskId ? tasks.get(s.taskId) : null;
+      add(workEnd(s), s.currency, {
+        key: `task:${s.taskId ?? "none"}:hours`, kind: "task", part: "hours",
+        taskId: s.taskId ?? null, label: task?.label ?? "No task", project: project.name, projectId: project.id,
+        cents: sessionCents(s, -Infinity, Infinity, now, price), status: null,
+      });
+    }
+    for (const e of state.earnings ?? []) {
+      if (e.deletedAt || e.projectId !== project.id || isCancelled(e) || isPending(e)) continue;
+      if (answerAdjustments.has(e.id) || isDay(e.payday)) continue;
+      const named = tasksOf(e);
+      if (named.length !== 1 || !tasks.has(named[0]) || !open(named[0])) continue;
+      const task = tasks.get(named[0]);
+      add(e.at, e.currency, {
+        key: `task:${task.id}:${e.kind || "other"}`, kind: "task", part: e.kind || "other",
+        taskId: task.id, label: task.label, project: project.name, projectId: project.id, cents: e.cents, status: null,
+      });
+    }
+  }
+
+  for (const [key, row] of rows) {
+    const lines = [...row.lines.values()];
+    const cents = lines.reduce((n, l) => n + l.cents, 0);
+    const found = index.get(key);
+    if (found) {
+      found.lines = [...found.lines, ...lines];
+      if (found.status === STATUS.UNANSWERED) found.expectedCents += cents;
+      continue;
+    }
+    index.set(key, {
+      ...base(row, row.date, lines), date: row.date, status: STATUS.PAID, inferred: true,
+      expectedCents: cents, receivedCents: cents, differenceCents: 0,
+    });
+  }
 };
 
 const inPeriod = (date, { from, to } = {}) =>
