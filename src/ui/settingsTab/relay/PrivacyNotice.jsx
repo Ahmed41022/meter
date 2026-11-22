@@ -10,16 +10,18 @@ import { operatorOf } from "../../../sync/relayConfig.js";
  */
 export default function PrivacyNotice({ relay }) {
   const operator = operatorOf(relay);
+  // "the owner of x" opens two of the sentences below, so those get a capital.
+  const Operator = operator.charAt(0).toUpperCase() + operator.slice(1);
   return (
     <div className="rl-notice" role="region" aria-label="How Meter Sync handles your data">
       <p className="rl-notice-title">How your data is handled</p>
       <ul>
         <li>
-          Everything is encrypted on this device before it is sent. {operator} cannot
+          Everything is encrypted on this device before it is sent. {Operator} cannot
           read your projects, clients, amounts or device names, and never has your key.
         </li>
         <li>
-          {operator} can see that your account exists, roughly how big it is, how many
+          {Operator} can see that your account exists, roughly how big it is, how many
           devices it has, when it syncs, and from which network address.
         </li>
         <li>

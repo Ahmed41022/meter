@@ -116,6 +116,30 @@ describe("two devices through the real relay", () => {
     expect(byId(a.state)).toEqual(byId(b.state));
   });
 
+  it("keep waiting when the approver looks before anyone has asked, then pair", async () => {
+    // Found by hand: the screen polls as soon as it opens, before the other
+    // device has typed anything. The relay answers that with an empty body,
+    // which was read as a forged request and closed a slot nobody had used.
+    const w = world();
+    const A = await newVault(w);
+    const approver = createApprover({
+      transport: approverTransport({ fetch: w.fetch, vault: A }), vault: A, appOrigin: ORIGIN, now: () => w.clock.t,
+    });
+    const started = await approver.start();
+    for (let i = 0; i < 3; i += 1) {
+      const early = await approver.poll();
+      expect(early.phase).toBe("waiting");
+      expect(early.error ?? null).toBeNull();
+    }
+    expect(await approverTransport({ fetch: w.fetch, vault: A }).pending()).toBeNull();
+    const win = { localStorage: storage() };
+    const joiner = createJoiner({ transportFor: joinerTransportFor(w.fetch), win });
+    expect((await joiner.start(started.code)).phase).toBe("waiting");
+    expect((await approver.poll()).phase).toBe("confirm");
+    expect((await approver.approve()).phase).toBe("approved");
+    expect((await joiner.poll()).phase).toBe("joined");
+  });
+
   it("settle a race through the 409 the relay really sends, reading what the other wrote", async () => {
     const w = world();
     const A = await newVault(w);

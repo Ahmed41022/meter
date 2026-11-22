@@ -20,7 +20,7 @@ export default function RecoveryCode({ vault, focus, required = false, onDone })
       <StepHeading focus={focus}>{required ? "Save your recovery code" : "Your recovery code"}</StepHeading>
       <p className="sync-intro">
         {required
-          ? "This code is the only way to get your data back if you lose every device that has this account. Meter Sync cannot recover it for you, because it never has your key."
+          ? "This code is the only way to get your data back if you lose every device that has this account. The relay cannot recover it for you, because it never has your key."
           : "Anyone with this code can read your ledger. Keep it private."}
       </p>
       <div className="rl-groups" aria-label="Recovery code, eight groups of eight characters">

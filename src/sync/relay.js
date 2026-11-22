@@ -234,7 +234,14 @@ export function approverTransport({ fetch, vault }) {
   const go = async (method, path, body) => (await call(ctx, method, vaultPath(vault, path), { token: vault.token, body })).body;
   return {
     open: (b) => go("POST", "/pair/open", b),
-    pending: () => go("GET", "/pair/pending"),
+    /* Nothing waiting comes back as an empty body: the Worker writes a null
+       answer as `{}`. Read as a request, it failed its proof and the approver
+       closed a slot nobody had used yet, so anything without a join id is
+       "no request yet". */
+    pending: async () => {
+      const got = await go("GET", "/pair/pending");
+      return got && typeof got === "object" && typeof got.joinId === "string" ? got : null;
+    },
     approve: (b) => go("POST", "/pair/approve", b),
     deny: (b) => go("DELETE", "/pair", b),
   };
