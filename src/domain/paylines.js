@@ -14,6 +14,14 @@
  *   a task's HOURS have no record of their own, so the task carries the same
  *   two facts for them: `hoursReceived: true` and `hoursPayday`.
  *
+ * Marking a line paid also says WHEN: `receivedOn` on an earning and
+ * `hoursReceivedOn` on a task, the payday of the row it was marked on, as a day
+ * on the client's clock ("2026-11-18"). The forecast drops a paid line, so
+ * without it nothing would remember which payday it was part of, and the
+ * history (payHistory.js) could only guess. Absent means paid, date not
+ * recorded, which is every line marked before this existed. Moving a line, or
+ * taking its mark off, clears it: a line that is not paid was paid on no day.
+ *
  * Marking a line paid takes it off the list. Moving it puts it on the payment
  * for its new day, beside whatever else that client pays then, which is what
  * the platform will send. Neither touches the money in the earnings: a line
@@ -51,28 +59,39 @@ export const lineRefs = (lines) => {
 const findTask = (state, projectId, taskId) =>
   tasksFor((state.projects ?? []).find((p) => p.id === projectId)).find((t) => t.id === taskId);
 
-/** Each record's marks as they are now: received or not, and its own payday
- *  or null. A record that is not there is left out. */
+/** Each record's marks as they are now: received or not, the day it was
+ *  received on or null, and its own payday or null. A record that is not there
+ *  is left out. */
 export const readMarks = (state, refs) => refs.flatMap((ref) => {
   if (ref.type === "hours") {
     const task = findTask(state, ref.projectId, ref.taskId);
     if (!task) return [];
-    return [{ ...ref, received: task.hoursReceived === true, payday: isDay(task.hoursPayday) ? task.hoursPayday : null }];
+    return [{ ...ref, received: task.hoursReceived === true,
+              receivedOn: isDay(task.hoursReceivedOn) ? task.hoursReceivedOn : null,
+              payday: isDay(task.hoursPayday) ? task.hoursPayday : null }];
   }
   const earning = (state.earnings ?? []).find((e) => e.id === ref.id);
   if (!earning) return [];
-  return [{ ...ref, received: earning.received === true, payday: isDay(earning.payday) ? earning.payday : null }];
+  return [{ ...ref, received: earning.received === true,
+            receivedOn: isDay(earning.receivedOn) ? earning.receivedOn : null,
+            payday: isDay(earning.payday) ? earning.payday : null }];
 });
 
-/** A record with its two marks set as given, or the same record where they
- *  already are, so that nothing unchanged is stamped as an edit. */
-const marked = (record, receivedKey, paydayKey, { received, payday }) => {
+/** A record with its marks set as given, or the same record where they
+ *  already are, so that nothing unchanged is stamped as an edit. The day
+ *  received only means anything on a received record, so it is dropped from
+ *  one that is not, whatever the mark says. */
+const marked = (record, receivedKey, onKey, paydayKey, { received, receivedOn, payday }) => {
+  const on = received === true && isDay(receivedOn) ? receivedOn : null;
   const same = (record[receivedKey] === true) === (received === true)
+    && (isDay(record[onKey]) ? record[onKey] : null) === on
     && (isDay(record[paydayKey]) ? record[paydayKey] : null) === (isDay(payday) ? payday : null);
   if (same) return record;
   const next = { ...record };
   if (received === true) next[receivedKey] = true;
   else delete next[receivedKey];
+  if (on) next[onKey] = on;
+  else delete next[onKey];
   if (isDay(payday)) next[paydayKey] = payday;
   else delete next[paydayKey];
   return next;
@@ -91,7 +110,7 @@ export const writeMarks = (state, marks) => {
     next = {
       ...next,
       earnings: (next.earnings ?? []).map((e) =>
-        earnings.has(e.id) ? marked(e, "received", "payday", earnings.get(e.id)) : e),
+        earnings.has(e.id) ? marked(e, "received", "receivedOn", "payday", earnings.get(e.id)) : e),
     };
   }
   if (hours.size) {
@@ -101,7 +120,7 @@ export const writeMarks = (state, marks) => {
         const tasks = tasksFor(p);
         const changed = tasks.map((t) => {
           const m = hours.get(`${p.id}|${t.id}`);
-          return m ? marked(t, "hoursReceived", "hoursPayday", m) : t;
+          return m ? marked(t, "hoursReceived", "hoursReceivedOn", "hoursPayday", m) : t;
         });
         return changed.some((t, i) => t !== tasks[i]) ? { ...p, tasks: changed } : p;
       }),
@@ -111,14 +130,19 @@ export const writeMarks = (state, marks) => {
 };
 
 /**
- * Marks lines as already paid, `{ received: true }`, or moves them to a day of
- * their own, `{ payday: "2026-12-02" }`, which also takes back any earlier
- * "paid". Anything else, or a payday that is not a real day, changes nothing.
+ * Marks lines as already paid, `{ received: true, on: "2026-11-18" }`, or moves
+ * them to a day of their own, `{ payday: "2026-12-02" }`, which also takes back
+ * any earlier "paid". `on` is the payday of the row they were marked on; left
+ * out, or not a real day, the line is paid with no day recorded, and a line
+ * already marked with a day keeps it. Anything else, or a payday that is not a
+ * real day, changes nothing.
  */
 export const markLines = (state, lines, change) => {
   const paid = change?.received === true;
   if (!paid && !isDay(change?.payday)) return state;
   const marks = readMarks(state, lineRefs(lines)).map((m) =>
-    (paid ? { ...m, received: true } : { ...m, received: false, payday: change.payday }));
+    (paid
+      ? { ...m, received: true, receivedOn: isDay(change.on) ? change.on : m.received ? m.receivedOn : null }
+      : { ...m, received: false, receivedOn: null, payday: change.payday }));
   return writeMarks(state, marks);
 };

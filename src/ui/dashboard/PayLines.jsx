@@ -10,6 +10,30 @@ export const lineText = (t) => (t.kind === "reward" ? `${t.label} · ${t.covers}
       ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
       : ` · ${t.label}`}`);
 
+/** One line's name as the panel prints it, and the project it is on. Shared
+ *  with the read-only history, so a line reads the same wherever it is shown. */
+export function LineName({ t }) {
+  return (
+    <span className="payline-name">
+      {/* A task's money is a line for each kind of it, so the kind leads
+          and the task follows: "Bonus · batch 4417". A shared reward
+          says how many tasks it covers, because that is what tells it
+          from a task. */}
+      {t.kind === "reward" ? lineText(t) : (
+        <>
+          <span className="payline-kind">
+            {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
+          </span>
+          {t.kind === "extra"
+            ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
+            : ` · ${t.label}`}
+        </>
+      )}
+      <span className="payline-of"> · {t.project}</span>
+    </span>
+  );
+}
+
 /**
  * The lines behind one opened payday, each of which can be picked, and what
  * can be done with those picked: marked paid, or moved to another day. A
@@ -44,23 +68,7 @@ export default function PayLines({ row, clock, onMarkLines }) {
             <input type="checkbox" className="row-check" checked={picked.includes(t.key)}
                    aria-label={`Select ${lineText(t)}`} onChange={() => toggle(t.key)} />
           )}
-          <span className="payline-name">
-            {/* A task's money is a line for each kind of it, so the kind leads
-                and the task follows: "Bonus · batch 4417". A shared reward
-                says how many tasks it covers, because that is what tells it
-                from a task. */}
-            {t.kind === "reward" ? lineText(t) : (
-              <>
-                <span className="payline-kind">
-                  {t.part === "hours" ? "Hours" : KIND_WORD[t.part] ?? "Other"}
-                </span>
-                {t.kind === "extra"
-                  ? [t.label, t.taskLabel].filter(Boolean).map((x) => ` · ${x}`).join("")
-                  : ` · ${t.label}`}
-              </>
-            )}
-            <span className="payline-of"> · {t.project}</span>
-          </span>
+          <LineName t={t} />
           <span className="payline-amt">{formatMoney(t.cents, row.currency)}</span>
         </div>
       ))}

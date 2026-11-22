@@ -7,7 +7,7 @@ import PaymentAnswer, { payDay } from "../PaymentAnswer.jsx";
 /**
  * The prompt for the oldest payday that has passed with no answer. It is shown
  * on every tab, so it lives with the other App-level banners rather than in the
- * Overview that owns the one-time question about past paydays.
+ * Payments tab that owns the one-time question about past paydays.
  */
 export default function PaydayNotice({ pay, state, now, answerPayment, setLaterDay }) {
   return (

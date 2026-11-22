@@ -37,6 +37,7 @@ import ProjectView from "./ProjectView.jsx";
 import DashboardView from "./DashboardView.jsx";
 import TodayView from "./TodayView.jsx";
 import SettingsTab from "./SettingsTab.jsx";
+import PaymentsView from "./payments/PaymentsView.jsx";
 
 import { EMPTY, useStartup } from "./app/useStartup.js";
 import { useOverLimit } from "./app/useOverLimit.js";
@@ -472,8 +473,8 @@ export default function App({ store: injectedStore }) {
         )}
 
         {/* A payday has passed and nobody has said what came. The oldest first,
-            and the next when it is answered. Not while the Overview's one-time
-            question about every past payday is still waiting, which is the
+            and the next when it is answered. Not while the one-time
+            question (in Payments) about every past payday is still waiting, which is the
             kinder way to deal with years of them, and not on a day it was put
             off. On every tab, because money that did not arrive is worth
             knowing about wherever you are. */}
@@ -541,12 +542,25 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
-            companyRules={state.companies ?? []}
-            pay={pay}
             /* The synced default, or "last" for this device's own memory. */
             defaultPeriod={prefOf(state, "overviewPeriod")}
             defaultProjectSort={prefOf(state, "byProjectSort")}
             defaultCompanySort={prefOf(state, "byCompanySort")}
+            now={now}
+            today={dayKey(now)}
+            pastUnanswered={!payoutsAsked && pay.overdue.length > 0}
+            onOpenPayments={() => setTab("payments")}
+            onOpenProject={openProject}
+            onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
+          />
+        ) : tab === "payments" ? (
+          <PaymentsView
+            ledger={{
+              projects: state.projects, sessions: state.sessions, earnings: state.earnings,
+              companies: state.companies, payouts: state.payouts,
+            }}
+            pay={pay} now={now}
+            companyRules={state.companies ?? []}
             asked={payoutsAsked}
             onSettleAsk={() => { saveSetting(SETTING.PAYOUTS_ASKED, "1"); setPayoutsAsked(true); }}
             onAnswer={answerPayment}
@@ -554,10 +568,6 @@ export default function App({ store: injectedStore }) {
               rows.length === 1 ? "Marked as paid." : `${rows.length} payments marked as paid.`)}
             onMovePayment={(row, date) => answerPayments([row], OUTCOME.MOVED, date, "Date changed.")}
             onMarkLines={markPaymentLines}
-            now={now}
-            today={dayKey(now)}
-            onOpenProject={openProject}
-            onToggleObjective={(id) => commit((s) => toggleObjective(s, id, Date.now()))}
           />
         ) : tab === "settings" ? (
           <SettingsTab
@@ -642,7 +652,7 @@ export default function App({ store: injectedStore }) {
         )}
       </div>
 
-      <div className="foot">
+      <div className="foot print-hide">
         {/* Where the ledger stands with Drive, on every screen rather than
             only the one that configures it. Nothing at all before it is set
             up: there is no state to report, and a permanent "off" is

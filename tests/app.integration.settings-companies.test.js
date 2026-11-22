@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { paydayFor } from "../src/domain/payPeriod.js";
 import {
-  boot, bootDash, btn, guardBuiltApp, setValue, settle, toProjects,
+  boot, bootDash, bootPayments, btn, guardBuiltApp, setValue, settle, toProjects,
 } from "./app.integration.helpers.js";
 
 guardBuiltApp();
@@ -102,7 +102,7 @@ describe("Companies & paydays", () => {
     expect(rows(d).map((r) => r.querySelector(".company-name").textContent)).toEqual(["Acme"]);
   }, 25_000);
 
-  it("edits a schedule in place, warns it is shared, and the Overview moves to the new dates", async () => {
+  it("edits a schedule in place, warns it is shared, and Payments moves to the new dates", async () => {
     const seed = ledger([project("a", "Acme"), project("b", "Acme")], { Acme: WED });
     const { dom, d } = await open(seed);
     await edit(d, "Acme");
@@ -124,7 +124,7 @@ describe("Companies & paydays", () => {
     expect(rowOf(d, "Acme").querySelector(".company-edit")).toBeNull();
     expect(rowOf(d, "Acme").textContent).toContain("paid the following Friday");
 
-    await toProjects(d, "Overview");
+    await toProjects(d, "Payments");
     expect(payLabels(d).length).toBeGreaterThan(0);
     expect(payLabels(d).every((l) => /^Fri/.test(l))).toBe(true);
   }, 30_000);
@@ -136,7 +136,7 @@ describe("Companies & paydays", () => {
     const old = project("o", "Acme");
     old.tasks[0] = { ...old.tasks[0], stateAt: Date.now() - 30 * DAY, submittedAt: Date.now() - 30 * DAY - HOUR };
     const seed = { ...ledger([old, project("a", "Acme")], { Acme: WED }), payouts: [] };
-    const dom = await bootDash(seed, { "meter:payouts-asked": "1" });
+    const dom = await bootPayments(seed, { "meter:payouts-asked": "1" });
     const d = dom.window.document;
     const before = payLabels(d);
     const overdue = before.filter((l) => /^Overdue/.test(l));
@@ -152,7 +152,7 @@ describe("Companies & paydays", () => {
     await settle();
     expect(recordOf(dom, "Acme").history).toHaveLength(1);
 
-    await toProjects(d, "Overview");
+    await toProjects(d, "Payments");
     const after = payLabels(d);
     expect(after.filter((l) => /^Overdue/.test(l))).toEqual(overdue);
     expect(after.filter((l) => !/^Overdue/.test(l)).every((l) => /^Fri/.test(l))).toBe(true);

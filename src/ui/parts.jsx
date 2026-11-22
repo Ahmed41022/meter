@@ -125,7 +125,7 @@ export function Notice({ title, children }) {
 
 export function Toast({ message, action, onAction }) {
   return (
-    <div className="toast" role="status">
+    <div className="toast print-hide" role="status">
       <span>{message}</span>
       {action && <button className="linkbtn" onClick={onAction}>{action}</button>}
     </div>

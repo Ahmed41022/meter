@@ -145,6 +145,14 @@ export const btn = (d, re) => [...d.querySelectorAll("button")].find((b) => re.t
  */
 export const ALL_TIME = { "meter:period": "all" };
 
+/** Boot, then go to Payments, where Upcoming payments and the history are. */
+export const bootPayments = async (seed, settings = null) => {
+  const dom = await boot(seed, settings);
+  await settle();
+  await toProjects(dom.window.document, "Payments");
+  return dom;
+};
+
 export const bootDash = async (seed, settings = null) => {
   const dom = await boot(seed, settings);
   await settle();

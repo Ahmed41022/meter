@@ -1,6 +1,26 @@
 import { recordBackup } from "../../domain/backup.js";
 import { toCsv } from "../../domain/csv.js";
 
+/** Hands the user a file. Throws rather than failing quietly if the browser
+ *  will not make one, so nothing downstream records a backup that never
+ *  happened. Shared by every export, which is why it is not inside the
+ *  handlers. */
+export const download = (name, text, type) => {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+export const stamp = () => `meter-${new Date().toISOString().slice(0, 10)}`;
+
+/** A CSV as a file: the byte-order mark first, for the reason `exportCsv`
+ *  gives, so no export forgets it. */
+export const downloadCsv = (name, text) =>
+  download(name, `\uFEFF${text}`, "text/csv;charset=utf-8");
+
 /**
  * Everything that hands a ledger out or takes one in: the backup and CSV
  * exports, restoring from a file, and downloading an unreadable ledger. They
@@ -12,20 +32,6 @@ export function backupHandlers({
   stateRef, commit, flash, write, store, unreadable, restoring, setRestoring, setOpenProjectId,
   setUnreadable,
 }) {
-  /** Hands the user a file. Throws rather than failing quietly if the browser
-   *  will not make one, so nothing downstream records a backup that never
-   *  happened. */
-  const download = (name, text, type) => {
-    const url = URL.createObjectURL(new Blob([text], { type }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const stamp = () => `meter-${new Date().toISOString().slice(0, 10)}`;
-
   const exportBackup = () => {
     // Serialised BEFORE the stamp, so the file records the state the user asked
     // for rather than one that claims to have already been backed up.
@@ -47,8 +53,7 @@ export function backupHandlers({
    * name, emoji and "·" in it comes out as mojibake.
    */
   const exportCsv = () => {
-    download(`${stamp()}.csv`, `\uFEFF${toCsv(stateRef.current, Date.now())}`,
-      "text/csv;charset=utf-8");
+    downloadCsv(`${stamp()}.csv`, toCsv(stateRef.current, Date.now()));
   };
 
   /**

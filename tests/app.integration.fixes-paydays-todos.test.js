@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { JSDOM, DIST, until, settle, appReady, COUNTER, boot, btn, ALL_TIME, bootDash, toProjects, setValue, startMeter, guardBuiltApp } from "./app.integration.helpers.js";
+import { JSDOM, DIST, until, settle, appReady, COUNTER, boot, btn, ALL_TIME, bootPayments, toProjects, setValue, startMeter, guardBuiltApp } from "./app.integration.helpers.js";
 
 guardBuiltApp();
 
@@ -213,7 +213,7 @@ describe("fixes: paydays and settling", () => {
     // Kolkata's Wednesday begins on Cairo's Tuesday evening, and printing that
     // midnight on this clock read "Tue". Every payday here is a Wednesday.
     const now = Date.now();
-    const d = (await bootDash(scheduled({
+    const d = (await bootPayments(scheduled({
       rules: { Ganges: { kind: "weekly", cutoff: 1, payday: 3, after: 0, closesAt: 0, zone: "Asia/Kolkata" } },
       tasks: [{ id: "t1", label: "1234", createdAt: now - 80 * HOUR,
                 state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR }],
@@ -278,7 +278,7 @@ describe("fixes: paydays and settling", () => {
     const dom = await bootSkewed(seed, skew);
     const d = dom.window.document;
     await settle();
-    await toProjects(d, "Overview");
+    await toProjects(d, "Payments");
     expect(payLabels(d)).toEqual([`Not before ${payday(2)}`]);
 
     dom.window.__skew += 60_000;
@@ -299,7 +299,7 @@ describe("fixes: paydays and settling", () => {
       taskIds: ["1234", "1235"], units: 2, note: "Two-task bonus", status: "pending",
       at: now - HOUR, createdAt: now - HOUR, deletedAt: null,
     }];
-    const d = (await bootDash(seed)).window.document;
+    const d = (await bootPayments(seed)).window.document;
     expect(payRows(d)).toEqual(["Northwind · 2 tasks · 1 shared reward"]);
     d.querySelector(".payrow .trow").click();
     await settle();
@@ -322,7 +322,7 @@ describe("fixes: paydays and settling", () => {
     });
     seed.earnings = [earning("e1", "piece", 1_200), earning("e2", "bonus", 1_500),
                      earning("e3", "adjust", 400), earning("e4", "adjust", -250)];
-    const d = (await bootDash(seed)).window.document;
+    const d = (await bootPayments(seed)).window.document;
     // One task, whatever the number of lines, and the row's figure unchanged:
     // an hour at 40, plus 12 + 15 + 4 (71). The deduction is not in it.
     expect(payRows(d)).toEqual(["Northwind · 1 task"]);
@@ -371,7 +371,7 @@ describe("fixes: paydays and settling", () => {
     // Out of the project, back to the tabs.
     d.querySelector(".linkbtn").click();
     await settle();
-    await toProjects(d, "Overview");
+    await toProjects(d, "Payments");
     const label = new Date(`${chosen}T00:00:00Z`).toLocaleDateString(undefined, {
       timeZone: "UTC", weekday: "short", day: "numeric", month: "long",
     });
@@ -416,7 +416,7 @@ describe("fixes: paydays and settling", () => {
     };
 
     it("lists a payday that passed unanswered as overdue, first, with its own total", async () => {
-      const d = (await bootDash(withOverdue(), ASKED)).window.document;
+      const d = (await bootPayments(withOverdue(), ASKED)).window.document;
       const labels = payLabels(d);
       expect(labels).toHaveLength(2);
       expect(labels[0]).toMatch(/^Overdue · /);
@@ -426,7 +426,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("marks a payment already paid, and brings it back with Undo", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       await open(d, 0);
       // An overdue row asks what happened; the form is the one in the open row.
@@ -448,7 +448,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("puts an earlier answer back when a later one is undone", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       // The payment still to come is the second row, after the overdue one.
       await open(d, 1);
@@ -477,7 +477,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("moves a payment to another date, says where it came from, and refuses the past", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       await open(d, 1);
       btn(d, /^Change date$/).click();
@@ -510,7 +510,7 @@ describe("fixes: paydays and settling", () => {
       .reduce((sum, e) => sum + e.cents, 0);
 
     it("asks what happened to the oldest passed payday, then the next one", async () => {
-      const dom = await bootDash(withOverdue([30, 45]), ASKED);
+      const dom = await bootPayments(withOverdue([30, 45]), ASKED);
       const d = dom.window.document;
       expect(notice(d).textContent).toMatch(/Northwind.s payday on .* \(\$40\.00\) has passed\. What happened\?/);
       const first = notice(d).textContent;
@@ -529,13 +529,13 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("does not ask while the one-time question about every past payday is waiting", async () => {
-      const d = (await bootDash(withOverdue())).window.document;
+      const d = (await bootPayments(withOverdue())).window.document;
       expect(asking(d)).toBeDefined();
       expect(notice(d)).toBeUndefined();
     }, 30_000);
 
     it("records $41 received for an expected $40 as a one dollar adjustment", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       await answerIn(notice(d), "Paid in full");
       // Found by the name a screen reader gives it, not by its type.
@@ -560,7 +560,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("moves the rest of a partly received payment to a new date, showing what is left", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       await answerIn(notice(d), "Not yet / partly");
       const received = notice(d).querySelector('input[aria-label="Received so far (USD)"]');
@@ -582,7 +582,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("cancels a payment and takes its money off the earnings", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       await answerIn(notice(d), "Cancelled");
       expect(notice(d).textContent).toMatch(/\$40\.00 comes off your earnings/);
@@ -599,7 +599,7 @@ describe("fixes: paydays and settling", () => {
       const seed = scheduled({ company: "Northwind", rules: { Northwind: WEEKLY }, tasks: [
         { id: "new", label: "new", createdAt: now - 80 * DAY, state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR },
       ] });
-      const dom = await bootDash(seed, ASKED);
+      const dom = await bootPayments(seed, ASKED);
       const d = dom.window.document;
       expect(notice(d)).toBeUndefined();
       await open(d, 0);
@@ -617,7 +617,7 @@ describe("fixes: paydays and settling", () => {
     }, 30_000);
 
     it("puts the notice off until tomorrow with Later", async () => {
-      const dom = await bootDash(withOverdue(), ASKED);
+      const dom = await bootPayments(withOverdue(), ASKED);
       const d = dom.window.document;
       btn(notice(d), /^Later$/).click();
       await settle();
@@ -625,12 +625,12 @@ describe("fixes: paydays and settling", () => {
       const day = dom.window.localStorage.getItem("meter:payout-later");
       expect(day).toBe(localIso(0));
       // Still hidden on a reload the same day, shown again on a later one.
-      expect(notice((await bootDash(stored(dom), { ...ASKED, "meter:payout-later": day })).window.document)).toBeUndefined();
-      expect(notice((await bootDash(stored(dom), { ...ASKED, "meter:payout-later": localIso(-1) })).window.document)).toBeDefined();
+      expect(notice((await bootPayments(stored(dom), { ...ASKED, "meter:payout-later": day })).window.document)).toBeUndefined();
+      expect(notice((await bootPayments(stored(dom), { ...ASKED, "meter:payout-later": localIso(-1) })).window.document)).toBeDefined();
     }, 60_000);
 
     it("asks once about past paydays, and marks them all received in one go", async () => {
-      const dom = await bootDash(withOverdue([30, 45]));
+      const dom = await bootPayments(withOverdue([30, 45]));
       const d = dom.window.document;
       const banner = () => asking(d);
       expect(banner().textContent).toMatch(/2 past paydays have no answer\. Mark them all as received\?/);
@@ -649,14 +649,14 @@ describe("fixes: paydays and settling", () => {
 
     it("keeps them listed on request, and does not ask again after a reload", async () => {
       const seed = withOverdue();
-      const dom = await bootDash(seed);
+      const dom = await bootPayments(seed);
       const d = dom.window.document;
       btn(d, /^Keep them listed$/).click();
       await settle();
       expect(asking(d)).toBeUndefined();
       expect(payLabels(d)[0]).toMatch(/^Overdue · /);
       const asked = dom.window.localStorage.getItem("meter:payouts-asked");
-      const again = (await bootDash(stored(dom), { "meter:payouts-asked": asked })).window.document;
+      const again = (await bootPayments(stored(dom), { "meter:payouts-asked": asked })).window.document;
       expect(asking(again)).toBeUndefined();
       expect(payLabels(again)[0]).toMatch(/^Overdue · /);
     }, 60_000);
@@ -678,7 +678,7 @@ describe("fixes: paydays and settling", () => {
       };
 
       it("marks one task's hours paid on a payment still to come, and Undo puts them back", async () => {
-        const dom = await bootDash(twoComing(), ASKED);
+        const dom = await bootPayments(twoComing(), ASKED);
         const d = dom.window.document;
         expect(amounts(d)).toEqual(["$80.00"]);
         await open(d, 0);
@@ -702,7 +702,7 @@ describe("fixes: paydays and settling", () => {
       }, 30_000);
 
       it("moves a line of an overdue payment to a coming day, and refuses the past", async () => {
-        const dom = await bootDash(withOverdue(), ASKED);
+        const dom = await bootPayments(withOverdue(), ASKED);
         const d = dom.window.document;
         expect(payLabels(d)[0]).toMatch(/^Overdue · /);
         await open(d, 0);
@@ -730,7 +730,7 @@ describe("fixes: paydays and settling", () => {
           id: "done", client: "Northwind", currency: "USD", scheduled: target, outcome: "paid",
           answeredAt: Date.now(), createdAt: Date.now(), deletedAt: null,
         }] };
-        const dom = await bootDash(seed, ASKED);
+        const dom = await bootPayments(seed, ASKED);
         const d = dom.window.document;
         await open(d, 0);
         await pick(d, /Hours · beta/);
@@ -747,7 +747,7 @@ describe("fixes: paydays and settling", () => {
       }, 30_000);
 
       it("offers no boxes on a payment already partly received", async () => {
-        const dom = await bootDash(withOverdue(), ASKED);
+        const dom = await bootPayments(withOverdue(), ASKED);
         const d = dom.window.document;
         const notice = () => [...d.querySelectorAll(".banner")].find((b) => /A payday has passed/.test(b.textContent));
         btn(notice(), /^Not yet \/ partly$/).click();
@@ -773,7 +773,7 @@ describe("fixes: paydays and settling", () => {
       tasks: [{ id: `${id}-t`, label: `${name} task`, createdAt: now - 80 * HOUR,
                 state: "accepted", stateAt: now - HOUR, submittedAt: now - 2 * HOUR }],
     });
-    const d = (await bootDash(scheduled({
+    const d = (await bootPayments(scheduled({
       rules: { Northwind: WEEKLY },
       projects: [project("a", "Gateway", "Northwind"), project("b", "Atlas", "northwind")],
     }))).window.document;
@@ -822,7 +822,7 @@ describe("fixes: paydays and settling", () => {
     expect(ruleOf(dom, "Northwind")).toEqual(MONDAY_WEDNESDAY);
     btn(d, /All projects/).click();
     await settle();
-    await toProjects(d, "Overview");
+    await toProjects(d, "Payments");
     expect(payRows(d)).toEqual(["Outlier · 1 task"]);
   }, 30_000);
 
@@ -934,7 +934,7 @@ describe("fixes: paydays and settling", () => {
   it("dates handed-in work on a project paid as worked, with nothing waiting", async () => {
     // Paid as worked, there is no answer to wait for: the week it went in pays it.
     const now = Date.now();
-    const d = (await bootDash(scheduled({
+    const d = (await bootPayments(scheduled({
       company: "Northwind", rules: { Northwind: WEEKLY },
       tasks: [{ id: "t1", label: "1234", createdAt: now - 80 * HOUR,
                 state: "submitted", stateAt: now - HOUR, submittedAt: now - HOUR }],

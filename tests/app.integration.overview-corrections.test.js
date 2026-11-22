@@ -177,7 +177,7 @@ describe("the overall view", () => {
     expect(today.getAttribute("aria-selected")).toBe("true");
     // Work and Life are places of their own, not sections of one list.
     expect([...d.querySelectorAll(".tabs [role=tab]")].map((t) => t.textContent))
-      .toEqual(["Today", "Overview", "Work", "Life", "Settings"]);
+      .toEqual(["Today", "Overview", "Payments", "Work", "Life", "Settings"]);
   });
 
   it("still gives the Overview its full range of spans", async () => {
