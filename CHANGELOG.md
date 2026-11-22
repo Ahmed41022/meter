@@ -7,6 +7,18 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-22
+
+Minor rather than major: every field and record added here (`prefs`,
+`companies[].history`, `receivedOn`, `hoursReceived`, `hoursPayday`,
+`hoursReceivedOn`) is absent by default, and an absent field already had a
+defined meaning, so a 1.2.0 build reads a 1.3.0 ledger without migrating
+anything. Meter Sync keeps its own encrypted copy on the relay and changes
+nothing in the stored ledger. The caveat from 1.2.0 still applies, and for
+the last time: a 1.2.0 build drops lists it does not know (here, `prefs`)
+when it syncs, which 1.3.0 no longer does, so every device that syncs should
+run 1.3.0.
+
 ### Changed
 
 - **Upcoming payments moved from the Overview to a new Payments tab**, the
@@ -96,8 +108,13 @@ ledger changed such that an older build can no longer read it.
   passed or been answered, newest first: **By payday**, with a subtotal for
   each date and each month, or **By company**, a statement per currency of what
   was expected, what came, what is still outstanding, what was cancelled and
-  the difference. Each payday is paid, partly paid, cancelled, not answered, or
-  paid line by line. A period filter (this month, last month, this year, last
+  the difference. Each payday is paid, partly paid, cancelled, not answered,
+  paid line by line, or "Nothing to come" when its deductions cancel it out.
+  **Still owed** covers everything not yet paid, overdue and coming, with the
+  split shown under it; a partly paid rest counts as coming until the day it
+  was moved to has passed. Work still waiting on a review sits on a line of
+  its own and is never counted as owed. Both views open with a **Coming**
+  section for dated paydays still ahead. A period filter (this month, last month, this year, last
   year, all, or custom days; opening on this year) is remembered on the device
   and applies to both views. **Print** (or Save as PDF) gives a black-on-white
   statement, and **Export CSV** one row per line of each payday for an
@@ -185,6 +202,9 @@ ledger changed such that an older build can no longer read it.
   bonuses and other earnings use the `received` and `payday` they already had.
   Absent means what it did before, so older ledgers read unchanged. A row
   already partly received is still answered as a whole.
+- **Upcoming payments' explanation is behind a "?"** beside its heading, a
+  short list that opens in place and closes on a second tap or Escape,
+  instead of a paragraph above every row.
 
 ### Fixed
 
@@ -195,6 +215,17 @@ ledger changed such that an older build can no longer read it.
   it was worked in, on its client's schedule as it stood then, and counted as
   paid on that payday unless an answer says otherwise; an answered payday also
   gains the lines behind it. Only paydays already past are included.
+- **Work dated by the schedule counts as received, not only listed.** Paydays
+  answered before that work could be dated (the one-time "mark all received")
+  recorded only what the forecast listed then, often a lone bonus, so the
+  lines showed thousands in paid work that the totals left out. That work is
+  now paid on top of the answer, as a line marked paid one by one is, on
+  screen, in statements and in the CSV.
+- **A deduction comes off its own payday.** A negative adjustment was left out
+  of the payday it belonged to, so Upcoming and the history overstated what
+  would land by its amount. It is now a line of that payday, the payday's
+  figure is the net, and "Paid in full" fills in the net. A payday that nets
+  to nothing is not listed as coming.
 - **A device no longer drops records it did not recognise when it syncs.**
   Merging only looked at the lists the build knew, so an older device threw
   away, on its next sync, any list a newer build had added. Every list of records is now merged, known or
@@ -695,7 +726,8 @@ is recorded here as the baseline rather than as a set of changes.
 - JSON backup export and restore, a CSV export of every line item, and a nudge
   when the ledger has gone too long without being written to a file.
 
-[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Ahmed41022/meter/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ahmed41022/meter/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ahmed41022/meter/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ahmed41022/meter/releases/tag/v1.0.0
