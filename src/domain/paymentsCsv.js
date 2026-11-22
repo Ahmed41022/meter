@@ -6,7 +6,10 @@
  * ledger's own. A payday's figures (expected, received, difference) are on its
  * FIRST row only: repeated down every line they would be summed several times
  * by whoever filters and adds a column. A payday with no lines is one row of
- * its figures alone.
+ * its figures alone. Paydays still to come are rows like the rest, with the
+ * status "Coming" and their expected amount. Work waiting on a review is not
+ * in the file: it is not owed yet, has no date to be paid on, and a column
+ * summed by an accountant must not count money nobody has promised.
  *
  * Every amount is a plain decimal in the row's own currency and never a
  * converted one: the file is a record of what was paid, and an exchange rate is
@@ -32,6 +35,7 @@ const NUMERIC = new Set(["Expected", "Received", "Difference", "Line amount"]
 export const STATUS_WORD = {
   [STATUS.PAID]: "Paid", [STATUS.PARTIAL]: "Partly paid", [STATUS.CANCELLED]: "Cancelled",
   [STATUS.UNANSWERED]: "Not answered", [STATUS.LINES_PAID]: "Paid line by line",
+  [STATUS.NETTED]: "Nothing to come", [STATUS.COMING]: "Coming",
 };
 
 const KIND_NAMES = { hours: "Hours", piece: "Per accepted item", bonus: "Bonus", adjust: "Adjustment" };

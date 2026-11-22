@@ -16,7 +16,7 @@ import PeriodFilter from "./PeriodFilter.jsx";
  * them. Only the interactive part is marked print-hide; the statement sheet
  * inside each view is what a print shows instead.
  */
-export default function History({ history, now }) {
+export default function History({ history, pay, now }) {
   const [view, setView] = useState("payday");
   const [{ key, custom }, setPeriod] = useState(() => unpackChoice(loadSetting(SETTING.STATEMENT_PERIOD)));
   const [open, setOpen] = useState(() => new Set());
@@ -35,9 +35,9 @@ export default function History({ history, now }) {
   const range = statementRange(key, dayKey(now), custom);
   const label = statementLabel(key, range);
 
-  // The companies that have anything in the history, by their own name; the
+  // The companies that have anything in the history or coming, by their own name; the
   // one picked is kept only while it is still one of them.
-  const companies = [...new Map(history.map((r) => [r.client, r.company])).entries()]
+  const companies = [...new Map([...history, ...(pay?.due ?? [])].map((r) => [r.client, r.company])).entries()]
     .map(([client, company]) => ({ client, company }))
     .sort((a, b) => a.company.localeCompare(b.company));
   const client = companies.some((c) => c.client === picked) ? picked : companies[0]?.client ?? "";
@@ -63,10 +63,10 @@ export default function History({ history, now }) {
                       onCustom={(c) => remember(key, c)} />
       </div>
       {view === "payday" ? (
-        <ByPayday history={history} range={range} label={label} open={open} toggle={toggle}
+        <ByPayday history={history} pay={pay} range={range} label={label} open={open} toggle={toggle}
                   now={now} onCsv={onCsv} />
       ) : (
-        <ByCompany history={history} companies={companies} client={client} onClient={setPicked}
+        <ByCompany history={history} pay={pay} companies={companies} client={client} onClient={setPicked}
                    range={range} label={label} open={open} toggle={toggle} now={now} onCsv={onCsv} />
       )}
     </div>

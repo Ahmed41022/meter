@@ -76,7 +76,10 @@ const open = (extra, settings = ASKED, script = PIN) =>
     return dom;
   });
 const text = (els) => [...els].map((e) => e.textContent);
-const rows = (d) => [...d.querySelectorAll(".hist-row")];
+// The history's rows, past or answered. A coming payday is a row too, in its own
+// section above them, and has its own helper.
+const rows = (d) => [...d.querySelectorAll(".hist-row:not([data-status=coming])")];
+const comingRows = (d) => [...d.querySelectorAll(".hist-row[data-status=coming]")];
 const stored = (dom) => JSON.parse(dom.window.localStorage.getItem("meter:v1"));
 const click = async (d, selectorOrEl) => {
   (typeof selectorOrEl === "string" ? d.querySelector(selectorOrEl) : selectorOrEl).click();
@@ -316,8 +319,9 @@ describe("History, by company", () => {
     const d = (await byCompany()).window.document;
     expect(text(d.querySelectorAll('select[aria-label="Company"] option'))).toEqual(["Larkspur"]);
     expect(fig(d, "USD", "received")).toBe("$88.00");
-    expect(fig(d, "USD", "expected")).toBe("$169.00");
-    expect(fig(d, "USD", "outstanding")).toBe("$40.00");
+    // The $40 payday of the 18th is still coming: expected and still owed.
+    expect(fig(d, "USD", "expected")).toBe("$209.00");
+    expect(fig(d, "USD", "outstanding")).toBe("$80.00");
     expect(fig(d, "USD", "cancelled")).toBe("$40.00");
     expect(fig(d, "USD", "difference")).toBe("$1.00 less");
     expect(fig(d, "EUR", "received")).toBe("€15.00");
@@ -377,7 +381,8 @@ describe("printing", () => {
     expect(sheet.textContent).toMatch(/Generated .*2026\. All amounts in their own currency\./);
     expect([...sheet.querySelectorAll(".sheet-totals tbody tr")].map((r) => r.firstChild.textContent).sort())
       .toEqual(["EUR", "USD"]);
-    expect(sheet.querySelectorAll(".sheet-day")).toHaveLength(5);
+    // Five past paydays and the coming one.
+    expect(sheet.querySelectorAll(".sheet-day")).toHaveLength(6);
     expect(sheet.textContent).toMatch(/Hours · t9 · Gateway.*paid line by line.*\$40\.00/);
     expect(sheet.querySelector(".sheet-approx")).toBeNull();
     await click(d, view(d, "By payday"));
@@ -452,9 +457,10 @@ describe("CSV", () => {
   it("has a row per line with plain decimals in their own currency, and no converted figures", async () => {
     const { text: csv } = await exportFor();
     const lines = csv.slice(1).trimEnd().split("\n").slice(1);
-    // Newest first: the EUR partial, the 11th (a line to pay, a line paid),
+    // The coming payday first, then newest first: the EUR partial, the 11th (a line to pay, a line paid),
     // the cancelled, the paid, and the bonus.
     expect(lines).toEqual([
+      '"2026-11-18","Larkspur","USD","Coming","40.00","0.00","","Hours","t1","Gateway","40.00","No","",""',
       '"2026-11-25","Larkspur","EUR","Partly paid","40.00","15.00","","Hours","e1","Atlas","40.00","No","",""',
       '"2026-11-11","Larkspur","USD","Not answered","80.00","40.00","","Hours","t9b","Gateway","40.00","No","",""',
       '"2026-11-11","Larkspur","USD","Not answered","","","","Hours","t9","Gateway","40.00","Yes","2026-11-11","recorded"',
@@ -466,7 +472,7 @@ describe("CSV", () => {
 
   it("exports a company's own rows from By company", async () => {
     const { text: csv, names } = await exportFor("By company");
-    expect(csv.slice(1).trimEnd().split("\n")).toHaveLength(7);
+    expect(csv.slice(1).trimEnd().split("\n")).toHaveLength(8);
     expect(names[0]).toMatch(/-payments-Larkspur\.csv$/);
   }, 30_000);
 
@@ -518,5 +524,188 @@ describe("CSV encoding", () => {
     const csv = paymentsCsv([row()]).split("\n");
     expect(csv).toHaveLength(3);
     expect(csv[1]).toBe('"2026-11-04","Acme","USD","Paid","1.00","1.00","0.00","","","","","","",""');
+  });
+});
+
+/** Larkspur with one more project whose work pays once accepted, so a task
+ *  handed in on it waits on a review, and one more task that was paid on the
+ *  21st of October and can have its whole pay taken back by a deduction. */
+const extended = (more = {}) => {
+  const base = seed();
+  const held = [task("h1", at(16))];
+  const tx = task("tx", at(15, 12, 9));
+  return {
+    projects: [
+      { ...base.projects[0], tasks: [...base.projects[0].tasks, tx] },
+      ...base.projects.slice(1),
+      { id: "h", name: "Held", company: "Larkspur", currentRate: 40, currency: "USD", paysOnAcceptance: true, createdAt: at(1), tasks: held },
+    ],
+    sessions: [...base.sessions, ...sittings("p", [tx], "USD"), ...sittings("h", held, "USD")],
+    ...more,
+  };
+};
+
+describe("deductions on the Payments tab", () => {
+  const deduction = (id, taskId, cents) => ({
+    id, projectId: "p", kind: "adjust", cents, currency: "USD", taskIds: [taskId], units: 1,
+    at: at(16), createdAt: at(16), deletedAt: null,
+  });
+  const upcoming = (d) => [...d.querySelectorAll(".payrow")].find((r) => /November 18/.test(r.textContent));
+
+  it("takes a deduction off the payday in Upcoming payments, as a negative line", async () => {
+    const d = (await open({ earnings: [...seed().earnings, deduction("d1", "t1", -1_500)] })).window.document;
+    const row = upcoming(d);
+    expect(row.querySelector(".trow-amt").textContent).toBe("$25.00");
+    await click(d, row.querySelector(".trow"));
+    const lines = text(row.querySelectorAll(".payline"));
+    expect(lines[0]).toBe("Hours · t1 · Gateway$40.00");
+    expect(lines[1]).toMatch(/^Adjustment · t1 · Gateway.*\$15\.00$/);
+    expect(lines[1]).toMatch(/[-−]/);
+    // The deduction can be ticked like any line.
+    expect(row.querySelectorAll(".row-check")).toHaveLength(2);
+  }, 40_000);
+
+  it("does not list a payday that is fully cancelled out, and keeps a past one in the history", async () => {
+    const extra = extended();
+    extra.earnings = [...seed().earnings, deduction("d1", "t1", -4_000), deduction("d2", "tx", -4_000)];
+    const d = (await open(extra)).window.document;
+    // The coming 18th nets to nothing, so no payment is listed for it.
+    expect(upcoming(d)).toBeUndefined();
+    expect(comingRows(d)).toHaveLength(0);
+    // The 21st of October is past and netted: here, with both its lines.
+    const netted = rows(d).find((r) => r.dataset.status === "netted");
+    expect(netted.textContent).toMatch(/Nothing to come/);
+    await click(d, netted.querySelector(".trow"));
+    const lines = text(netted.querySelectorAll(".payline"));
+    expect(lines[0]).toBe("Hours · tx · Gateway$40.00");
+    expect(lines[1]).toMatch(/^Adjustment · tx · Gateway.*\$40\.00$/);
+  }, 40_000);
+
+  it("answers a payday at its net: Paid in full is prefilled with it", async () => {
+    const d = (await open({ earnings: [...seed().earnings, deduction("d1", "t1", -1_500)] })).window.document;
+    const row = upcoming(d);
+    await click(d, row.querySelector(".trow"));
+    await click(d, btn(d.querySelector(".paylist"), /^Already paid$/));
+    expect(d.querySelector(".paylist input:not([type=date]):not([type=checkbox])").value).toBe("25");
+  }, 40_000);
+});
+
+describe("Still owed with what is coming", () => {
+  const card = (d, cur) => d.querySelector(`[aria-label="Totals in ${cur}"]`);
+  const fig = (d, cur, metric) => card(d, cur).querySelector(`[data-metric=${metric}]`).textContent;
+
+  it("shows overdue plus coming under Still owed, in both views", async () => {
+    const d = (await open()).window.document;
+    expect(fig(d, "USD", "outstanding")).toBe("$80.00");
+    expect(fig(d, "USD", "owed-parts")).toBe("overdue $40.00 · coming $40.00");
+    // EUR: the partial's rest falls on a day still ahead, so it is coming.
+    expect(fig(d, "EUR", "owed-parts")).toBe("overdue €0.00 · coming €25.00");
+    expect(card(d, "USD").querySelector("[data-metric=waiting]")).toBeNull();
+    await click(d, view(d, "By company"));
+    expect(fig(d, "USD", "outstanding")).toBe("$80.00");
+    expect(fig(d, "USD", "owed-parts")).toBe("overdue $40.00 · coming $40.00");
+  }, 40_000);
+
+  it("says work waiting on a review apart, and does not count it as owed", async () => {
+    const d = (await open(extended())).window.document;
+    expect(card(d, "USD").querySelector("[data-metric=waiting]").textContent).toBe("Waiting on review $40.00");
+    // The extra task of the 21st of October is one more $40 overdue; the
+    // $40 held for review is in neither Still owed nor Expected.
+    expect(fig(d, "USD", "outstanding")).toBe("$120.00");
+    expect(fig(d, "USD", "owed-parts")).toBe("overdue $80.00 · coming $40.00");
+    expect(fig(d, "USD", "expected")).toBe("$249.00");
+  }, 40_000);
+
+  it("lists the coming paydays at the top, read-only, with their lines", async () => {
+    const d = (await open()).window.document;
+    const section = d.querySelector(".hist-coming");
+    expect(section.querySelector(".sec-head").textContent).toBe("Coming$40.00");
+    const [row] = comingRows(d);
+    expect(row.querySelector(".stat").textContent).toBe("Coming");
+    expect(row.querySelector(".trow-sub").textContent).toBe("Expected $40.00");
+    expect(row.querySelector(".trow-amt").textContent).toBe("$40.00");
+    await click(d, row.querySelector(".trow"));
+    expect(text(row.querySelectorAll(".payline"))).toEqual(["Hours · t1 · Gateway$40.00"]);
+    // Answering stays in Upcoming payments: nothing to answer here.
+    expect(row.querySelector(".paylist button, .paylist input")).toBeNull();
+    // Above the history's months.
+    expect(section.compareDocumentPosition(d.querySelector(".hist-month")) & 4).toBeTruthy();
+  }, 40_000);
+
+  it("follows the period: This month has the coming payday, Last month and Last year do not", async () => {
+    const d = (await open()).window.document;
+    await click(d, period(d, "This month"));
+    expect(comingRows(d)).toHaveLength(1);
+    expect(fig(d, "USD", "owed-parts")).toBe("overdue $40.00 · coming $40.00");
+    await click(d, period(d, "Last month"));
+    expect(comingRows(d)).toHaveLength(0);
+    expect(d.querySelector(".hist-coming")).toBeNull();
+    expect(fig(d, "USD", "owed-parts")).toBe("overdue $0.00 · coming $0.00");
+    await click(d, period(d, "Last year"));
+    expect(d.querySelector(".hist-coming")).toBeNull();
+    await click(d, period(d, "All"));
+    expect(comingRows(d)).toHaveLength(1);
+  }, 60_000);
+
+  it("shows the coming payday in By company, and in print", async () => {
+    const d = (await open()).window.document;
+    await click(d, view(d, "By company"));
+    expect(comingRows(d)).toHaveLength(1);
+    expect(d.querySelector(".coming-date").textContent).toMatch(/^Coming · .*November 18$/);
+    const sheet = d.querySelector(".print-sheet");
+    expect(sheet.querySelector(".sheet-owed").textContent).toMatch(/still owed is overdue .* · coming/);
+    const comingDay = [...sheet.querySelectorAll(".sheet-day")].find((x) => /Coming/.test(x.querySelector("h3").textContent));
+    expect(comingDay.querySelector("p").textContent).toBe("Expected $40.00");
+  }, 40_000);
+
+  it("exports coming paydays with the status Coming, and not work waiting on a review", async () => {
+    const dom = await open(extended());
+    const d = dom.window.document;
+    const got = hook(dom);
+    await click(d, btn(d, /^Export CSV$/));
+    const lines = (await blobText(dom.window, got.blobs[0])).slice(1).trimEnd().split("\n");
+    expect(lines[1]).toMatch(/^"2026-11-18","Larkspur","USD","Coming","40\.00","0\.00"/);
+    expect(lines.some((l) => /h1|Held/.test(l))).toBe(false);
+  }, 40_000);
+});
+
+describe("the help behind the ? button", () => {
+  const help = (d) => d.querySelector('button[aria-label="How upcoming payments work"]');
+
+  it("hides the explanation until asked, shows it inline, and hides it again on a second tap", async () => {
+    const d = (await open()).window.document;
+    expect(help(d).getAttribute("aria-expanded")).toBe("false");
+    expect(d.querySelector(".help-panel")).toBeNull();
+    // The long paragraph is gone from the list itself.
+    expect(d.querySelector(".pay-tab .sec .panel .hint")).toBeNull();
+    await click(d, help(d));
+    expect(help(d).getAttribute("aria-expanded")).toBe("true");
+    const panel = d.querySelector(".help-panel");
+    expect(panel.querySelectorAll("li").length).toBeGreaterThanOrEqual(4);
+    expect(panel.textContent).toMatch(/deduction.*comes off the payday/);
+    expect(panel.textContent).not.toMatch(/not taken off/);
+    // The button sits beside the heading, and the panel below that row.
+    expect(help(d).parentElement.textContent).toBe("Upcoming payments?");
+    expect(help(d).parentElement.contains(panel)).toBe(false);
+    await click(d, help(d));
+    expect(d.querySelector(".help-panel")).toBeNull();
+  }, 40_000);
+
+  it("closes on Escape", async () => {
+    const dom = await open();
+    const d = dom.window.document;
+    await click(d, help(d));
+    expect(d.querySelector(".help-panel")).not.toBeNull();
+    d.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+    expect(d.querySelector(".help-panel")).toBeNull();
+    expect(help(d).getAttribute("aria-expanded")).toBe("false");
+  }, 40_000);
+
+  it("is styled as a round tap target, in a heading row that can shrink at 375px", () => {
+    const css = readFileSync(DIST, "utf8");
+    expect(css).toMatch(/\.help-btn\{[^}]*width:26px;height:26px;border-radius:50%/);
+    expect(css).toMatch(/\.help-panel\{[^}]*padding:12px 16px/);
+    expect(css).toMatch(/\.sec-title\{display:flex;align-items:center;gap:8px;min-width:0;\}/);
   });
 });

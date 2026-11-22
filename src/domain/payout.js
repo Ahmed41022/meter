@@ -53,6 +53,17 @@
  * Rejected work appears nowhere. It earns nothing, so there is nothing to
  * date — and a cancelled reward is not coming either.
  *
+ * A deduction is money too, in the other direction. A negative earning, usually
+ * an adjustment ("the first hour paid $100, not $135"), is a line of its own
+ * on the payday its positive money would be on, with a negative amount, and
+ * the payday's figure is the NET. A forecast that listed only what comes in
+ * showed more than would land. A payday whose lines net to nothing or less is
+ * built here like any other, but `upcomingPay` does not list it as a payment,
+ * because nothing comes; the history keeps it, with its lines, once it has
+ * passed (payHistory.js). What an answer wrote as its own adjustment is the
+ * difference that answer already accounts for and is received, so it is never
+ * a line: counting it again would double it.
+ *
  * A payday is a DATE on the client's own clock, carried as one all the way to
  * the screen, and it has passed once that clock has moved past it; read on
  * this device's clock it can land on the day before. Rows are one per client,
@@ -179,6 +190,10 @@ const reachedAt = (project, task) => {
     && Number.isFinite(task.submittedAt) ? task.submittedAt : null;
 };
 
+/** Money that moves a payday's figure either way. Zero says nothing and makes
+ *  no line; a deduction is as much a line as a payment. */
+const moves = (cents) => Number.isFinite(cents) && cents !== 0;
+
 /** A stored day, or null: the field is absent on everything written before
  *  it existed, and absent means "not recorded". */
 const dayOrNull = (value) => (isDay(value) ? value : null);
@@ -231,11 +246,11 @@ export const forecastRows = (state, now, settled = false) => {
     if (settled && adjustments.has(earning.id)) continue;
     const named = tasksOf(earning);
     if (named.length === 0) {
-      if (earning.cents > 0) file(loose, earning.projectId, earning);
+      if (moves(earning.cents)) file(loose, earning.projectId, earning);
     } else if (named.length === 1) {
       // Moved to a payday by hand, it leaves its task and stands on its own.
       if (!isDay(earning.payday)) file(sole, named[0], earning);
-      else if (earning.cents > 0) file(loose, earning.projectId, earning);
+      else if (moves(earning.cents)) file(loose, earning.projectId, earning);
     } else {
       file(shared, earning.projectId, earning);
     }
@@ -308,18 +323,17 @@ export const forecastRows = (state, now, settled = false) => {
        * two places, and they land on the same day for the same reason. Kept
        * apart as lines, because an hour and a bonus are not the same thing.
        *
-       * Only money coming in is counted, a record at a time. A negative
-       * adjustment is not taken off the task's other lines: it was never
-       * netted here, and a forecast that began to would move every figure it
-       * had already given. It stays in the ledger and in the totals, and is
-       * left off a payday it would only have made look smaller.
+       * A deduction is a line like any other, on the same payday as the money
+       * it belongs with, so the payday's figure is what will actually land.
+       * Only a line that nets to nothing is left out: "+$3 and -$3" says
+       * nothing a $0.00 line would not only clutter.
        */
       const owed = new Map();
       // Settled lines are kept apart by the day they were marked on, so that
       // one line never claims two dates; for money still to come that is
       // always null and the key is the part alone.
       const add = (when, cur, part, cents, earningId, receivedOn = null) => {
-        if (when === null || !(cents > 0)) return;
+        if (when === null || !moves(cents)) return;
         const at = `${when.date}|${cur}`;
         if (!owed.has(at)) owed.set(at, { when, cur, parts: new Map() });
         const parts = owed.get(at).parts;
@@ -350,9 +364,13 @@ export const forecastRows = (state, now, settled = false) => {
         // Work under review has a floor, not a date; one moved to a day that
         // has since gone is left out, as a waiting floor that passed always was.
         if (pendingReview && when.date < today) continue;
+        // Added up by kind, so a bonus and a deduction of the same size in
+        // one kind can cancel; a kind that did leaves no line, and no row.
+        const lines = [...parts.values()].filter((l) => l.cents !== 0);
+        if (lines.length === 0) continue;
         const row = into(pendingReview ? waiting : due, `${client}|${when.date}|${cur}`,
                          { client, company, at: when.at, date: when.date, currency: cur });
-        for (const { part, receivedOn, cents, earningIds } of parts.values()) {
+        for (const { part, receivedOn, cents, earningIds } of lines) {
           row.cents += cents;
           row.tasks.push({
             key: `task:${task.id}:${part}`, kind: "task", part,
@@ -374,11 +392,12 @@ export const forecastRows = (state, now, settled = false) => {
      * and the reward is still owed for the rest. Until every other task has
      * got there it has no date, only the same floor as work under review.
      * Ids naming no task this project still has are left out the same way.
-     * A cancelled reward is not coming at all, and was dropped above; and,
-     * as with a task's own lines, only money coming in is forecast.
+     * A cancelled reward is not coming at all, and was dropped above. A
+     * negative one, a deduction shared across a batch, is dated the same way
+     * and comes off that payday.
      */
     for (const earning of shared.get(project.id) ?? []) {
-      if (!(earning.cents > 0)) continue;
+      if (!moves(earning.cents)) continue;
       const counted = tasksOf(earning)
         .map((id) => tasksFor(project).find((t) => t.id === id))
         .filter((task) => task && taskState(task) !== TASK.CANCELLED);
@@ -412,8 +431,8 @@ export const forecastRows = (state, now, settled = false) => {
      *
      * It is dated from when it was ADDED unless a payday was picked, and a
      * pending one waits, with the date as a floor, like work under review. A
-     * correction is as likely to take money off as to add it, and as with a
-     * task's lines only money coming in is forecast.
+     * correction is as likely to take money off as to add it, and when it
+     * does it comes off that payday, as a task's deduction does.
      */
     for (const earning of loose.get(project.id) ?? []) {
       const pay = isDay(earning.payday) ? paydayOn(rule, earning.payday) : paydayFor(rule, earning.at);
@@ -472,7 +491,8 @@ export const listRow = (row, answer, rule) => {
  * Money with a date, and money still waiting on somebody.
  *
  * Both are sorted soonest first and carry one row per company, day and
- * currency. A row's `date` is its payday as the client's own clock names it
+ * currency, and only paydays that bring something: a payday netting to nothing
+ * or less, once its deductions are taken off, is not listed. A row's `date` is its payday as the client's own clock names it
  * ("2026-10-07"), which is what to print; `at` is that day's midnight on the
  * same clock, for ordering only. A `waiting` row's date is the earliest the
  * money could arrive, never a date it is expected on.
@@ -501,12 +521,16 @@ export const upcomingPay = (state, now) => {
     const answer = answers.get(payoutKey(row.client, row.currency, row.date));
     if (isClosed(answer)) continue;
     const listed = listRow(row, answer, rule);
+    // A payday whose lines net to nothing or less brings nothing, so it is not
+    // a payment to wait for or to answer. A partly received one is different:
+    // its figure is the rest of what was expected, not its lines' net.
+    if (listed.cents <= 0 && !listed.partial) continue;
     (listed.date < today ? late : upcoming).push(listed);
   }
   const byDay = (a, b) => a.at - b.at || a.company.localeCompare(b.company);
   return {
     due: upcoming.sort(byDay),
-    waiting: waiting.map((row) => ({ ...row, scheduled: row.date })),
+    waiting: waiting.filter((row) => row.cents > 0).map((row) => ({ ...row, scheduled: row.date })),
     overdue: late.sort(byDay),
   };
 };

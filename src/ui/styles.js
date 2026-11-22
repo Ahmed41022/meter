@@ -1006,12 +1006,16 @@ textarea.inp{resize:vertical;line-height:1.5;}
 .stmt-fig dt{color:var(--muted);}
 .stmt-fig dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
   overflow-wrap:anywhere;}
+.stmt-sub{font-size:11.5px;color:var(--muted);text-align:right;padding:0 0 3px;
+  font-family:var(--mono);overflow-wrap:anywhere;}
+.stmt-card > .stmt-waiting{padding-top:6px;border-top:1px solid var(--line-2);margin-top:4px;}
 .stmt-approx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
 .hist-month{margin-top:22px;}
 .hist-month-total{text-align:right;text-transform:none;letter-spacing:0;font-family:var(--mono);}
-.hist-date{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;
+.hist-coming{margin-top:22px;}
+.hist-date,.coming-date{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;
   letter-spacing:.06em;padding:12px 0 2px;}
-.hist-day:first-child .hist-date{padding-top:0;}
+.hist-day:first-child .hist-date,.coming-day:first-child .coming-date{padding-top:0;}
 .hist-row{border-bottom:1px solid var(--line-2);}
 .hist-row > .trow{border-bottom:0;padding:9px 0;}
 .hist-co{margin-right:8px;}
@@ -1020,6 +1024,17 @@ textarea.inp{resize:vertical;line-height:1.5;}
 .stat-paid,.stat-lines-paid{background:var(--jade-soft);color:var(--jade);}
 .stat-partial{background:var(--amber-soft);color:var(--amber);}
 .stat-cancelled{background:var(--flag-soft);color:var(--flag);}
+.stat-coming{background:var(--raise);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line-hi);}
+/* A "?" that opens a short explanation in place. Round, and big enough to hit
+   with a thumb; the panel is inline, not a hover tip, since a phone has no hover. */
+.sec-title{display:flex;align-items:center;gap:8px;min-width:0;}
+.help-btn{flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--line-hi);
+  background:var(--card);color:var(--muted);font:600 13px/1 var(--sans);cursor:pointer;padding:0;}
+.help-btn:hover,.help-btn[aria-expanded="true"]{color:var(--ink);border-color:var(--ink-2);}
+.help-panel{background:var(--raise);border:1px solid var(--line);border-radius:12px;
+  padding:12px 16px;margin:0 0 12px;font-size:12.5px;color:var(--ink-2);line-height:1.55;}
+.help-panel ul{margin:0;padding-left:18px;}
+.help-panel li + li{margin-top:5px;}
 .payline-tag{font-size:10.5px;color:var(--jade);white-space:nowrap;}
 .print-sheet{display:none;}
 

@@ -12,10 +12,11 @@ import Totals from "./Totals.jsx";
  * ones there is anything to say about.
  */
 export default function ByCompany({
-  history, companies, client, onClient, range, label, open, toggle, now, onCsv,
+  history, pay, companies, client, onClient, range, label, open, toggle, now, onCsv,
 }) {
-  const statement = companyStatement(history, client, range);
-  const rows = statement.paydays;
+  const statement = companyStatement(history, client, range, pay);
+  // Coming first, soonest first, then what has happened, newest first.
+  const rows = [...statement.coming, ...statement.paydays];
   // The picker's own spelling: the statement's folded key is lower case.
   const name = companies.find((c) => c.client === client)?.company ?? statement.company;
   return (
@@ -38,8 +39,10 @@ export default function ByCompany({
       {rows.length > 0 && (
         <div className="panel">
           {rows.map((row) => (
-            <div className="hist-day" key={row.key}>
-              <div className="hist-date">{payDay(row.date)}</div>
+            <div className={row.status === "coming" ? "coming-day" : "hist-day"} key={row.key}>
+              <div className={row.status === "coming" ? "coming-date" : "hist-date"}>
+                {row.status === "coming" ? `Coming · ${payDay(row.date)}` : payDay(row.date)}
+              </div>
               <HistoryRow row={row} open={open.has(row.key)} onToggle={() => toggle(row.key)}
                           showCompany={false} />
             </div>

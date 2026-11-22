@@ -1,14 +1,15 @@
 import { formatMoney } from "../../domain/money.js";
 import { LineName } from "../dashboard/PayLines.jsx";
 import { payDay } from "../PaymentAnswer.jsx";
-import { STATUS_WORD, differenceWords, figuresOf } from "./words.js";
+import { STATUS_WORD, differenceWords, figuresOf, shownCents } from "./words.js";
 
 /**
  * One payday of one company in the history: who, what became of it, what was
  * expected, what came and the difference, and, opened, the lines it is made
  * of. Read-only; answering is the Upcoming list's job. A line paid one by one
  * is marked as such and looks the same whether its day was recorded or worked
- * out, because from the owner's side the payday rules gave it that day.
+ * out, because from the owner's side the payday rules gave it that day. A
+ * payday still to come is the same row, read-only, with what is expected.
  */
 export default function HistoryRow({ row, open, onToggle, showCompany = true }) {
   const { expected, received } = figuresOf(row);
@@ -29,12 +30,13 @@ export default function HistoryRow({ row, open, onToggle, showCompany = true }) 
           </div>
           <div className="trow-sub">
             <span>Expected {money(expected)}</span>
-            {" · "}<span>Received {money(received)}</span>
+            {/* Nothing has come of a payday that has not happened yet. */}
+            {row.status !== "coming" && <>{" · "}<span>Received {money(received)}</span></>}
             {diff && <>{" · "}<span className="hist-diff">{diff}</span></>}
             {movedFrom && <>{" · "}<span>moved from {movedFrom}</span></>}
           </div>
         </div>
-        <span className="trow-amt">{money(received)}</span>
+        <span className="trow-amt">{money(shownCents(row))}</span>
       </div>
       {open && (
         <div className="paylist">

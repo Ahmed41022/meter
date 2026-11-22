@@ -25,6 +25,15 @@
  *               the day it was moved to.
  *   lines-paid  every line of it was marked paid one by one, so there is no
  *               payment left to answer, only the lines.
+ *   netted      its lines, deductions included, net to nothing or less, so
+ *               nothing comes and there is nothing to answer, and its day has
+ *               passed. It is here, with its lines, so a payday that cancelled
+ *               itself out leaves a trace instead of vanishing from the list.
+ *               The net counts as expected and received alike: it is what the
+ *               lines come to, as with lines paid one by one.
+ *   coming      not past yet, and not answered as paid: money still to arrive.
+ *               Only `comingRows` makes these, from the forecast, for the
+ *               totals and the timeline.
  *
  * Answered payments are in whatever their date: "Already paid" a week early is
  * paid today. A payment moved to a day still ahead is not here, it is still
@@ -62,7 +71,7 @@ import { isCancelled, isPending, tasksOf } from "./earnings.js";
 
 export const STATUS = {
   PAID: "paid", PARTIAL: "partial", CANCELLED: "cancelled",
-  UNANSWERED: "unanswered", LINES_PAID: "lines-paid",
+  UNANSWERED: "unanswered", LINES_PAID: "lines-paid", NETTED: "netted", COMING: "coming",
 };
 
 const byNewest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
@@ -110,13 +119,21 @@ export const paymentHistory = (state, now) => {
     if (listed.partial) {
       put(row.date, {
         ...out, date: listed.date, moved: true, answeredAt: answer.answeredAt ?? null,
+        // The rest is owed either way; whether it is late or still to come
+        // depends on the day it was moved to, on the client's own clock.
+        restComing: !(listed.date < today),
         status: STATUS.PARTIAL, expectedCents: listed.partial.expectedCents,
         receivedCents: listed.partial.receivedCents, differenceCents: null,
       });
     } else if (listed.date < today) {
+      // Nothing comes where the lines net to nothing or less: there is no
+      // payment to be late, so it is not "not answered", and its net is
+      // taken as settled so the totals carry the deductions.
+      const netted = row.cents <= 0;
       put(row.date, {
         ...out, date: listed.date, moved: listed.moved === true, answeredAt: answer?.answeredAt ?? null,
-        status: STATUS.UNANSWERED, expectedCents: row.cents, receivedCents: 0, differenceCents: null,
+        status: netted ? STATUS.NETTED : STATUS.UNANSWERED, expectedCents: row.cents,
+        receivedCents: netted ? row.cents : 0, differenceCents: null,
       });
     }
   }
@@ -138,6 +155,7 @@ export const paymentHistory = (state, now) => {
     put(answer.scheduled, {
       ...out, lines: [], answeredAt: answer.answeredAt ?? null,
       date: closed ? answer.scheduled : answer.movedTo, moved: !closed,
+      ...(closed ? {} : { restComing: clocks.has(client) && !(answer.movedTo < clocks.get(client).today) }),
       status: answer.outcome === OUTCOME.PAID ? STATUS.PAID
         : answer.outcome === OUTCOME.CANCELLED ? STATUS.CANCELLED : STATUS.PARTIAL,
       expectedCents: expected, receivedCents: received,
@@ -198,7 +216,8 @@ const workEnd = (session) => {
  * money too; one with nothing yet becomes a paid row marked `inferred`, as a
  * line dated by the rules is. Earnings naming one open task go with it, dated
  * by the day they were added. Pending and cancelled money is left out, as it
- * is everywhere, and only money coming in is listed.
+ * is everywhere. Deductions are lines like any other, so a payday's figure is
+ * its net, and a payday that nets to nothing or less is a `netted` row.
  */
 const addWorkedLines = (state, now, index, base, clocks) => {
   const projects = (state.projects ?? []).filter((p) => !p.deletedAt && !isOffClock(p));
@@ -229,7 +248,7 @@ const addWorkedLines = (state, now, index, base, clocks) => {
 
     const add = (at, currency, line) => {
       const pay = paydayThrough(history, rule, at);
-      if (!pay || !(pay.date < today) || !(line.cents > 0)) return;
+      if (!pay || !(pay.date < today) || !Number.isFinite(line.cents) || line.cents === 0) return;
       const key = payoutKey(client, currency, pay.date);
       if (!rows.has(key)) rows.set(key, { client, company: named, currency, date: pay.date, lines: new Map() });
       const lines = rows.get(key).lines;
@@ -261,7 +280,10 @@ const addWorkedLines = (state, now, index, base, clocks) => {
   }
 
   for (const [key, row] of rows) {
-    const lines = [...row.lines.values()];
+    // Lines of one kind can cancel each other out; a payday of nothing but
+    // such lines has nothing to show.
+    const lines = [...row.lines.values()].filter((l) => l.cents !== 0);
+    if (lines.length === 0) continue;
     const cents = lines.reduce((n, l) => n + l.cents, 0);
     const found = index.get(key);
     if (found) {
@@ -278,7 +300,8 @@ const addWorkedLines = (state, now, index, base, clocks) => {
       continue;
     }
     index.set(key, {
-      ...base(row, row.date, lines), date: row.date, status: STATUS.PAID, inferred: true,
+      ...base(row, row.date, lines), date: row.date,
+      status: cents > 0 ? STATUS.PAID : STATUS.NETTED, inferred: true,
       expectedCents: cents, receivedCents: cents, differenceCents: 0,
     });
   }
@@ -289,34 +312,72 @@ const inPeriod = (date, { from, to } = {}) =>
 
 /** The figures of a set of rows, one currency each. Nothing here crosses a
  *  currency: the map is the only thing the rows are summed into. */
-const blank = () => ({ expected: 0, received: 0, outstanding: 0, cancelled: 0, difference: 0 });
+const blank = () => ({
+  expected: 0, received: 0, outstanding: 0, overdue: 0, coming: 0, waiting: 0, cancelled: 0, difference: 0,
+});
 
 /**
  * Adds one row to its currency's totals.
  *
  * Lines paid one by one count as expected and received alike, because they
- * came as listed. `outstanding` is what is still to come: all of an
- * unanswered payment and the rest of a partial one. `cancelled` is what a
- * cancelled payment did not bring. `difference` is the more or less that
- * closed payments came to, so a cancellation, which has its own figure, is not
- * in it twice.
+ * came as listed. `outstanding` is everything still to be paid, and is the sum
+ * of two things that are shown apart: `overdue`, all of an unanswered payment
+ * and the rest of a partial one, and `coming`, paydays not yet past. A coming
+ * payday is expected, since it is owed, and has received nothing. `cancelled`
+ * is what a cancelled payment did not bring. `difference` is the more or less
+ * that closed payments came to, so a cancellation, which has its own figure,
+ * is not in it twice.
  */
 const tally = (totals, row) => {
   const t = (totals[row.currency] ??= blank());
   const expected = row.expectedCents + row.paidLinesCents;
   t.expected += expected;
   t.received += row.receivedCents + row.paidLinesCents;
-  if (row.status === STATUS.UNANSWERED) t.outstanding += row.expectedCents;
-  else if (row.status === STATUS.PARTIAL) t.outstanding += Math.max(0, row.expectedCents - row.receivedCents);
+  const owe = (key, cents) => { t[key] += cents; t.outstanding += cents; };
+  if (row.status === STATUS.UNANSWERED) owe("overdue", row.expectedCents);
+  else if (row.status === STATUS.PARTIAL) owe(row.restComing ? "coming" : "overdue", Math.max(0, row.expectedCents - row.receivedCents));
+  else if (row.status === STATUS.COMING) owe("coming", row.expectedCents);
   else if (row.status === STATUS.CANCELLED) t.cancelled += Math.max(0, row.expectedCents - row.receivedCents);
   else if (row.status === STATUS.PAID) t.difference += row.differenceCents;
 };
 
-export const totalsOf = (rows) => {
+/**
+ * The totals of a set of rows. `waiting` is work still on a review, which is
+ * not owed yet and so is in none of the other figures: it only says how much
+ * more is on its way once somebody decides. It is added up apart because a
+ * waiting row is not a payment.
+ */
+export const totalsOf = (rows, waiting = []) => {
   const totals = {};
   for (const row of rows) tally(totals, row);
+  for (const row of waiting) (totals[row.currency] ??= blank()).waiting += row.cents;
   return totals;
 };
+
+/**
+ * Upcoming payments' still-to-come paydays as history rows, so the totals, the
+ * timeline, the print and the CSV can treat them like any other row.
+ *
+ * Only `due`: the dated money that is not yet past, after answers, a moved
+ * payment on the day it was moved to. `overdue` is left out because the
+ * history already has those as unanswered, and a payment partly received is
+ * left out of `due` for the same reason, its rest being in the history as
+ * `partial` and counted there. `waiting` is returned apart: not owed yet, so
+ * not a row of the statement.
+ */
+export const comingRows = (pay) => ({
+  coming: (pay?.due ?? []).filter((r) => !r.partial).map((r) => ({
+    key: `coming|${payoutKey(r.client, r.currency, r.scheduled)}`,
+    client: r.client, company: r.company, currency: r.currency,
+    scheduled: r.scheduled, date: r.date, moved: r.moved === true, answeredAt: null,
+    lines: r.tasks ?? [], paidLines: [], paidLinesCents: 0,
+    status: STATUS.COMING, expectedCents: r.cents, receivedCents: 0, differenceCents: null,
+  })),
+  waiting: pay?.waiting ?? [],
+});
+
+const bySoonest = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+  || a.company.localeCompare(b.company) || a.currency.localeCompare(b.currency);
 
 /**
  * The history grouped by payday, newest first: each date with its rows and a
@@ -324,8 +385,16 @@ export const totalsOf = (rows) => {
  * dates are the rows' own, on their clients' clocks, so a period's edges are
  * days and not instants. `from` and `to` are inclusive and either may be left
  * out.
+ *
+ * `pay` is `upcomingPay`'s output, when what is still to come should be part
+ * of the picture. Its paydays are in the period by their own dates, as the
+ * history's are: this month holds a payday later this month, last month and
+ * last year hold none. They are returned as `coming`, soonest first and apart
+ * from the days, which stay what has happened, and they are in `totals`, as
+ * Still owed, with work waiting on a review beside it. `totals` covers
+ * everything in the period; the months' own subtotals are of the days.
  */
-export const historyByPayday = (history, period = {}) => {
+export const historyByPayday = (history, period = {}, pay = null) => {
   const days = new Map();
   for (const row of history ?? []) {
     if (!inPeriod(row.date, period)) continue;
@@ -342,25 +411,38 @@ export const historyByPayday = (history, period = {}) => {
     m.dates.push(day.date);
     m.rows.push(...day.rows);
   }
+  const ahead = comingRows(pay);
+  const coming = ahead.coming.filter((r) => inPeriod(r.date, period)).sort(bySoonest);
+  const waiting = ahead.waiting.filter((r) => inPeriod(r.date, period));
   return {
     days: dated,
     months: [...months.values()].map(({ month, dates, rows }) => ({ month, dates, totals: totalsOf(rows) })),
+    coming,
+    totals: totalsOf([...dated.flatMap((d) => d.rows), ...coming], waiting),
   };
 };
 
 /**
  * One company's account of itself over a period: per currency, what was
- * expected, what came, what is still outstanding, what was cancelled and the
- * sum of the differences, and the paydays behind those figures, newest first,
- * each with its lines. `client` is matched by its folded name, as everywhere.
+ * expected, what came, what is still outstanding (overdue and coming), what
+ * was cancelled and the sum of the differences, and the paydays behind those
+ * figures, newest first, each with its lines. `client` is matched by its
+ * folded name, as everywhere. `pay` is `upcomingPay`'s output, as for
+ * `historyByPayday`: this company's coming paydays are `coming`, soonest first,
+ * and are in the totals.
  */
-export const companyStatement = (history, client, period = {}) => {
+export const companyStatement = (history, client, period = {}, pay = null) => {
   const key = fold(client);
   const paydays = (history ?? []).filter((row) => row.client === key && inPeriod(row.date, period));
+  const ahead = comingRows(pay);
+  const mine = (r) => r.client === key && inPeriod(r.date, period);
+  const coming = ahead.coming.filter(mine).sort(bySoonest);
+  const waiting = ahead.waiting.filter(mine);
   return {
     client: key,
-    company: paydays[0]?.company ?? String(client ?? "").trim(),
-    totals: totalsOf(paydays),
+    company: paydays[0]?.company ?? coming[0]?.company ?? String(client ?? "").trim(),
+    totals: totalsOf([...paydays, ...coming], waiting),
     paydays,
+    coming,
   };
 };

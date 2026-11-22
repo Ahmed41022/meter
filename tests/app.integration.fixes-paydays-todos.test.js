@@ -323,10 +323,11 @@ describe("fixes: paydays and settling", () => {
     seed.earnings = [earning("e1", "piece", 1_200), earning("e2", "bonus", 1_500),
                      earning("e3", "adjust", 400), earning("e4", "adjust", -250)];
     const d = (await bootPayments(seed)).window.document;
-    // One task, whatever the number of lines, and the row's figure unchanged:
-    // an hour at 40, plus 12 + 15 + 4 (71). The deduction is not in it.
+    // One task, whatever the number of lines. The deduction comes off the
+    // payday, in the adjustment's own line: an hour at 40, plus 12 + 15, plus
+    // the adjustments, 4 - 2.50 (68.50).
     expect(payRows(d)).toEqual(["Northwind · 1 task"]);
-    expect(d.querySelector(".payrow .trow-amt").textContent).toBe("$71.00");
+    expect(d.querySelector(".payrow .trow-amt").textContent).toBe("$68.50");
     d.querySelector(".payrow .trow").click();
     await settle();
     const lines = [...d.querySelectorAll(".payline")].map((e) => e.textContent);
@@ -334,7 +335,7 @@ describe("fixes: paydays and settling", () => {
       "Hours · 1234 · Gateway$40.00",
       "Per accepted item · 1234 · Gateway$12.00",
       "Bonus · 1234 · Gateway$15.00",
-      "Adjustment · 1234 · Gateway$4.00",
+      "Adjustment · 1234 · Gateway$1.50",
     ]);
   }, 30_000);
 

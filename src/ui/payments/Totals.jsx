@@ -15,6 +15,12 @@ export const METRICS = [
 export const metricText = (key, cents, currency) =>
   (key === "difference" ? differenceWords(cents, currency) : formatMoney(cents, currency));
 
+/** What Still owed is made of, "overdue $X · coming $Y": the past paydays
+ *  nobody has answered and the rest of partly paid ones, and the paydays still
+ *  ahead. The two always add up to the figure above them. */
+export const owedParts = (t, cur) =>
+  `overdue ${formatMoney(t.overdue, cur)} · coming ${formatMoney(t.coming, cur)}`;
+
 /**
  * The totals of every currency as one figure in the display currency, per
  * metric, or `rows: null` when nothing was converted. A figure here is an
@@ -54,12 +60,24 @@ export default function Totals({ totals }) {
           <div className="eyebrow">{cur}</div>
           <dl>
             {METRICS.map(([key, label]) => (
-              <div key={key} className="stmt-fig">
-                <dt>{label}</dt>
-                <dd data-metric={key}>{metricText(key, totals[cur][key], cur)}</dd>
+              <div key={key} className="stmt-fig-group">
+                <div className="stmt-fig">
+                  <dt>{label}</dt>
+                  <dd data-metric={key}>{metricText(key, totals[cur][key], cur)}</dd>
+                </div>
+                {key === "outstanding" && (
+                  <div className="stmt-sub" data-metric="owed-parts">{owedParts(totals[cur], cur)}</div>
+                )}
               </div>
             ))}
           </dl>
+          {/* Not owed yet, so it is in none of the figures above and only
+              said, quietly, when there is some. */}
+          {totals[cur].waiting > 0 && (
+            <div className="stmt-sub stmt-waiting" data-metric="waiting">
+              Waiting on review {formatMoney(totals[cur].waiting, cur)}
+            </div>
+          )}
         </div>
       ))}
       <div className="stmt-card stmt-approx" role="group" aria-label="Totals in the display currency">

@@ -956,18 +956,22 @@ describe("what is coming in, line by line", () => {
     expect(upcomingPay(s, NOW).due[0].cents).toBe(1_200);
   });
 
-  it("does not take a negative adjustment off the day, as before", () => {
-    // The forecast only ever counted money coming in, a record at a time, and
-    // netting a deduction in would have moved every figure it had given.
+  it("takes a negative adjustment off the day, as a line of its own", () => {
+    // A deduction is money too: the payday's figure is the net, so it is what
+    // will actually land.
     const base = { tasks: [mkTask("t1", "batch 12")], sessions: [sitting("s1", "t1", 2)] };
     const plain = upcomingPay(ledger({ ...base, earnings: [money("e1", ["t1"], EARNING.BONUS, 1_000)] }), NOW);
     const docked = upcomingPay(ledger({
       ...base,
       earnings: [money("e1", ["t1"], EARNING.BONUS, 1_000), money("e2", ["t1"], EARNING.ADJUSTMENT, -300)],
     }), NOW);
-    expect(docked.due[0].cents).toBe(plain.due[0].cents);
-    expect(docked.due[0].tasks.map((l) => l.part)).toEqual(["hours", "bonus"]);
-    // A task with nothing but a deduction contributes nothing at all.
+    expect(docked.due[0].cents).toBe(plain.due[0].cents - 300);
+    expect(docked.due[0].tasks.map((l) => [l.part, l.cents])).toEqual([
+      ["hours", 8_000], ["bonus", 1_000], ["adjust", -300],
+    ]);
+    // The line names the earning it is, so it can be ticked, moved or marked.
+    expect(docked.due[0].tasks[2].earningIds).toEqual(["e2"]);
+    // A task with nothing but a deduction nets below nothing: no payment.
     const only = ledger({ tasks: [mkTask("t1", "batch 12")], earnings: [money("e1", ["t1"], EARNING.ADJUSTMENT, -300)] });
     expect(upcomingPay(only, NOW)).toEqual({ due: [], waiting: [], overdue: [] });
   });
@@ -1047,13 +1051,17 @@ describe("docs/payments-seed.json", () => {
     expect(parts(waiting)).toEqual(["piece"]);
   });
 
-  it("leaves its negative adjustments off the paydays, whose rows still add up", () => {
-    // Two deductions sit in the ledger, and neither makes a line.
-    expect(seed.earnings.filter((e) => e.kind === "adjust" && e.cents < 0 && !e.received)).toHaveLength(2);
+  it("takes its negative adjustments off the paydays they belong to, whose rows still add up", () => {
+    // Two deductions sit in the ledger, and each is a negative line.
+    const deductions = seed.earnings.filter((e) => e.kind === "adjust" && e.cents < 0 && !e.received);
+    expect(deductions).toHaveLength(2);
+    const negative = [...due, ...waiting].flatMap((r) => r.tasks).filter((l) => l.cents < 0);
+    expect(negative.map((l) => l.part)).toEqual(Array(negative.length).fill("adjust"));
+    expect(negative.length).toBeGreaterThan(0);
     // A partly received row lists only what is left, so its lines are more.
     for (const row of [...due, ...waiting].filter((r) => !r.partial)) {
       expect(row.cents).toBe(row.tasks.reduce((sum, l) => sum + l.cents, 0));
-      expect(row.tasks.every((l) => l.cents > 0)).toBe(true);
+      expect(row.cents).toBeGreaterThan(0);
     }
   });
 

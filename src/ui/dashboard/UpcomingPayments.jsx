@@ -3,6 +3,7 @@ import { currenciesByValue } from "../../domain/performance.js";
 import { clockFor } from "../../domain/payouts.js";
 import PaymentAnswer, { payDay } from "../PaymentAnswer.jsx";
 import PayLines from "./PayLines.jsx";
+import { useHelp } from "../HelpTip.jsx";
 import { useMoney } from "../useMoney.js";
 import { moneyText, rateNote } from "../fxMoney.js";
 
@@ -30,6 +31,7 @@ export default function UpcomingPayments({
      needs it for the notice that follows a passed payday on every tab. */
   /** Never summed across currencies — 100 EGP and 100 USD are not 200. */
   const fx = useMoney();
+  const help = useHelp("How upcoming payments work");
   /** The display currency, when there is one, applies to what is SHOWN on a
    *  heading or a row. The rows themselves keep their own cents and currency:
    *  answering a payment reads those, never anything converted. */
@@ -64,7 +66,10 @@ export default function UpcomingPayments({
   return (
     <div className="sec">
       <div className="sec-head">
-        <span className="eyebrow">Upcoming payments</span>
+        <span className="sec-title">
+          <span className="eyebrow">Upcoming payments</span>
+          {help.button}
+        </span>
         {/* Only the answered money, and it says so. The rows below carry
             dates of their own now, so a bare figure here would read as
             their total and be short by everything still under review. */}
@@ -73,6 +78,38 @@ export default function UpcomingPayments({
           {pay.due.length === 0 ? "nothing confirmed yet" : `${payTotal} confirmed`}
         </span>
       </div>
+      {/* How the list is worked out, behind the "?" so it is there when
+          wanted and not a wall of text under every payday. */}
+      {help.panel(
+        <ul>
+          <li>Dates come from each client&apos;s payday, set in a project&apos;s settings.</li>
+          <li>
+            Paid as worked: a task is paid in the run for the period it was handed in.
+            Paid once accepted: in the run for the period its answer fell in, so one
+            accepted after its period shut rides the next run. Work nobody has reviewed
+            has no date, only the soonest it could arrive.
+          </li>
+          <li>
+            A payday that has passed stays listed as overdue until you say it was paid
+            or give it a new date.
+          </li>
+          <li>
+            A reward shared by several tasks is paid with the last of them, and waits
+            until then. A bonus tied to no task rides the next payday after it was
+            added, unless a payday was chosen for it or it is marked paid.
+          </li>
+          <li>
+            A deduction, such as a negative adjustment, comes off the payday it
+            belongs to, so each figure is what will actually land. A payday that nets
+            to nothing is not listed here; once it has passed, it appears in the
+            history with its lines.
+          </li>
+          <li>
+            Open a row to see its lines. Tick some to mark just those paid, or move
+            them to another day, when a client pays only part of a payday.
+          </li>
+        </ul>,
+      )}
       <div className="panel">
         {/* Here rather than with the app's own notices: those say something
             is wrong with the app or the data, and this is a question about
@@ -175,22 +212,6 @@ export default function UpcomingPayments({
               )}
             </div>
           ))}
-        <div className="hint" style={{ marginBottom: 0 }}>
-          Dates come from each client&apos;s payday, set in a project&apos;s settings.
-          Where a project pays as worked, a task is paid in the run for the period it
-          was handed in. Where it pays once accepted, it is paid in the run for the
-          period its answer fell in — accepted after its own period shut, it rides the
-          next run — and work nobody has reviewed yet has no date, only the soonest it
-          could arrive. A payday that has passed stays listed, as overdue, until you say
-          it was paid or give it a new date. A reward shared by several tasks is paid with the last of them
-          to get there, and waits like unreviewed work until then. Open a row to see
-          what makes it up: each task&apos;s hours, per-item pay, bonuses and adjustments
-          on lines of their own. Tick lines to mark just those paid, or to move them to
-          another day, when a client pays part of a payday. A bonus tied to no task is paid on the next payday
-          after the day it was added, unless a payday was chosen for it or it was
-          marked as already paid. A negative adjustment is not taken off the day, only
-          the money coming in is listed. Anything whose payday has passed has dropped off.
-        </div>
       </div>
     </div>
   );

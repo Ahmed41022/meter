@@ -50,7 +50,7 @@ export default function PaymentsView({
           />
         )}
       </div>
-      <History history={history} now={now} />
+      <History history={history} pay={pay} now={now} />
     </div>
   );
 }

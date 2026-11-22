@@ -332,7 +332,7 @@ describe("schedules, currencies and statements", () => {
     expect(st.company).toBe("Larkspur");
     expect(st.totals).toEqual({
       // Four payments of 4,000 expected; 4,100, nothing, 1,000 and 4,000 came.
-      USD: { expected: 16_000, received: 9_100,outstanding: 3_000, cancelled: 4_000, difference: 100 },
+      USD: { expected: 16_000, received: 9_100, outstanding: 3_000, overdue: 0, coming: 3_000, waiting: 0, cancelled: 4_000, difference: 100 },
     });
     expect(st.paydays.map((r) => r.date)).toEqual(["2026-11-25", "2026-11-18", "2026-11-11", "2026-11-04"]);
     expect(st.paydays.every((r) => Array.isArray(r.lines))).toBe(true);
@@ -342,7 +342,7 @@ describe("schedules, currencies and statements", () => {
     let s = ledger([t9, t9b]);
     s = markLines(s, [lineOf(s, "task:t9:hours")], { received: true, on: "2026-11-11" });
     expect(companyStatement(hist(s), "Larkspur").totals.USD)
-      .toEqual({ expected: 8_000, received: 4_000, outstanding: 4_000, cancelled: 0, difference: 0 });
+      .toEqual({ expected: 8_000, received: 4_000, outstanding: 4_000, overdue: 4_000, coming: 0, waiting: 0, cancelled: 0, difference: 0 });
   });
 
   it("is empty for a company with nothing in the period", () => {

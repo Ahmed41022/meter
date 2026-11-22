@@ -1,7 +1,7 @@
 import { formatMoney } from "../../domain/money.js";
 import { lineWords } from "../../domain/paymentsCsv.js";
 import { payDay } from "../PaymentAnswer.jsx";
-import { METRICS, metricText, useApproxTotals } from "./Totals.jsx";
+import { METRICS, metricText, owedParts, useApproxTotals } from "./Totals.jsx";
 import { STATUS_WORD, differenceWords, figuresOf } from "./words.js";
 
 /**
@@ -35,6 +35,12 @@ export default function StatementSheet({ title, rows, totals, now }) {
           ))}
         </tbody>
       </table>
+      {codes.map((cur) => (
+        <p key={cur} className="sheet-owed">
+          {cur}: still owed is {owedParts(totals[cur], cur)}
+          {totals[cur].waiting > 0 ? `. Waiting on review ${formatMoney(totals[cur].waiting, cur)}, not owed yet` : ""}
+        </p>
+      ))}
       {approx && (
         <p className="sheet-approx">
           All currencies, estimated: {approx.map((r) => `${r.label} ${r.text}`).join(" · ")}
@@ -50,7 +56,7 @@ export default function StatementSheet({ title, rows, totals, now }) {
           <div className="sheet-day" key={row.key}>
             <h3>{payDay(row.date)} · {row.company || "No company"} · {STATUS_WORD[row.status]}</h3>
             <p>
-              Expected {money(expected)} · Received {money(received)}
+              Expected {money(expected)}{row.status === "coming" ? "" : ` · Received ${money(received)}`}
               {diff ? ` · ${diff}` : ""}
               {row.moved && row.scheduled !== row.date ? ` · moved from ${payDay(row.scheduled)}` : ""}
             </p>

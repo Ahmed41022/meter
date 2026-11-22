@@ -12,6 +12,11 @@ export const differenceWords = (cents, currency) => {
   return `${formatMoney(Math.abs(cents), currency)} ${cents > 0 ? "more" : "less"}`;
 };
 
+/** What a row's big figure is: the amount still to come for a payday that has
+ *  not happened, otherwise what came. */
+export const shownCents = (row) => (row.status === "coming"
+  ? row.expectedCents : row.receivedCents + row.paidLinesCents);
+
 /** "November 2026" from a "2026-11" month key, with no time zone to shift it. */
 export const monthName = (month) =>
   new Date(`${month}-01T00:00:00Z`).toLocaleDateString(undefined, {
