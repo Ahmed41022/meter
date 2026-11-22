@@ -26,6 +26,10 @@ project, a client or an amount.
 | --- | --- |
 | ![A piece-rate project, quoting a price per accepted item instead of an hourly rate, above a list of accepted items at two different prices](docs/images/project.png) | ![The same overview at phone width, the cards reflowed two abreast](docs/images/phone.png) |
 
+**What each client paid, payday by payday**
+
+![The Payments tab: a statement for the year with what was received, expected and is still owed, split into overdue and coming, above the history of every payday, each client's payment marked paid with what was expected and what came](docs/images/payments.png)
+
 <sub>Screenshots run against `docs/demo-seed.json` — invented projects, invented
 rates. `npm run shots` regenerates every one of them.</sub>
 
@@ -79,9 +83,12 @@ rates. `npm run shots` regenerates every one of them.</sub>
   a QR code; a recovery code gets the account back. Google Drive sync still
   works for now and is being replaced.
 - **Keeps the history of what was paid.** The Payments tab holds Upcoming
-  payments and, below it, every past payday by date or by company: what was
-  expected, what came, what is still owed, per currency and never added across
-  them. Print it as a statement or export it as a CSV.
+  payments and, below it, every payday by date or by company, back to the
+  first day of the ledger: work from before paydays were set up is dated by
+  the client's schedule as it stood then. It shows what was expected, what
+  came, and what is still owed, overdue and coming, per currency and never
+  added across them. A deduction comes off the payday it belongs to, so each
+  figure is what actually lands. Print it as a statement or export it as a CSV.
 - **Follows your system's light or dark setting**, or whichever you pick,
   from the Settings tab, which also lists every client's payday, holds
   backup, restore and sync, and sets the order each project list opens in.

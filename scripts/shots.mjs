@@ -282,6 +282,9 @@ const seedInto = async (p, { theme = "light", period = "week", running = null } 
     localStorage.setItem("meter:v1", ${JSON.stringify(JSON.stringify(rebased({ running })))});
     localStorage.setItem("meter:theme", ${JSON.stringify(theme)});
     localStorage.setItem("meter:period", ${JSON.stringify(period)});
+    // The one-time question about paydays already past is for a ledger that
+    // has never been asked; the README shows one that has.
+    localStorage.setItem("meter:payouts-asked", "1");
     return true;
   })()`);
   await p.cdp.send("Page.navigate", { url: ORIGIN });
@@ -357,6 +360,15 @@ const SHOTS = {
     await p.click("nav.tabs button.tab", "Work");
     await p.until(`document.querySelector("button.card")`, "the project list");
     await p.shot("projects.png");
+  },
+
+  /** What is owed and when, then the history of what came, by payday. */
+  async payments(p) {
+    await p.viewport(900, 1200);
+    await seedInto(p);
+    await p.click("nav.tabs button.tab", "Payments");
+    await sleep(600);
+    await p.shot("payments.png");
   },
 
   async phone(p) {

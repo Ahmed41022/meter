@@ -3010,7 +3010,8 @@
       "at": 1781017200000,
       "note": "quality bonus",
       "createdAt": 1781017200000,
-      "deletedAt": null
+      "deletedAt": null,
+      "received": true
     },
     {
       "id": "e1q",
@@ -3050,7 +3051,8 @@
       "at": 1782226800000,
       "note": "quality bonus",
       "createdAt": 1782226800000,
-      "deletedAt": null
+      "deletedAt": null,
+      "received": true
     },
     {
       "id": "e25",
@@ -3104,7 +3106,8 @@
       "at": 1783004400000,
       "note": "quality bonus",
       "createdAt": 1783004400000,
-      "deletedAt": null
+      "deletedAt": null,
+      "received": true
     },
     {
       "id": "e2r",
@@ -3158,7 +3161,8 @@
       "at": 1785078000000,
       "note": "quality bonus",
       "createdAt": 1785078000000,
-      "deletedAt": null
+      "deletedAt": null,
+      "received": true
     },
     {
       "id": "e3e",
@@ -3443,6 +3447,36 @@
       "done": true,
       "doneAt": 1790153444648,
       "createdAt": 1790146244648,
+      "deletedAt": null
+    }
+  ],
+  "companies": [
+    {
+      "id": "co:northwind",
+      "name": "Northwind",
+      "payPeriod": {
+        "kind": "weekly",
+        "cutoff": 1,
+        "payday": 3,
+        "after": 0,
+        "closesAt": 0,
+        "zone": "UTC"
+      },
+      "createdAt": 1778878800000,
+      "deletedAt": null
+    },
+    {
+      "id": "co:bellweather-labs",
+      "name": "Bellweather Labs",
+      "payPeriod": {
+        "kind": "weekly",
+        "cutoff": 6,
+        "payday": 5,
+        "after": 0,
+        "closesAt": 0,
+        "zone": "UTC"
+      },
+      "createdAt": 1778878800000,
       "deletedAt": null
     }
   ]
