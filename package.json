@@ -6,7 +6,7 @@
   "description": "An hourly earnings meter — time a session, watch the money accrue, keep an honest ledger per project.",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
