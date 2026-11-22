@@ -88,7 +88,7 @@ import { tasksFor } from "./tasks.js";
 import { pricer } from "./terms.js";
 import { TASK, taskState } from "./taskState.js";
 import { EARNING, isCancelled, isPending, paysOnAcceptance, tasksOf } from "./earnings.js";
-import { OUTCOME, answersByPayment, payoutKey } from "./payouts.js";
+import { OUTCOME, answersByPayment, livePayouts, payoutKey } from "./payouts.js";
 import { dayOnClock, isDay, payHistoryFor, payPeriodFor, paydayOn, paydayThrough } from "./payPeriod.js";
 
 /** What the clock earned under one task, at whatever rate each sitting is
@@ -179,16 +179,25 @@ const reachedAt = (project, task) => {
     && Number.isFinite(task.submittedAt) ? task.submittedAt : null;
 };
 
+/** A stored day, or null: the field is absent on everything written before
+ *  it existed, and absent means "not recorded". */
+const dayOrNull = (value) => (isDay(value) ? value : null);
+
 /**
- * Money with a date, and money still waiting on somebody.
+ * The forecast's rows, before any answer is applied: the one place a payday is
+ * worked out, shared by `upcomingPay` and the history (payHistory.js) so the
+ * two can never date the same money differently.
  *
- * Both are sorted soonest first and carry one row per company, day and
- * currency. A row's `date` is its payday as the client's own clock names it
- * ("2026-10-07"), which is what to print; `at` is that day's midnight on the
- * same clock, for ordering only. A `waiting` row's date is the earliest the
- * money could arrive, never a date it is expected on.
+ * With `settled` false, the money still to come: lines marked received are left
+ * out, as they always were. With `settled` true, the opposite set and nothing
+ * else: ONLY the lines somebody marked paid one by one, dated exactly as they
+ * would have been had they not been, which is how the history knows which
+ * payday they belonged to. Those lines carry `receivedOn`, the day recorded when
+ * they were marked, or null where none was (a line marked before dates were
+ * kept). Money an answer wrote as its own adjustment is received too, but it
+ * is the answer's difference and not a line anybody paid, so it is not one.
  */
-export const upcomingPay = (state, now) => {
+export const forecastRows = (state, now, settled = false) => {
   const due = new Map();
   const waiting = new Map();
   /*
@@ -198,6 +207,8 @@ export const upcomingPay = (state, now) => {
    * task made that a pause of most of a second on a ledger a few years deep.
    */
   const byTask = new Map();
+  const adjustments = settled
+    ? new Set(livePayouts(state).map((p) => p.adjustmentId).filter(Boolean)) : null;
   for (const s of state.sessions ?? []) {
     if (s.deletedAt) continue;
     const key = `${s.projectId}|${s.taskId}`;
@@ -216,7 +227,8 @@ export const upcomingPay = (state, now) => {
     map.get(key).push(earning);
   };
   for (const earning of state.earnings ?? []) {
-    if (earning.deletedAt || isCancelled(earning) || earning.received === true) continue;
+    if (earning.deletedAt || isCancelled(earning) || (earning.received === true) !== settled) continue;
+    if (settled && adjustments.has(earning.id)) continue;
     const named = tasksOf(earning);
     if (named.length === 0) {
       if (earning.cents > 0) file(loose, earning.projectId, earning);
@@ -303,13 +315,17 @@ export const upcomingPay = (state, now) => {
        * left off a payday it would only have made look smaller.
        */
       const owed = new Map();
-      const add = (when, cur, part, cents, earningId) => {
+      // Settled lines are kept apart by the day they were marked on, so that
+      // one line never claims two dates; for money still to come that is
+      // always null and the key is the part alone.
+      const add = (when, cur, part, cents, earningId, receivedOn = null) => {
         if (when === null || !(cents > 0)) return;
         const at = `${when.date}|${cur}`;
         if (!owed.has(at)) owed.set(at, { when, cur, parts: new Map() });
         const parts = owed.get(at).parts;
-        if (!parts.has(part)) parts.set(part, { cents: 0, earningIds: [] });
-        const line = parts.get(part);
+        const pk = `${part}|${receivedOn ?? ""}`;
+        if (!parts.has(pk)) parts.set(pk, { part, receivedOn, cents: 0, earningIds: [] });
+        const line = parts.get(pk);
         line.cents += cents;
         if (earningId) line.earningIds.push(earningId);
       };
@@ -318,14 +334,16 @@ export const upcomingPay = (state, now) => {
        * already paid, which leaves them off, or moved to a day of their own,
        * which dates them there and leaves the rest of the task where it was.
        */
-      if (task.hoursReceived !== true) {
+      if ((task.hoursReceived === true) === settled) {
         const hoursPay = isDay(task.hoursPayday) ? paydayOn(rule, task.hoursPayday) : pay;
-        add(hoursPay, currency, "hours", hourlyCents(byTask, project, task.id, now));
+        add(hoursPay, currency, "hours", hourlyCents(byTask, project, task.id, now), null,
+            dayOrNull(task.hoursReceivedOn));
       }
       // Only lines naming this task alone. A reward shared across many tasks
       // is not this one's to date, and is dated on its own below.
       for (const earning of sole.get(task.id) ?? []) {
-        add(pay, earning.currency, earning.kind || "other", earning.cents, earning.id);
+        add(pay, earning.currency, earning.kind || "other", earning.cents, earning.id,
+            dayOrNull(earning.receivedOn));
       }
 
       for (const { when, cur, parts } of owed.values()) {
@@ -334,12 +352,13 @@ export const upcomingPay = (state, now) => {
         if (pendingReview && when.date < today) continue;
         const row = into(pendingReview ? waiting : due, `${client}|${when.date}|${cur}`,
                          { client, company, at: when.at, date: when.date, currency: cur });
-        for (const [part, { cents, earningIds }] of parts) {
+        for (const { part, receivedOn, cents, earningIds } of parts.values()) {
           row.cents += cents;
           row.tasks.push({
             key: `task:${task.id}:${part}`, kind: "task", part,
             taskId: task.id, label: task.label, project: project.name, projectId: project.id,
             cents, status, ...(earningIds.length ? { earningIds } : {}),
+            ...(settled ? { receivedOn } : {}),
           });
         }
       }
@@ -382,6 +401,7 @@ export const upcomingPay = (state, now) => {
         key: `reward:${earning.id}`, kind: "reward", earningId: earning.id,
         label: earning.note || "Reward", covers: tasksOf(earning).length,
         project: project.name, projectId: project.id, cents: earning.cents,
+        ...(settled ? { receivedOn: dayOrNull(earning.receivedOn) } : {}),
       });
     }
 
@@ -412,9 +432,53 @@ export const upcomingPay = (state, now) => {
         earningId: earning.id, label: earning.note || "", project: project.name,
         projectId: project.id, cents: earning.cents,
         ...(task ? { taskId: task.id, taskLabel: task.label } : {}),
+        ...(settled ? { receivedOn: dayOrNull(earning.receivedOn) } : {}),
       });
     }
   }
+
+  return { due: rows(due, "due"), waiting: rows(waiting, "wait"), clocks };
+};
+
+/** Closed, whatever came: the money is in the earnings, or never will be. */
+export const isClosed = (answer) =>
+  answer?.outcome === OUTCOME.PAID || answer?.outcome === OUTCOME.CANCELLED;
+
+/**
+ * A due row as it is listed once its answer is applied: a moved or partly paid
+ * one is the same row, under the same key, on the date it was moved to, and a
+ * partly paid one carries only the rest. `scheduled` is the date the forecast
+ * gave it, which is what an answer is filed under. Shared with the history so
+ * a moved payment is on the same date in both places.
+ */
+export const listRow = (row, answer, rule) => {
+  const away = answer?.outcome === OUTCOME.MOVED || answer?.outcome === OUTCOME.PARTIAL;
+  const moved = away ? paydayOn(rule, answer.movedTo) : null;
+  let listed = moved
+    ? { ...row, scheduled: row.date, moved: true, date: moved.date, at: moved.at }
+    : { ...row, scheduled: row.date };
+  // Partly received: only the rest is still coming, and the row says so. The
+  // figure is worked from what was expected on the day it was first
+  // answered, which is what the amount received was measured against.
+  if (moved && answer.outcome === OUTCOME.PARTIAL) {
+    const expected = answer.expectedCents ?? row.cents;
+    const got = answer.receivedCents ?? 0;
+    listed = { ...listed, cents: Math.max(0, expected - got), partial: { expectedCents: expected, receivedCents: got } };
+  }
+  return listed;
+};
+
+/**
+ * Money with a date, and money still waiting on somebody.
+ *
+ * Both are sorted soonest first and carry one row per company, day and
+ * currency. A row's `date` is its payday as the client's own clock names it
+ * ("2026-10-07"), which is what to print; `at` is that day's midnight on the
+ * same clock, for ordering only. A `waiting` row's date is the earliest the
+ * money could arrive, never a date it is expected on.
+ */
+export const upcomingPay = (state, now) => {
+  const { due, waiting, clocks } = forecastRows(state, now);
 
   /*
    * The answers, applied last, to the rows exactly as they were built. A row
@@ -432,30 +496,17 @@ export const upcomingPay = (state, now) => {
   const answers = answersByPayment(state);
   const upcoming = [];
   const late = [];
-  for (const row of rows(due, "due")) {
+  for (const row of due) {
     const { rule, today } = clocks.get(row.client);
     const answer = answers.get(payoutKey(row.client, row.currency, row.date));
-    // Closed, whatever came: the money is in the earnings, or never will be.
-    if (answer?.outcome === OUTCOME.PAID || answer?.outcome === OUTCOME.CANCELLED) continue;
-    const away = answer?.outcome === OUTCOME.MOVED || answer?.outcome === OUTCOME.PARTIAL;
-    const moved = away ? paydayOn(rule, answer.movedTo) : null;
-    let listed = moved
-      ? { ...row, scheduled: row.date, moved: true, date: moved.date, at: moved.at }
-      : { ...row, scheduled: row.date };
-    // Partly received: only the rest is still coming, and the row says so. The
-    // figure is worked from what was expected on the day it was first
-    // answered, which is what the amount received was measured against.
-    if (moved && answer.outcome === OUTCOME.PARTIAL) {
-      const expected = answer.expectedCents ?? row.cents;
-      const got = answer.receivedCents ?? 0;
-      listed = { ...listed, cents: Math.max(0, expected - got), partial: { expectedCents: expected, receivedCents: got } };
-    }
+    if (isClosed(answer)) continue;
+    const listed = listRow(row, answer, rule);
     (listed.date < today ? late : upcoming).push(listed);
   }
   const byDay = (a, b) => a.at - b.at || a.company.localeCompare(b.company);
   return {
     due: upcoming.sort(byDay),
-    waiting: rows(waiting, "wait").map((row) => ({ ...row, scheduled: row.date })),
+    waiting: waiting.map((row) => ({ ...row, scheduled: row.date })),
     overdue: late.sort(byDay),
   };
 };

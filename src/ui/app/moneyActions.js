@@ -111,7 +111,11 @@ export function paymentActions({ commit, flash, stateRef }) {
       }
     }
     const before = readMarks(stateRef.current, lineRefs(lines));
-    commit((s) => markLines(s, lines, change));
+    // Marked paid, a line is stamped with its row's scheduled payday: the one
+    // it was part of however the row has since been moved, and the one the
+    // payment history files it under.
+    const stamped = change.received ? { ...change, on: row.scheduled ?? row.date } : change;
+    commit((s) => markLines(s, lines, stamped));
     const what = lines.length === 1 ? "1 line" : `${lines.length} lines`;
     flash(change.received ? `${what} marked as paid.` : `${what} moved to ${payDay(change.payday)}.`,
           "Undo", () => commit((s) => writeMarks(s, before)));
