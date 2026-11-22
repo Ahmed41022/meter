@@ -29,6 +29,8 @@ export const SYNC_KEY = {
   VAULT: "meter:sync",
   META: "meter:sync:meta",
   SENT: "meter:sync:sent",
+  /** A join that has been started and not finished (see pairing.js). */
+  JOIN: "meter:sync:join",
 };
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -120,3 +122,21 @@ export const progressStore = (win = globalThis) => {
     },
   };
 };
+
+/**
+ * The joiner's pairing in progress: its fresh keys, token and the join secret S,
+ * saved BEFORE the request goes out. If the app closes after the other device
+ * approves, this is what lets the next launch finish: the wrapped key can only
+ * be opened with the private key made for this attempt. It is short-lived (the
+ * slot is) and is removed the moment the join completes or fails for good.
+ */
+export const loadJoinSession = (win = globalThis) => {
+  const v = readJson(SYNC_KEY.JOIN, win);
+  return isObject(v) && text(v.relay) && text(v.vaultId) && text(v.joinId) && text(v.S)
+    && text(v.deviceId) && text(v.token) && isObject(v.privateJwk) && text(v.privateJwk.d) ? v : null;
+};
+
+export const saveJoinSession = (session, win = globalThis) =>
+  saveSetting(SYNC_KEY.JOIN, JSON.stringify(session), win);
+
+export const clearJoinSession = (win = globalThis) => saveSetting(SYNC_KEY.JOIN, null, win);

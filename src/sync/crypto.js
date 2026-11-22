@@ -447,3 +447,61 @@ export async function selfTest(env = {}) {
   await check("gzip", async () => fromUtf8(await gunzip(await gzip(utf8("ok")))) === "ok");
   return { ok: failed.length === 0, failed };
 }
+
+// ------------------------------------------------------------------- join secret
+
+/**
+ * Everything pairing derives from the one-time secret S (16 bytes) that travels
+ * only in the join code (DESIGN 5.1). Three independent keys, so the value the
+ * relay is allowed to see cannot be turned back into the ones it is not:
+ *
+ *  - `joinToken` authenticates the joiner to the relay (the relay keeps its
+ *    hash). The relay learns it, so it must not be able to give S back.
+ *  - `macKey` signs the pairing messages. Only the two devices have it.
+ *  - `sasSecret` is mixed into the six comparison digits.
+ */
+export async function deriveJoinKeys(S, env = {}) {
+  if (!(S instanceof Uint8Array) || S.length !== 16) throw new CryptoError("input", "the join secret must be 16 bytes");
+  const subtle = subtleOf(env);
+  const base = await subtle.importKey("raw", S, "HKDF", false, ["deriveBits"]);
+  const bits = async (info) => new Uint8Array(await subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: utf8("meter-v1-join"), info: utf8(info) }, base, 256));
+  const macBytes = await bits("join|mac");
+  return {
+    joinToken: b64uEncode(await bits("join|auth")),
+    macKey: await subtle.importKey("raw", macBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+    sasSecret: (await bits("join|sas")).slice(0, 16),
+  };
+}
+
+/** What the relay stores to recognise a bearer token (a device token or a join
+ *  token): the SHA-256 of the token as the string that arrives in the header. */
+export const tokenHash = async (token, env = {}) => b64uEncode(await sha256(utf8(token), env));
+
+const pubText = (jwk) => `${jwk.x}.${jwk.y}`;
+const wrappedText = (w) => `${w.epk.x}.${w.epk.y}.${w.n}.${w.ct}`;
+
+/** The exact strings that are MACed. Fixed order, "|" between, a domain prefix
+ *  on each, and none of the parts can contain "|" (ids are hex, the rest base64url). */
+export const pairingMessages = {
+  /** The approver vouches for its own public key when it opens the slot. */
+  open: ({ joinId, approverPub }) => `meter|v1|open|${joinId}|${pubText(approverPub)}`,
+  /** The joiner's request: who it is and which keys and token it will use. */
+  request: ({ joinId, deviceId, pubkey, tokenHash: th }) =>
+    `meter|v1|req|${joinId}|${deviceId}|${pubText(pubkey)}|${th}`,
+  /** The approver's answer: the wrapped key, tied to both keys and the epoch. */
+  ack: ({ joinId, deviceId, approverPub, pubkey, epoch, wrapped }) =>
+    `meter|v1|ok|${joinId}|${deviceId}|${pubText(approverPub)}|${pubText(pubkey)}|${epoch}|${wrappedText(wrapped)}`,
+};
+
+export const macSign = async (macKey, message, env = {}) =>
+  b64uEncode(new Uint8Array(await subtleOf(env).sign("HMAC", macKey, utf8(message))));
+
+/** Constant-time check (WebCrypto's verify). False for anything malformed. */
+export async function macVerify(macKey, message, mac, env = {}) {
+  try {
+    return await subtleOf(env).verify("HMAC", macKey, b64uDecode(mac), utf8(message));
+  } catch {
+    return false;
+  }
+}
