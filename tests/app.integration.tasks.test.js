@@ -9,6 +9,34 @@ import { wait, settle, boot, runningSeed, btn, toProjects, setValue, startMeter,
 
 guardBuiltApp();
 
+/** A BroadcastChannel standing in for the browser's: another tab that holds
+ *  the meter answers "here" when `answers`, and none does otherwise. */
+const tabs = (answers) => `window.BroadcastChannel = class {
+  constructor() { this.l = []; }
+  addEventListener(t, f) { this.l.push(f); }
+  removeEventListener(t, f) { this.l = this.l.filter((x) => x !== f); }
+  postMessage(m) {
+    if (${answers} && m && m.t === "who") setTimeout(() => this.l.forEach((f) => f({ data: { t: "here", id: m.id } })), 10);
+  }
+  close() {}
+};`;
+const conflictShown = (dom) => [...dom.window.document.querySelectorAll(".banner")]
+  .some((b) => /Already running/.test(b.textContent));
+
+describe("the tab-conflict notice, where tabs can ask each other", () => {
+  it("does not appear when the only tab is reloaded with its meter running", async () => {
+    const dom = await boot(runningSeed(5_000), null, tabs(false));
+    await wait(900);
+    expect(conflictShown(dom)).toBe(false);
+  }, 20_000);
+
+  it("appears when another tab answers that it holds the meter", async () => {
+    const dom = await boot(runningSeed(5_000), null, tabs(true));
+    await wait(900);
+    expect(conflictShown(dom)).toBe(true);
+  }, 20_000);
+});
+
 describe("the tab-conflict notice", () => {
   it("appears when a session was ticking moments ago", async () => {
     const dom = await boot(runningSeed(5_000));

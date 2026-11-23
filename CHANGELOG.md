@@ -7,6 +7,16 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reloading the tab that is running a meter no longer says "Already running"
+  as if another tab had it. Tabs of the same browser now ask each other, and
+  the warning shows only when another tab answers that it holds the meter.
+- A device that has just opened, reloaded or updated learns at once which
+  device is running the meter. The device holding it answers the new one's
+  hello instead of waiting for its once-a-minute presence, so the running bar
+  no longer says "on another device" for up to a minute.
+
 ## [1.4.0] — 2026-11-22
 
 Minor rather than major: nothing about how the ledger is stored changed. The

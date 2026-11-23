@@ -67,6 +67,11 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
   }, []);
 
   const presenceRef = useRef({});
+  /** What this device holds, for answering a hello from inside the engine. */
+  const heldRef = useRef(presenceSession);
+  heldRef.current = presenceSession;
+  const deviceRef = useRef(device);
+  deviceRef.current = device;
   /** What the running effect offers the rest of the hook: `{ sync, sendPresence, kill }`. */
   const live = useRef(null);
   const pushTimer = useRef(null);
@@ -208,7 +213,16 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
         // The hello a device sends when its connection opens says only which
         // build it runs. A build from before it drops it as not a presence.
         if (dev !== vault.deviceId && payload && typeof payload === "object") heardBuild(payload.build);
-        if (!validPresence(payload)) return;
+        if (!validPresence(payload)) {
+          // A hello: that device has just connected (opened, reloaded, updated)
+          // and knows of no meter until it hears of one. Holding one, say so
+          // now rather than on the next minute, which left it saying "on
+          // another device" for up to a minute after every reload.
+          if (dev !== vault.deviceId && heldRef.current) {
+            live.current?.sendPresence({ dev: deviceRef.current, sessionId: heldRef.current, tick: Date.now() });
+          }
+          return;
+        }
         presenceRef.current = { ...presenceRef.current, [dev]: { sessionId: payload.sessionId, tick: payload.tick, at: Date.now() } };
         setPresenceVersion((v) => v + 1);
       };

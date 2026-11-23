@@ -265,6 +265,36 @@ describe("with a live socket", () => {
     expect(JSON.parse(stored(B, "meter:v1")).sessions.map((s) => s.id)).toContain("s1");
   }, 120_000);
 
+  it("tells a device that has just reloaded which device runs the meter, without waiting out the minute", async () => {
+    const w = newRelay();
+    const now = Date.now();
+    const running = {
+      projects: [project("a", "Orion")],
+      sessions: [{
+        id: "s1", projectId: "a", kind: "billed", rate: 20, currency: "USD", createdAt: now - 60_000, device: "dev-a",
+        segments: [{ startedAt: now - 60_000, endedAt: null, lastTick: now }], closedAt: null, deletedAt: null,
+      }],
+    };
+    const A = await bootApp(w, { seed: running, settings: { "meter:device": "dev-a" }, live: true });
+    const B = await bootApp(w, { seed: ledgerB, settings: { "meter:device": "dev-b" }, live: true });
+    await settle();
+    await toApproval(A, B, w);
+    await press(A, /^Approve$/);
+    await waitFor(B, (p) => /Joined\./.test(p.textContent), "the joiner to finish");
+    await press(B, /^Done$/);
+    await waitFor(B, (p) => /Up to date/.test(p.textContent) && /Live updates are on/.test(p.textContent), "B to sync, live");
+    // B reloads: a new page with what B had stored, and no presence at all.
+    // A's minute is far off, so only an answer to B's hello can reach it in time.
+    const keys = ["meter:sync", "meter:sync:meta", "meter:sync:sent", "meter:device"];
+    const keep = Object.fromEntries(keys.map((k) => [k, stored(B, k)]).filter(([, v]) => v));
+    const ledger = JSON.parse(stored(B, "meter:v1"));
+    B.window.close();
+    const again = await bootApp(w, { seed: ledger, settings: keep, live: true });
+    await settle();
+    await openSettings(again);
+    await waitFor(again, (p) => /Running on .+, seen \d+ s ago/.test(p.textContent), "presence on the reloaded B", 15_000);
+  }, 120_000);
+
   it("delivers an edit made on one device to the other with no manual sync", async () => {
     const w = newRelay();
     const A = await bootApp(w, { seed: ledgerA, live: true });

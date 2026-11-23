@@ -48,6 +48,7 @@ import UnreadableBanner from "./app/UnreadableBanner.jsx";
 import AlreadyRunning from "./app/AlreadyRunning.jsx";
 import { useAutoUpdate } from "./app/useAutoUpdate.js";
 import { useShellTheme } from "./app/useShellTheme.js";
+import { answerWhileHolding } from "./app/otherTabs.js";
 import { sessionActions } from "./app/sessionActions.js";
 import { taskActions } from "./app/taskActions.js";
 import { moneyActions, paymentActions } from "./app/moneyActions.js";
@@ -200,6 +201,11 @@ export default function App({ store: injectedStore }) {
     () => liveSessions(state.sessions).some((s) => isRunning(s) && ownedBy(s, device)),
     [state.sessions, device],
   );
+  /** Another tab of this browser opening on that meter asks whether one holds
+   *  it; this one says yes while it does (app/otherTabs.js). */
+  const holdingRef = useRef(meterHere);
+  holdingRef.current = meterHere;
+  useEffect(() => answerWhileHolding(() => holdingRef.current), []);
   // Off by default, and then it does nothing: see useRates.
   const fxOn = prefOf(state, "fxOn");
   const fx = useRates(fxOn);
