@@ -22,8 +22,26 @@ const key = (label) => normaliseLabel(label).toLowerCase();
 export const findTaskByLabel = (project, label) =>
   tasksFor(project).find((t) => key(t.label) === key(label)) ?? null;
 
-export const findTask = (project, taskId) =>
-  tasksFor(project).find((t) => t.id === taskId) ?? null;
+/**
+ * One task of a project, or null.
+ *
+ * Everything that prices work asks this for every sitting, and searching the
+ * list each time made the payment history grow with the square of the number
+ * of tasks. So a list is indexed the first time it is asked and the index kept
+ * for as long as the list is: the ledger never changes a list in place, a
+ * change makes a new one. The index goes when its list does.
+ */
+const indexes = new WeakMap();
+export const findTask = (project, taskId) => {
+  const tasks = tasksFor(project);
+  let index = indexes.get(tasks);
+  if (!index || index.size !== tasks.length) {
+    // The first of two with one id, as a search from the start would find.
+    index = { size: tasks.length, byId: new Map([...tasks].reverse().map((t) => [t.id, t])) };
+    indexes.set(tasks, index);
+  }
+  return index.byId.get(taskId) ?? null;
+};
 
 export const taskLabel = (project, taskId) =>
   findTask(project, taskId)?.label ?? "No task";
@@ -31,7 +49,7 @@ export const taskLabel = (project, taskId) =>
 /** Adds a task unless one with the same id or label already exists.
  *  Callers generate the id, so they can reuse an existing task's id when the
  *  label already matches — see resolveTaskId. */
-export const addTask = (state, projectId, { id, label, rate, factor, price, note }, now) => {
+export const addTask = (state, projectId, { id, label, rate, factor, price, note, minMs }, now) => {
   const clean = normaliseLabel(label);
   if (!clean) return state;
   return {
@@ -47,6 +65,8 @@ export const addTask = (state, projectId, { id, label, rate, factor, price, note
       if (amount(rate) !== null) task.rate = amount(rate);
       if (amount(factor) !== null) task.factor = amount(factor);
       if (amount(price) !== null) task.price = amount(price);
+      // Zero says this task has no minimum though its project has one.
+      if (Number.isFinite(minMs) && minMs >= 0) task.minMs = minMs;
       // Whatever the label could not hold: a ticket URL, a platform id, what
       // the thing actually is. A label is what reports group by, so it has to
       // stay short and stable; this is where the rest goes.

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { companyStatement, historyByPayday, paymentHistory } from "../src/domain/payHistory.js";
 import { upcomingPay } from "../src/domain/payout.js";
 import { answerPayout } from "../src/domain/payouts.js";
@@ -399,22 +399,24 @@ describe("the forecast is untouched", () => {
 });
 
 describe("a large ledger", () => {
-  it("is built in reasonable time from 10,000 sittings over three years", () => {
+  const start = Date.UTC(2023, 10, 1, 12);
+  const now = Date.UTC(2026, 10, 17, 12);
+  /** Three years of accepted tasks, one sitting each, across six projects. */
+  const large = (perProject) => {
     const DAY = 86_400_000;
-    const start = Date.UTC(2023, 10, 1, 12);
     const projects = [];
     const sessions = [];
     for (let p = 0; p < 6; p += 1) {
       const tasks = [];
-      for (let i = 0; i < 1_667; i += 1) {
-        const when = start + Math.floor((i / 1_667) * 1_095) * DAY;
+      for (let i = 0; i < perProject; i += 1) {
+        const when = start + Math.floor((i / perProject) * 1_095) * DAY;
         const t = { id: `t${p}-${i}`, label: `Task ${i}`, createdAt: when, state: "accepted", stateAt: when + 2 * DAY, submittedAt: when };
         tasks.push(t);
         sessions.push(...sittings(`p${p}`, [t]));
       }
       projects.push(project(`p${p}`, tasks, p % 2 ? "EUR" : "USD", p < 3 ? "Larkspur" : "Northwind"));
     }
-    const state = {
+    return {
       projects, sessions, earnings: [],
       companies: [
         { id: "co:larkspur", name: "Larkspur", payPeriod: utcWeekly, createdAt: start, deletedAt: null },
@@ -422,19 +424,48 @@ describe("a large ledger", () => {
       ],
       payouts: [],
     };
+  };
+
+  /*
+   * Neither of these is a limit in seconds. The same code on the same machine
+   * takes five times as long when the rest of the suite is running on every
+   * core or the laptop has slowed itself down, so a limit in seconds failed on
+   * the machine and not on the code. What the code does is counted instead.
+   */
+  it("asks a time zone's clock about once a day, however many sittings there are", () => {
+    const state = large(1_667);
     expect(state.sessions.length).toBeGreaterThanOrEqual(10_000);
-    const now = Date.UTC(2026, 10, 17, 12);
-    const t0 = performance.now();
+    const asked = vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
     const rows = paymentHistory(state, now);
-    const took = performance.now() - t0;
+    const questions = asked.mock.calls.length;
+    asked.mockRestore();
     expect(rows.length).toBeGreaterThan(300);
     expect(rows.every((r) => r.status === "unanswered")).toBe(true);
-    expect(took).toBeLessThan(5_000);
-    const t1 = performance.now();
-    historyByPayday(rows);
-    companyStatement(rows, "Larkspur");
-    expect(performance.now() - t1).toBeLessThan(1_000);
-  });
+    // Three years and some days. Asking for every sitting took 125,748.
+    expect(questions).toBeLessThan(3_000);
+  }, 60_000);
+
+  it("looks at each sitting and task a fixed number of times, not once per other one", () => {
+    // Every field read off a sitting or a task is counted, so this is the same
+    // number on every machine, however busy.
+    const reads = (perProject) => {
+      let n = 0;
+      const counted = (o) => new Proxy(o, { get: (of, key) => { n += 1; return of[key]; } });
+      const state = large(perProject);
+      const rows = paymentHistory({
+        ...state,
+        sessions: state.sessions.map(counted),
+        projects: state.projects.map((p) => ({ ...p, tasks: p.tasks.map(counted) })),
+      }, now);
+      historyByPayday(rows);
+      companyStatement(rows, "Larkspur");
+      return n;
+    };
+    // Four times the ledger: four times the reads, where its square would be 16.
+    const growth = reads(1_668) / reads(417);
+    expect(growth).toBeGreaterThan(3.5);
+    expect(growth).toBeLessThan(4.5);
+  }, 60_000);
 });
 
 describe("work on tasks never handed in", () => {

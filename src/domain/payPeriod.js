@@ -110,11 +110,37 @@ const zoneWall = (t, zone) => {
  * Read off the zone's own clock rather than from a table, so daylight saving
  * needs no knowing — including the years a country changes its mind about it,
  * which Egypt has done twice in a decade.
+ *
+ * Asking that clock is slow, and a forecast asks several times for every task:
+ * over ten thousand sittings it was three quarters of the whole history. So the
+ * offset is read once at each UTC midnight and kept. A day that starts and ends
+ * on the same offset had it throughout, since no zone changes its clock and
+ * changes it back within a day; on the few days a year that differ, the clock
+ * is asked for the instant itself, as before.
  */
-const zoneOffset = (t, zone) => {
+const DAY_MS = 86_400_000;
+const KEPT = 20_000;
+const midnights = new Map();
+const readOffset = (t, zone) => {
   const w = zoneWall(t, zone);
   return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second)
     - Math.floor(t / 1000) * 1000;
+};
+const midnightOffset = (day, zone) => {
+  const key = `${zone}|${day}`;
+  let offset = midnights.get(key);
+  if (offset === undefined) {
+    offset = readOffset(day * DAY_MS, zone);
+    // A few zones over many years fit; a ledger that does not starts again.
+    if (midnights.size >= KEPT) midnights.clear();
+    midnights.set(key, offset);
+  }
+  return offset;
+};
+export const zoneOffset = (t, zone) => {
+  const day = Math.floor(t / DAY_MS);
+  const before = midnightOffset(day, zone);
+  return before === midnightOffset(day + 1, zone) ? before : readOffset(t, zone);
 };
 
 /**
@@ -143,13 +169,13 @@ const dayOf = (t, zone) => {
       iso: ((d.getDay() + 6) % 7) + 1,
     };
   }
-  const w = zoneWall(t, zone);
-  // The wall fields read back as UTC give the weekday on that clock, which is
-  // not this device's whenever the two are on opposite sides of midnight.
-  const asUtc = new Date(Date.UTC(w.year, w.month - 1, w.day));
+  // The instant moved by the zone's offset, read as UTC, is that clock: its
+  // day and its weekday, which are not this device's whenever the two are on
+  // opposite sides of midnight.
+  const wall = new Date(t + zoneOffset(t, zone));
   return {
-    y: w.year, m: w.month - 1, d: w.day,
-    iso: ((asUtc.getUTCDay() + 6) % 7) + 1,
+    y: wall.getUTCFullYear(), m: wall.getUTCMonth(), d: wall.getUTCDate(),
+    iso: ((wall.getUTCDay() + 6) % 7) + 1,
   };
 };
 
