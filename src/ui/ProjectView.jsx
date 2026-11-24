@@ -7,7 +7,8 @@ import { goalValue } from "../domain/performance.js";
 import { isCancelled, isPerTask, isPieceOnly } from "../domain/earnings.js";
 import { isIdle, sessionCents, utilisation } from "../domain/sessions.js";
 import { pricer } from "../domain/terms.js";
-import { ORDER, taskTotals } from "../domain/tasks.js";
+import { ORDER, findTask, taskTotals } from "../domain/tasks.js";
+import { minimumFor } from "../domain/minimum.js";
 import TaskList from "./project/TaskList.jsx";
 import Ledger from "./project/Ledger.jsx";
 import ProjectFace from "./project/ProjectFace.jsx";
@@ -21,7 +22,7 @@ import Earnings from "./Earnings.jsx";
 export default function ProjectView({
   project, sessions, idleSessions, current, now,
   onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
-  onSetTerms, onSetOwnLimit,
+  onSetTerms, onSetOwnLimit, onSetOwnMinimum,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
   projects = [], onSetStatus,
   earnings = [], onAddEarning, onRemoveEarning, onSetPayState, onSetPayStateMany,
@@ -145,7 +146,9 @@ export default function ProjectView({
     ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now, price)
     : 0;
 
-  const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now, price);
+  const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now, price)
+    // What each still has to come to, where it has a minimum.
+    .map((r) => ({ ...r, minMs: minimumFor(project, findTask(project, r.taskId)) }));
   const hasTasks = rawTaskRows.some((r) => r.taskId);
 
   /**
@@ -224,7 +227,8 @@ export default function ProjectView({
           setPickedTasks={setPickedTasks} editingTask={editingTask}
           setEditingTask={setEditingTask} filterTask={filterTask} setFilterTask={setFilterTask}
           setLedgerOpen={setLedgerOpen} setSelected={setSelected} onSaveTask={onSaveTask}
-          onDeleteTask={onDeleteTask} onSetOwnLimit={onSetOwnLimit} onSubmitTasks={onSubmitTasks}
+          onDeleteTask={onDeleteTask} onSetOwnLimit={onSetOwnLimit}
+          onSetOwnMinimum={onSetOwnMinimum} onSubmitTasks={onSubmitTasks}
           onAnswerTasks={onAnswerTasks} onReopenTasks={onReopenTasks}
           onRewardTasks={onRewardTasks} onSetPayStateMany={onSetPayStateMany}
         />

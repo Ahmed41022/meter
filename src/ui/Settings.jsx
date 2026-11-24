@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companyOf, fold, isOffClock } from "../domain/projects.js";
 import { REWARD } from "../domain/earnings.js";
+import { readHours } from "../domain/minimum.js";
 import { SCOPE } from "../domain/terms.js";
 import { findCompany, samePeriod, storedPeriod } from "../domain/payPeriod.js";
 import { HOUR, formOf, periodForm, periodOf } from "./settings/form.js";
@@ -69,7 +70,9 @@ export default function Settings({
   }, [ledger]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the ledger, never the draft
 
   const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
-  const { limit, over } = form;
+  const { limit, over, least } = form;
+  // Not a number of hours: left as it is, and said so beside the box.
+  const leastMs = readHours(least);
 
   /**
    * How far a change to the rate or the time limit reaches. Asked only when
@@ -149,6 +152,10 @@ export default function Settings({
       // Cleared on purpose means cleared, and the model NOT chosen is always
       // cleared: null rather than skipped, so a project can stop being paid
       // per item, and can never hold two answers to what acceptance pays.
+      // Only when the box changed, so a Save of something else writes nothing
+      // on a project that has never had a minimum.
+      ...(least !== saved.least && !Number.isNaN(leastMs)
+        ? { taskMinMs: leastMs > 0 ? leastMs : null } : {}),
       bonusPerHour: chosen(REWARD.PER_HOUR, Number(perHour)),
       perTask: chosen(REWARD.PER_TASK, Number(each)),
       sessionGoal: asGoal(sessionGoal),
@@ -184,7 +191,7 @@ export default function Settings({
       </label>
 
 
-      <RateTerms project={project} rate={rate} limit={limit} over={over} reward={reward}
+      <RateTerms project={project} least={least} leastRefused={Number.isNaN(leastMs)} rate={rate} limit={limit} over={over} reward={reward}
                  each={each} perHour={perHour} set={set} onKey={onKey}
                  limitRefused={limitRefused} limitHours={limitHours} overPct={overPct}
                  rateChanged={rateChanged} limitChanged={limitChanged} scope={scope}

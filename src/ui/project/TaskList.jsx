@@ -2,6 +2,7 @@ import {
   PAY, hasReward, isPending, namesTask, paysOnAcceptance, perTask, taskPay, tasksOf,
 } from "../../domain/earnings.js";
 import { isRunning, lastActivityAt } from "../../domain/time.js";
+import { projectMinimum } from "../../domain/minimum.js";
 import { limitFor } from "../../domain/terms.js";
 import {
   ORDER, ORDERS, findTask, nameTakenBy, sessionsUnderTask, sortTaskRows,
@@ -21,7 +22,7 @@ export default function TaskList({
   project, sessions, idleSessions, now, earnings, w, offClock, piece, settles, canSettle,
   rawTaskRows, order, setOrder, orderDesc, setOrderDesc, pickedTasks, setPickedTasks,
   editingTask, setEditingTask, filterTask, setFilterTask, setLedgerOpen, setSelected,
-  onSaveTask, onDeleteTask, onSetOwnLimit, onSubmitTasks, onAnswerTasks, onReopenTasks,
+  onSaveTask, onDeleteTask, onSetOwnLimit, onSetOwnMinimum, onSubmitTasks, onAnswerTasks, onReopenTasks,
   onRewardTasks, onSetPayStateMany,
 }) {
   /**
@@ -149,12 +150,16 @@ export default function TaskList({
             projectPrice={perTask(project)}
             byAnswer={paysOnAcceptance(project)}
             projectLimit={limitFor(project, { ...findTask(project, editingTask), limitMs: null })}
+            minimum={offClock ? null : { project: projectMinimum(project) }}
             sessionCount={sessionsUnderTask([...sessions, ...idleSessions], editingTask)}
             nameTakenBy={(label) => nameTakenBy(project, label, editingTask)}
             onCancel={() => setEditingTask(null)}
-            onSave={({ limitMs, ...patch }) => {
+            onSave={({ limitMs, minMs, ...patch }) => {
               onSaveTask(editingTask, patch);
               if (limitMs !== undefined) onSetOwnLimit?.(editingTask, limitMs);
+              if (minMs !== undefined && minMs !== (findTask(project, editingTask)?.minMs ?? null)) {
+                onSetOwnMinimum?.(editingTask, minMs);
+              }
               setEditingTask(null);
             }}
             onDelete={() => {

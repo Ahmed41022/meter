@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { findTask } from "../domain/tasks.js";
+import { hoursText } from "../domain/minimum.js";
 import { TASK, isOpenTask, taskState } from "../domain/taskState.js";
 import {
   REWARD, acceptanceCents, bonusPerHour, paysOnAcceptance, rewardModel,
@@ -132,6 +133,11 @@ export default function TaskSettle({
     setRewarding(false);
   };
 
+  // Said, not enforced: whoever set the minimum may have waived it, and a task
+  // that cannot be handed in is worse than one handed in short.
+  const short = open.map((id) => rows.find((r) => r.taskId === id))
+    .filter((r) => r && r.minMs > 0 && r.billedMs < r.minMs);
+
   const these = open.length === 1 ? "this task" : `these ${open.length}`;
   const them = open.length === 1 ? "it" : "them";
 
@@ -191,6 +197,11 @@ export default function TaskSettle({
         <button className="btn ghost" onClick={onClear}>Clear</button>
       </div>
 
+      {short.length > 0 && (
+        <p className="hint warn" role="status" style={{ marginTop: -4, marginBottom: 12 }}>
+          {short.map((r) => `“${r.label}” is ${formatShortDuration(r.minMs - r.billedMs)} short of its ${hoursText(r.minMs)}h minimum.`).join(" ")}
+        </p>
+      )}
       {(open.length > 0 || stated.length > 0) && (
         <p className="hint" style={{ marginTop: -4, marginBottom: 12 }}>
           {open.length > 0 && (

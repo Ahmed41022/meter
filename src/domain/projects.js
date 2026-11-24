@@ -97,7 +97,8 @@ export const companiesIn = (projects) => {
  * (`{ ms, factor }`) the per-task time limit, which becomes the first entry of
  * the project's terms, in force for all of its work; the goals are kept as
  * `normaliseGoal` leaves them, null when no target was given;
- * `parallelTasks` lets its meters run beside others (concurrency.js). A client's
+ * `parallelTasks` lets its meters run beside others (concurrency.js), and
+ * `taskMinMs` is the least time each task has to take (minimum.js). A client's
  * payday is the client's, not the project's, and is written by
  * `setPayPeriod`, never here.
  */
@@ -106,7 +107,7 @@ export const addProject = (
   {
     name, rate, currency, offClock = false, perTask = null, paysOnAcceptance = false,
     company = "", bonusPerHour = null, taskLimit = null, sessionGoal = null, overallGoal = null,
-    parallelTasks = false,
+    parallelTasks = false, taskMinMs = null,
   },
   now,
   id,
@@ -133,6 +134,7 @@ export const addProject = (
       // revenue breakdown.
       ...(!offClock && String(company ?? "").trim() ? { company: company.trim() } : {}),
       ...(!offClock && parallelTasks ? { parallelTasks: true } : {}),
+      ...(!offClock && taskMinMs > 0 ? { taskMinMs } : {}),
       ...(!offClock && bonusPerHour > 0 ? { bonusPerHour } : {}),
       ...(!offClock && taskLimit?.ms > 0
         ? { taskLimits: [{ from: null, ms: taskLimit.ms, factor: taskLimit.factor ?? 0 }] }

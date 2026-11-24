@@ -17,8 +17,8 @@ export function sessionActions({ commit, flash, stateRef, device, project, curre
   return {
     onMakeMain: () => commit((s) => makeMain(s, current.id, Date.now())),
     onStart: (kind, pick) => {
-      const taskId = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
-        addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
+      const taskId = resolveTaskPick(project, pick, (st, id, label, pay, note, minMs) =>
+        addTask(st, project.id, { id, label, note, minMs, ...payFields(project, pay) }, Date.now()));
       const id = uid();
       commit((s) => startSession(
         taskId.prepare(s), project,
@@ -34,8 +34,8 @@ export function sessionActions({ commit, flash, stateRef, device, project, curre
       flash("Session removed.", "Undo", () => commit((s) => restoreSession(s, id)));
     },
     onAssign: (sessionIds, pick) => {
-      const chosen = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
-        addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
+      const chosen = resolveTaskPick(project, pick, (st, id, label, pay, note, minMs) =>
+        addTask(st, project.id, { id, label, note, minMs, ...payFields(project, pay) }, Date.now()));
       commit((s) => assignTaskToMany(chosen.prepare(s), sessionIds, chosen.id));
     },
     onCorrect: (sessionId, window_) => {

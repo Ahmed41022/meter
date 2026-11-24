@@ -18,6 +18,7 @@
  * Like the rest of `domain/`, nothing here reads the clock or storage.
  */
 import { PERIODS } from "./performance.js";
+import { isDayGoal } from "./dayGoal.js";
 import {
   BY_COMPANY_ORDERS, BY_PROJECT_ORDERS, CARD_ORDERS, EARNINGS_ORDERS, LIFE_ORDERS,
   SESSION_ORDERS, keysOf,
@@ -37,11 +38,10 @@ const sortPref = (orders, fallback) => {
 
 const isCode = (v) => typeof v === "string" && /^[A-Z]{3}$/.test(v);
 
-/** Equal as stored: arrays by their items, everything else by identity. */
+/** Equal as stored: lists and records by what they hold, all else by identity. */
 const sameValue = (a, b) =>
-  Array.isArray(a) && Array.isArray(b)
-    ? a.length === b.length && a.every((x, i) => x === b[i])
-    : a === b;
+  a === b || (a !== null && b !== null && typeof a === "object" && typeof b === "object"
+    && JSON.stringify(a) === JSON.stringify(b));
 
 /**
  * Every preference this build knows: its default, and what counts as a valid
@@ -65,6 +65,8 @@ export const PREFS = {
   byCompanySort: sortPref(BY_COMPANY_ORDERS, "earned"),
   earningsSort: sortPref(EARNINGS_ORDERS, "newest"),
   sessionsSort: sortPref(SESSION_ORDERS, "newest"),
+  // A goal for each day of work, over every project: see dayGoal.js.
+  dayGoal: { default: null, valid: (v) => v === null || isDayGoal(v) },
   // Live exchange rates (domain/fx.js, fx/rates.js). Off until asked for, so
   // an app that never turns it on never touches the network.
   fxOn: { default: false, valid: (v) => typeof v === "boolean" },

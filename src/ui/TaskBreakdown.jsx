@@ -1,3 +1,4 @@
+import { hoursText } from "../domain/minimum.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { taskPay } from "../domain/earnings.js";
 import { UNASSIGNED } from "../domain/tasks.js";
@@ -109,6 +110,14 @@ export default function TaskBreakdown({
               )}
             </div>
             {r.note && <div className="trow-note">{r.note}</div>}
+            {/* What it still has to come to, or that it has. */}
+            {r.minMs > 0 && (
+              <div className="trow-sub">
+                {r.billedMs < r.minMs
+                  ? `${formatShortDuration(r.minMs - r.billedMs)} to go of ${hoursText(r.minMs)}h minimum`
+                  : `${hoursText(r.minMs)}h minimum met`}
+              </div>
+            )}
             {/* Why the figure on the right is less than the hours at the
                 rate: some of them were over the task's time limit. */}
             {!offClock && r.overMs > 0 && (

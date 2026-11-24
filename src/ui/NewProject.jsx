@@ -4,6 +4,7 @@ import { REWARD } from "../domain/earnings.js";
 import { normaliseGoal } from "../domain/goals.js";
 import { describePeriod, findCompany, liveCompanies, storedPeriod } from "../domain/payPeriod.js";
 import { HOUR, periodForm, periodOf } from "./settings/form.js";
+import { readHours } from "../domain/minimum.js";
 import { goalFields } from "./settings/goalFields.jsx";
 import PayScheduleFields from "./settings/PayScheduleFields.jsx";
 
@@ -11,7 +12,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
 const blank = (currency) => ({
   name: "", rate: "", perTask: "", currency, company: "",
-  parallel: false, limit: "", over: "", reward: "none", each: "", perHour: "",
+  parallel: false, limit: "", over: "", least: "", reward: "none", each: "", perHour: "",
   sessionGoal: { type: "money", target: "" },
   overallGoal: { type: "money", target: "", period: "week" },
 });
@@ -69,6 +70,7 @@ export default function NewProject({
     if (form.limit.trim() !== "" && (!(limitHours > 0) || !(overPct >= 0))) {
       return "A time limit has to be hours above zero, and what time over it pays a percentage from 0 up.";
     }
+    if (Number.isNaN(readHours(form.least))) return "A minimum time has to be a number of hours.";
     if (!piece && form.reward === REWARD.PER_TASK && !(Number(form.each) > 0)) {
       return "What does an accepted task pay? A number above zero.";
     }
@@ -109,6 +111,7 @@ export default function NewProject({
       bonusPerHour: !life && reward === REWARD.PER_HOUR ? Number(form.perHour) : null,
       taskLimit: !life && form.limit.trim() !== ""
         ? { ms: Math.round(limitHours * HOUR), factor: overPct / 100 } : null,
+      taskMinMs: life ? null : readHours(form.least),
       parallelTasks: !life && form.parallel,
       sessionGoal: asGoal(form.sessionGoal),
       overallGoal: asGoal(form.overallGoal),
@@ -243,6 +246,11 @@ export default function NewProject({
                   time over it pays {overPct === 0 ? "nothing" : `${+overPct.toFixed(2)}% of it`}.
                 </div>
               )}
+              <label className="field">
+                <span className="eyebrow">Minimum time per task (hours)</span>
+                <input className="inp" inputMode="decimal" value={form.least}
+                       placeholder="none" onChange={field("least")} onKeyDown={onKey} />
+              </label>
               {!piece && (
                 <>
                   <div className="sec-head" style={{ marginTop: 18 }}>

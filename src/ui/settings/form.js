@@ -2,6 +2,7 @@ import { PERIOD } from "../../domain/payPeriod.js";
 import { companyOf } from "../../domain/projects.js";
 import { bonusPerHour, perTask, rewardModel } from "../../domain/earnings.js";
 import { currentLimit } from "../../domain/terms.js";
+import { hoursText, projectMinimum } from "../../domain/minimum.js";
 
 /**
  * The panel's form: how a project and its company's schedule become the strings
@@ -76,6 +77,7 @@ export const formOf = (project, payPeriod) => ({
   period: periodForm(payPeriod),
   rate: String(project.currentRate),
   ...limitForm(project),
+  least: hoursText(projectMinimum(project)),
   /**
    * Which reward system acceptance pays under, with the amount for each kind
    * kept side by side. Two boxes rather than one, so flipping between them to

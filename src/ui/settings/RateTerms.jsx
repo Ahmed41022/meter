@@ -9,7 +9,7 @@ import { isOffClock } from "../../domain/projects.js";
  * that explains arithmetic at length, so it lives apart from the form's wiring.
  */
 export default function RateTerms({
-  project, rate, limit, over, reward, each, perHour, set, onKey, limitRefused, limitHours,
+  project, least, leastRefused, rate, limit, over, reward, each, perHour, set, onKey, limitRefused, limitHours,
   overPct, rateChanged, limitChanged, scope, setScope, hasRunningSession,
 }) {
   // A rate that is not a number above zero has never been applied, and with an
@@ -75,6 +75,25 @@ export default function RateTerms({
             <div className="hint warn">
               A limit has to be a number of hours above zero, and what time over it pays a
               percentage from 0 up, so this one will be left as it is.
+            </div>
+          )}
+          {/* The opposite: how long a task has to take. Its clock counts down. */}
+          <label className="field">
+            <span className="eyebrow">Minimum time per task (hours)</span>
+            <input className="inp" inputMode="decimal" value={least}
+                   placeholder="none" onKeyDown={onKey}
+                   onChange={(e) => set({ least: e.target.value })} />
+          </label>
+          {least.trim() !== "" && !leastRefused && Number(least.replace(",", ".")) > 0 && (
+            <div className="hint">
+              An open task&apos;s clock counts down from {+Number(least.replace(",", ".")).toFixed(2)}h
+              of billed time, and says when it is met. Pay is not affected. A task can carry a
+              minimum of its own.
+            </div>
+          )}
+          {leastRefused && (
+            <div className="hint warn">
+              A minimum has to be a number of hours, so this one will be left as it is.
             </div>
           )}
           <div className="sec-head" style={{ marginTop: 18 }}>

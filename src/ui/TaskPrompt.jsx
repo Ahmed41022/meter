@@ -5,6 +5,8 @@ import {
 } from "../domain/tasks.js";
 import { TASK, takesTime, taskState } from "../domain/taskState.js";
 import { isPieceOnly, perTask } from "../domain/earnings.js";
+import { isOffClock } from "../domain/projects.js";
+import { hoursText, projectMinimum, readHours } from "../domain/minimum.js";
 import { formatMoney } from "../domain/money.js";
 import { payProblemWords } from "./TaskEditor.jsx";
 
@@ -60,6 +62,11 @@ export default function TaskPrompt({
   // by, so it has to stay short and stable — but an id, a link or a line
   // saying what the thing actually is has to live somewhere.
   const [note, setNote] = useState("");
+  // The least time it has to take, in hours; empty follows the project's.
+  const [least, setLeast] = useState("");
+  const minMs = readHours(least);
+  const minIssue = mode === "new" && Number.isNaN(minMs);
+  const ofProject = projectMinimum(project);
   const piece = isPieceOnly(project);
   /**
    * A pay box that cannot be read, read the way the task editor reads its own
@@ -100,10 +107,10 @@ export default function TaskPrompt({
   );
 
   const confirm = () => {
-    if (closed || busy || payIssue) return;
+    if (closed || busy || payIssue || minIssue) return;
     if (mode === "new") {
       const clean = draft.trim();
-      return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim() } : { taskId: null });
+      return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim(), minMs } : { taskId: null });
     }
     onConfirm({ taskId: taskId === NONE ? null : taskId });
   };
@@ -183,6 +190,24 @@ export default function TaskPrompt({
         </label>
       )}
 
+      {mode === "new" && !isOffClock(project) && (
+        <label className="field">
+          <span className="eyebrow">Minimum time (hours)</span>
+          <input className="inp" inputMode="decimal" value={least}
+                 placeholder={ofProject ? `empty = ${hoursText(ofProject)}h, the project's · 0 = none` : "none"}
+                 onChange={(e) => setLeast(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === "Enter") confirm();
+                   if (e.key === "Escape") onCancel();
+                 }} />
+          {minIssue && (
+            <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+              A minimum is a number of hours.
+            </span>
+          )}
+        </label>
+      )}
+
       {mode === "new" && (
         <label className="field">
           <span className="eyebrow">Note</span>
@@ -203,7 +228,7 @@ export default function TaskPrompt({
       )}
 
       <div className="controls">
-        <button className="btn primary" disabled={!!closed || busy || !!payIssue} onClick={confirm}>
+        <button className="btn primary" disabled={!!closed || busy || !!payIssue || minIssue} onClick={confirm}>
           {confirmLabel}
         </button>
         <button className="btn ghost" onClick={onCancel}>Cancel</button>

@@ -1,5 +1,6 @@
 import { wordsFor } from "./words.js";
 import { useState } from "react";
+import { hoursText, readHours } from "../domain/minimum.js";
 import { formatMoney } from "../domain/money.js";
 import { RATE_PROBLEM, taskPriceProblem, taskRateInput, taskRateProblem } from "../domain/tasks.js";
 import { TASK, taskState } from "../domain/taskState.js";
@@ -59,7 +60,7 @@ const fromInput = (value) => {
 export default function TaskEditor({
   task, currency, projectRate, projectPrice = null, sessionCount, byAnswer = true,
   nameTakenBy = () => null, onSave, onDelete, onCancel, words = wordsFor(false),
-  projectLimit = null,
+  projectLimit = null, minimum = null,
 }) {
   const [label, setLabel] = useState(task.label);
   // Shown back as it was meant, so "30%" does not reappear as 4.92 and turn a
@@ -69,6 +70,9 @@ export default function TaskEditor({
   const [note, setNote] = useState(task.note ?? "");
   // A limit of the task's own, in hours, where the project has one to replace.
   const [ownLimit, setOwnLimit] = useState(task.limitMs > 0 ? String(+(task.limitMs / 3_600_000).toFixed(4)) : "");
+  // Its own minimum, in hours: empty follows the project's, 0 is none at all.
+  const [ownMin, setOwnMin] = useState(hoursText(task.minMs));
+  const minMs = readHours(ownMin);
   /**
    * The day the work went in, correctable because the app used to stamp the
    * moment you ticked the box. A task handed in on Saturday and ticked off on
@@ -100,7 +104,8 @@ export default function TaskEditor({
   const clash = label.trim() ? nameTakenBy(label) : null;
   // Read as "none" it would quietly put the task back on the project's limit.
   const limitIssue = projectLimit !== null && ownLimit.trim() !== "" && !(Number(ownLimit) > 0);
-  const blocked = Boolean(rateIssue || priceIssue || clash || limitIssue);
+  const minIssue = minimum !== null && Number.isNaN(minMs);
+  const blocked = Boolean(rateIssue || priceIssue || clash || limitIssue || minIssue);
 
   const save = () => !blocked && onSave({
     label: label.trim() || task.label,
@@ -109,6 +114,7 @@ export default function TaskEditor({
     note,
     submittedAt: went ? fromInput(went) : null,
     answeredAt: back ? fromInput(back) : null,
+    ...(minimum !== null ? { minMs } : {}),
     ...(projectLimit !== null
       ? { limitMs: ownLimit.trim() === "" ? null : Math.round(Number(ownLimit) * 3_600_000) }
       : {}),
@@ -185,6 +191,21 @@ export default function TaskEditor({
           {limitIssue && (
             <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
               A limit has to be a number of hours above zero. Leave it empty for the project&apos;s.
+            </span>
+          )}
+        </label>
+      )}
+      {minimum !== null && (
+        <label className="field">
+          <span className="eyebrow">Minimum time (hours)</span>
+          <input className="inp" inputMode="decimal" value={ownMin}
+                 placeholder={minimum.project
+                   ? `empty = ${hoursText(minimum.project)}h, the project's · 0 = none` : "none"}
+                 onChange={(e) => setOwnMin(e.target.value)}
+                 onKeyDown={(e) => e.key === "Enter" && save()} />
+          {minIssue && (
+            <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+              A minimum is a number of hours.
             </span>
           )}
         </label>

@@ -16,7 +16,7 @@ export const uid = () => Date.now().toString(36) + Math.random().toString(36).sl
 export const resolveTaskPick = (project, pick, createTask) => {
   if (pick?.label === undefined) return { id: pick?.taskId ?? null, prepare: (s) => s };
   const id = resolveTaskId(project, pick.label, uid());
-  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay, pick.note) };
+  return { id, prepare: (s) => createTask(s, id, pick.label, pick.pay, pick.note, pick.minMs) };
 };
 
 /**

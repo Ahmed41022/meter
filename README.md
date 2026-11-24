@@ -52,6 +52,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
 - **Knows a task's time limit** where a platform sets one: past it, the time
   pays the share the platform pays — 30%, or nothing — and the meter counts
   down the full-rate time that is left.
+- **Knows a task's minimum time** where one is required: its clock counts down
+  over every sitting until it is met.
+- **Keeps a daily goal** for all your work together, in hours or in money.
 - **Prices work four ways**: by the hour, per accepted item, a task at its own
   rate, or a task at a fraction of the project's. A task can also be priced at
   nothing, which is not the same as having no price set.

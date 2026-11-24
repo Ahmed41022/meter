@@ -16,6 +16,12 @@ ledger changed such that an older build can no longer read it.
   are still one at a time, and so are two ordinary work projects.
 - Every running meter has its own bar, the main one first. Work behind it says
   it is **working in background**, and a parallel task can be made the main one.
+- A **minimum time** for a task, set for a whole project, when a task is made, or
+  on one task. Its clock counts down, over every sitting on it, and says when it
+  is met; the task list says how much is left, and handing one in short warns
+  without refusing. No pay depends on it.
+- A **daily goal** for work as a whole, in time or money, on Today. It counts
+  every work project together and follows you to every device.
 - Today offers every start that would not stop a running meter, rather than
   none while one runs.
 
@@ -25,6 +31,9 @@ ledger changed such that an older build can no longer read it.
   one does.
 - Time is reported as counted twice only where the two records may not share
   their hours. The check now also catches a clash with another record between.
+- The payment history is worked out many times faster on a large ledger: a time
+  zone's clock is asked once a day rather than several times a task, and a task
+  is looked up rather than searched for.
 - A crash that leaves several meters running asks about each of them.
 
 ### Fixed

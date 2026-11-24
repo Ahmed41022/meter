@@ -4,6 +4,7 @@ import { rateFor, taskLabel } from "../domain/tasks.js";
 import { isOffClock } from "../domain/projects.js";
 import { isIdle, sessionCents } from "../domain/sessions.js";
 import { isPieceOnly } from "../domain/earnings.js";
+import { countdownMs, hoursText, minimumOf } from "../domain/minimum.js";
 
 /**
  * What is running, from wherever you are.
@@ -21,13 +22,17 @@ import { isPieceOnly } from "../domain/earnings.js";
  */
 export default function RunningBar({
   project, session, now, elsewhere = false, runningOn = null, onOpen, onStop,
-  background = false, onMakeMain = null,
+  background = false, onMakeMain = null, sessions = [],
   price = (s) => rateFor(project, s),
 }) {
   if (!project || !session) return null;
 
   const ms = elapsedMs(session, now);
   const idling = isIdle(session);
+  // A task with a minimum counts down to it, over every sitting it has had;
+  // once there, the strip goes back to how long this sitting is.
+  const least = minimumOf(project, session, sessions, now);
+  const toGo = least !== null && least.leftMs > 0;
   const off = isOffClock(project);
   // Money is the point of the strip on billed work, and a lie on the rest:
   // idle time is not earnings, off-clock work has none, and piece-rate work
@@ -51,7 +56,15 @@ export default function RunningBar({
           <span className="runbar-task">{taskLabel(project, session.taskId)}</span>
         )}
       </button>
-      <span className="runbar-time">{formatDuration(ms)}</span>
+      <span className="runbar-time"
+            title={least ? `${formatDuration(ms)} this session, ${formatDuration(least.doneMs)} of ${hoursText(least.ms)}h on the task` : undefined}>
+        {formatDuration(toGo ? countdownMs(least.leftMs) : ms)}
+      </span>
+      {least && (
+        <span className="runbar-limit">
+          {toGo ? <>to go{more(` of ${hoursText(least.ms)}h`)}</> : <>{hoursText(least.ms)}h min met</>}
+        </span>
+      )}
       {showMoney && (
         <span className="runbar-amt">
           {formatMoney(sessionCents(session, -Infinity, Infinity, now, price), session.currency)}

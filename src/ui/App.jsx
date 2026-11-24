@@ -438,7 +438,7 @@ export default function App({ store: injectedStore }) {
             page is about what has already happened. */}
         {meters.map(({ session, project: owner, background, canBeMain }) => (
           <RunningBar
-            key={session.id}
+            key={session.id} sessions={state.sessions}
             project={owner} session={session} now={now} price={price} background={background}
             elsewhere={!ownedBy(session, device)}
             runningOn={relayOn ? relay.runningOn(session.id, now) : null}
@@ -573,6 +573,8 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             now={now} blocksStart={blocksStart}
+            dayGoal={prefOf(state, "dayGoal")}
+            onDayGoal={(goal) => commit((s) => setPref(s, "dayGoal", goal, Date.now()))}
             todos={liveTodos(state)}
             {...todayActions({
               commit, flash, stateRef, projects, device, openProject, showMeter: setShownMeter,

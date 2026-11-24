@@ -4,6 +4,7 @@ import {
 import { repriceHourlyRewards } from "../../domain/settle.js";
 import { setPayPeriod } from "../../domain/payPeriod.js";
 import { SCOPE, setOwnLimit, setProjectRate, setTaskLimit } from "../../domain/terms.js";
+import { setOwnMinimum } from "../../domain/minimum.js";
 import { askToNotify } from "../notify.js";
 import { uid } from "./shared.js";
 
@@ -17,7 +18,11 @@ export function projectActions({ commit, flash, stateRef, project, setOpenProjec
        under one client shares the schedule, which is the point. */
     onSetPayPeriod: (company, rule) =>
       commit((s) => setPayPeriod(s, company, rule, Date.now())),
-    onPatch: (patch) => commit((s) => patchProject(s, project.id, patch)),
+    onPatch: (patch) => {
+      commit((s) => patchProject(s, project.id, patch));
+      // Asked while the person is clicking: see onSetTerms.
+      if (patch.taskMinMs > 0 && patch.taskMinMs !== project.taskMinMs) askToNotify();
+    },
     onSetTerms: ({ rate, limit }, scope) => {
       const snapshot = stateRef.current;
       const at = Date.now();
@@ -41,6 +46,10 @@ export function projectActions({ commit, flash, stateRef, project, setOpenProjec
       }
     },
     onSetOwnLimit: (taskId, ms) => commit((s) => setOwnLimit(s, project.id, taskId, ms)),
+    onSetOwnMinimum: (taskId, ms) => {
+      commit((s) => setOwnMinimum(s, project.id, taskId, ms));
+      if (ms > 0) askToNotify();
+    },
     onSetStatus: (status) => {
       commit((s) => setStatus(s, project.id, status, Date.now()));
       if (status !== "active") {

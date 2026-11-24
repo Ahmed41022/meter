@@ -1,6 +1,7 @@
 import { elapsedMs, isRunning, startedAt } from "../../domain/time.js";
 import { formatDuration, formatMoney, moneyParts } from "../../domain/money.js";
 import { companyOf, isDone, isPaused } from "../../domain/projects.js";
+import { countdownMs, hoursText, minimumOf } from "../../domain/minimum.js";
 import { allowsParallel } from "../../domain/concurrency.js";
 import { priceFor } from "../../domain/earnings.js";
 import { KIND } from "../../domain/sessions.js";
@@ -10,6 +11,17 @@ import SettlePrompt from "../SettlePrompt.jsx";
 import { time } from "./format.js";
 
 const MS_PER_HOUR = 3_600_000;
+
+/** One open meter's time, as its strip reads it: what is left of the task's
+ *  minimum while there is any, and otherwise how long the sitting is. */
+function MeterTime({ project, session, sessions, now }) {
+  const left = minimumOf(project, session, sessions, now)?.leftMs ?? 0;
+  return (
+    <span className="meter-pick-time">
+      {left > 0 ? `${formatDuration(countdownMs(left))} to go` : formatDuration(elapsedMs(session, now))}
+    </span>
+  );
+}
 
 /**
  * The meter itself: the project's name and rate, the running figures, the
@@ -34,6 +46,9 @@ export default function ProjectFace({
    *  start. What it came to is the panel below. */
   const bare = stopped && !current;
   const company = companyOf(project);
+  // Counted down over every sitting on the task, not only this one.
+  const least = minimumOf(project, current, sessions, now);
+  const toGo = least !== null && least.leftMs > 0;
   const behind = Boolean(running && meter?.background);
   const stateWord = running
     ? (idling ? "Idling" : behind ? "Working in background" : "Running")
@@ -78,7 +93,7 @@ export default function ProjectFace({
                     className={"meter-pick" + (s.id === current?.id ? " on" : "")}
                     onClick={() => onShowMeter(s.id)}>
               <span className="meter-pick-name">{s.taskId ? taskLabel(project, s.taskId) : w.noTask}</span>
-              <span className="meter-pick-time">{formatDuration(elapsedMs(s, now))}</span>
+              <MeterTime project={project} session={s} sessions={sessions} now={now} />
               {!isRunning(s) ? <span className="tag">paused</span>
                 : background && <span className="tag">in background</span>}
             </button>
@@ -112,8 +127,13 @@ export default function ProjectFace({
         {/* Where the headline figure is already this duration — off the
             clock, or paid per item — repeating it here prints the same
             number twice. */}
-        {!offClock && !piece && <span className="clock-main">{formatDuration(shownMs)}</span>}
+        {toGo
+          ? <span className="clock-main">{formatDuration(countdownMs(least.leftMs))}</span>
+          : !offClock && !piece && <span className="clock-main">{formatDuration(shownMs)}</span>}
         <span className="clock-note">
+          {toGo && <>to go of {hoursText(least.ms)}h minimum · {formatDuration(least.doneMs)} done
+            {!piece && <> · {formatDuration(shownMs)} this session</>} · </>}
+          {least && !toGo && `${hoursText(least.ms)}h minimum met · `}
           {current
             ? `started ${time(startedAt(current))}`
             : offClock ? "not tracking" : "meter is stopped"}
