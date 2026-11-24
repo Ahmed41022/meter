@@ -7,6 +7,26 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Added
+
+- A project can allow **parallel tasks**, in its settings or when it is made.
+  Several of its tasks then run at once, and beside any other project; the same
+  task never runs twice. Each task's time counts in full.
+- A life activity runs beside work instead of ending it. Two life activities
+  are still one at a time, and so are two ordinary work projects.
+- Every running meter has its own bar, the main one first. Work behind it says
+  it is **working in background**, and a parallel task can be made the main one.
+- Today offers every start that would not stop a running meter, rather than
+  none while one runs.
+
+### Changed
+
+- Resuming a paused session closes whatever may not run beside it, as starting
+  one does.
+- Time is reported as counted twice only where the two records may not share
+  their hours. The check now also catches a clash with another record between.
+- A crash that leaves several meters running asks about each of them.
+
 ### Fixed
 
 - Reloading the tab that is running a meter no longer says "Already running"

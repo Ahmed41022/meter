@@ -31,8 +31,9 @@ export default function ProjectView({
   objectives = [], today, onAddObjective, onToggleObjective, onFocusObjective,
   onRemoveObjective, onEditObjective,
   findOverlaps, onAddManual, focusSession = null,
+  meter = null, openMeters = [], onShowMeter, onMakeMain, takenTasks, takenByOthers,
 }) {
-  const [prompt, setPrompt] = useState(null);         // {kind} | {reassign:true}
+  const [prompt, setPrompt] = useState(null);         // {kind} | {reassign: session id}
   // Which session is being asked "what did this earn?". Set when a piece-rate
   // meter stops, and settable again later from any row — acceptance lands days
   // after the work, so the answer often is not known at stop time.
@@ -68,11 +69,12 @@ export default function ProjectView({
 
   /**
    * Re-filing the running session is a question about THAT session. Once it
-   * has stopped there is nothing left to re-file, and a prompt left open would
-   * keep the Start buttons hidden behind a Save with no session to save to.
+   * has stopped, or another of the project's meters is being shown, there is
+   * nothing left to re-file, and a prompt left open would keep the Start
+   * buttons hidden behind a Save with no session to save to.
    */
   useEffect(() => {
-    if (prompt?.reassign && !current) setPrompt(null);
+    if (prompt?.reassign && prompt.reassign !== current?.id) setPrompt(null);
   }, [prompt, current]);
   const running = current && isRunning(current);
   const idling = current ? isIdle(current) : false;
@@ -172,6 +174,8 @@ export default function ProjectView({
         idleSessions={idleSessions} prompt={prompt} setPrompt={setPrompt} settling={settling}
         setSettling={setSettling} onStart={onStart} onPause={onPause} onResume={onResume}
         onStop={onStop} onSettle={onSettle} onAssign={onAssign} onSetStatus={onSetStatus}
+        meter={meter} openMeters={openMeters} onShowMeter={onShowMeter} onMakeMain={onMakeMain}
+        takenTasks={takenTasks} takenByOthers={takenByOthers} now={now}
       />
 
       {/* What it came to. A finished project is no longer a thing to pace, so
@@ -248,7 +252,8 @@ export default function ProjectView({
       <SettingsSection
         project={project} projects={projects} onPatch={onPatch} onSetTerms={onSetTerms}
         onDeleteProject={onDeleteProject} onSetStatus={onSetStatus} payPeriod={payPeriod}
-        companies={companies} onSetPayPeriod={onSetPayPeriod} now={now} running={running}
+        companies={companies} onSetPayPeriod={onSetPayPeriod} now={now}
+        running={openMeters.some((m) => isRunning(m.session))}
         onOpenSettings={onOpenSettings}
       />
     </>

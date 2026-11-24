@@ -294,6 +294,18 @@ export const CSS = `
   border:1px solid var(--jade);border-radius:11px;background:var(--jade-soft);
   color:var(--ink);}
 .runbar.idling{border-color:var(--amber-line);background:var(--amber-soft);}
+/* Work in the background: the same strip, set back from the main one. */
+.runbar.behind{margin:-8px 0 16px;border-color:var(--line);background:var(--card);}
+.runbar.behind .runbar-dot{background:var(--muted);}
+.runbar-tag.quiet{color:var(--muted);max-width:none;flex:none;}
+.runbar-main{font-size:12px;white-space:nowrap;}
+.meters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;}
+.meter-pick{display:flex;align-items:baseline;gap:8px;max-width:100%;padding:6px 11px;font:inherit;
+  font-size:12.5px;border:1px solid var(--line);border-radius:9px;background:none;
+  color:var(--ink-2);cursor:pointer;}
+.meter-pick.on{border-color:var(--jade);color:var(--ink);background:var(--jade-soft);}
+.meter-pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.meter-pick-time{font-family:var(--mono);}
 .runbar-dot{width:8px;height:8px;border-radius:999px;background:var(--jade);flex:0 0 auto;
   animation:runpulse 2s ease-in-out infinite;}
 .runbar.idling .runbar-dot{background:var(--amber);}
@@ -324,6 +336,14 @@ export const CSS = `
 @media (max-width:420px){
   .runbar{gap:8px;padding:8px 10px;}
   .runbar-task{display:none;}
+  /* The task is what tells two background bars apart, so it stays, with the
+     name on a line of its own above the figures. */
+  .runbar.behind{flex-wrap:wrap;row-gap:4px;}
+  .runbar.behind .runbar-what{flex:1 1 calc(100% - 24px);}
+  .runbar.behind .runbar-task{display:inline;}
+  .runbar.behind .runbar-time{margin-left:16px;}
+  .runbar.behind .runbar-stop{margin-left:auto;}
+  .runbar-main{display:none;}
   .runbar-limit-more{display:none;}
 }
 

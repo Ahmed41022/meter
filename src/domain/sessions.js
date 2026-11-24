@@ -1,5 +1,6 @@
 import { isOpen, isRunning, lastActivityAt, overlapMs } from "./time.js";
 import { acceptsTime } from "./projects.js";
+import { allowsParallel, displacedBy, mayOverlap } from "./concurrency.js";
 import { PAY, paysOnAcceptance } from "./earnings.js";
 import { takesTimeIn } from "./taskState.js";
 import { earningsCents } from "./money.js";
@@ -60,6 +61,16 @@ export const overLimitMs = (session, from, to, now, rateOf) => {
 export const ownedBy = (session, device) =>
   device == null || (session.device ?? device) === device;
 
+/** Every session with those that may not run beside `next` closed at `at`. The
+ *  project is passed in because a start is handed one. */
+const closeDisplaced = (state, next, project, at) => {
+  const known = (state.projects ?? []).filter((p) => p.id !== project?.id);
+  const gone = new Set(
+    displacedBy(state.sessions, project ? [...known, project] : known, next).map((s) => s.id));
+  return state.sessions.map((s) =>
+    (gone.has(s.id) ? { ...closeOpenSegments(s, at), closedAt: at } : s));
+};
+
 /**
  * Pure state transitions. Every one takes (state, ..., now) and returns a new
  * state. No Date.now(), no random IDs, no storage — so every rule below can be
@@ -107,9 +118,11 @@ export const utilisation = (billedMs, idleMs) => {
 };
 
 /**
- * Starting a session closes EVERY other open session, on any project, of
- * either kind. One person cannot be billing two projects at once, and cannot
- * be working and idle at once — two live meters double-count wall-clock time.
+ * Starting a session closes every open session that may not run beside it,
+ * on any project, of either kind. Among ordinary work that is all of them: one
+ * person cannot be billing two projects at once, and cannot be working and
+ * idle at once. Life activities, and projects that allow parallel tasks, run
+ * beside it; concurrency.js holds the rule.
  *
  * The rate is SNAPSHOT here. Later edits to the project rate must never reach
  * a session already recorded, and idle time is valued at the rate that was
@@ -135,9 +148,7 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
    */
   if (!takesTimeIn(project, taskId)) return state;
 
-  const closed = state.sessions.map((s) =>
-    !s.deletedAt && isOpen(s) ? { ...closeOpenSegments(s, now), closedAt: now } : s
-  );
+  const closed = closeDisplaced(state, { id, projectId: project.id, kind, taskId }, project, now);
   return {
     ...state,
     sessions: [
@@ -156,6 +167,9 @@ export const startSession = (state, project, { now, id, kind = KIND.BILLED, task
         // Which device is holding the meter. Omitted where the caller has only
         // one, so nothing written before this existed changed meaning.
         ...(device ? { device } : {}),
+        // Whether it was allowed to run beside other work, as of now: see
+        // `mayOverlap`.
+        ...(allowsParallel(project) && kind !== KIND.IDLE ? { parallel: true } : {}),
         // Where the work is only worth something once someone accepts it, that
         // is true from the moment the meter starts. Marking it afterwards would
         // mean every figure counted the money first and corrected later.
@@ -207,6 +221,7 @@ export const addManualSession = (
         closedAt: end,
         deletedAt: null,
         manual: true,
+        ...(allowsParallel(project) && kind !== KIND.IDLE ? { parallel: true } : {}),
         ...(paysOnAcceptance(project) ? { status: PAY.PENDING } : {}),
       },
     ],
@@ -224,12 +239,16 @@ export const wasManual = (session) => session.manual === true;
  * rule in a way the timer never could — two overlapping records double-count
  * the same wall-clock hour and quietly inflate both the total and the money.
  * Callers surface these rather than silently accepting them.
+ *
+ * `subject` is the record the window is for (project, task, kind). Given, the
+ * records it may honestly run beside are left out: see `mayOverlap`.
  */
-export const overlappingSessions = (state, { startedAt, endedAt }, excludeId = null) => {
+export const overlappingSessions = (state, { startedAt, endedAt }, excludeId = null, subject = null) => {
   const start = Math.min(startedAt, endedAt);
   const end = Math.max(startedAt, endedAt);
   return liveSessions(state.sessions).filter(
     (s) => s.id !== excludeId
+      && !(subject && mayOverlap(subject, s, state.projects))
       && (s.segments || []).some((g) => overlapMs(g, start, end, end) > 0)
   );
 };
@@ -245,10 +264,18 @@ export const pauseSession = (state, id, now) =>
  * It also takes the meter over. Resuming on your phone a session you paused on
  * your laptop makes the phone the device that is running it, and the one whose
  * heartbeat means anything.
+ *
+ * And like a start it closes whatever may not run beside it. Open sessions are
+ * normally all allowed together, but a project can stop allowing parallel
+ * tasks, or come back on the clock, while one of them sits paused.
  */
-export const resumeSession = (state, id, now, device = null) =>
-  mapSessions(state, (s) =>
-    s.id === id && isOpen(s) && !isRunning(s)
+export const resumeSession = (state, id, now, device = null) => {
+  const session = state.sessions.find((s) => s.id === id);
+  if (!session || session.deletedAt || !isOpen(session) || isRunning(session)) return state;
+  const project = (state.projects ?? []).find((p) => p.id === session.projectId) ?? null;
+  const sessions = closeDisplaced(state, session, project, now);
+  return mapSessions({ ...state, sessions }, (s) =>
+    s.id === id
       ? {
         ...s,
         ...(device ? { device } : {}),
@@ -256,6 +283,12 @@ export const resumeSession = (state, id, now, device = null) =>
       }
       : s
   );
+};
+
+/** Says which of the tasks running side by side is the one being worked; the
+ *  others are in the background. Only a label: no time or money moves. */
+export const makeMain = (state, id, now) =>
+  mapSessions(state, (s) => (s.id === id && !s.deletedAt && isRunning(s) ? { ...s, mainAt: now } : s));
 
 /** Stop closes the segment AND the session. */
 export const stopSession = (state, id, at) =>
@@ -309,13 +342,25 @@ export const heartbeat = (state, now, device = null) =>
  * paid session filed under a rejected task would stay paid, and the rejected
  * task would read as having earned it. So the rule that guards `startSession`
  * guards this too, asked of each session's own project.
+ *
+ * Nor will it put a running meter on a task that already has one: the two
+ * would bill the same work for the same minutes.
  */
 export const assignTaskToMany = (state, sessionIds, taskId) => {
   const ids = new Set(sessionIds);
+  const going = new Map(liveSessions(state.sessions)
+    .filter((s) => isRunning(s) && (s.taskId ?? null) === (taskId ?? null))
+    .map((s) => [s.projectId, s.id]));
   return mapSessions(state, (s) => {
     if (!ids.has(s.id) || s.deletedAt) return s;
     const project = (state.projects ?? []).find((p) => p.id === s.projectId);
-    return takesTimeIn(project, taskId) ? { ...s, taskId } : s;
+    if (!takesTimeIn(project, taskId)) return s;
+    if (isRunning(s)) {
+      const holder = going.get(s.projectId) ?? s.id;
+      if (holder !== s.id) return s;
+      going.set(s.projectId, s.id);
+    }
+    return { ...s, taskId };
   });
 };
 

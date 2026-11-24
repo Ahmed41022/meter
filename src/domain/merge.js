@@ -27,6 +27,7 @@
  */
 import { overlapMs } from "./time.js";
 import { isBilled } from "./sessions.js";
+import { mayOverlap } from "./concurrency.js";
 
 /** The lists this build KNOWS hold records with ids: what the UI counts and what
  *  a restore replaces. It is NOT what merging looks at — a list a newer build
@@ -186,24 +187,33 @@ export const mergeState = (mine, theirs) => {
  * read high, and the money with them.
  *
  * Idle time is left out: sleeping while a machine elsewhere logged a nap is not
- * a double-counted invoice.
+ * a double-counted invoice. So are records allowed to share their hours, a life
+ * activity beside work or a project's parallel tasks, which `projects` is for.
+ *
+ * Every block is set against each earlier one still going when it started, not
+ * only the one before it: between two that clash there can be one that may
+ * overlap both.
  */
-export const overlaps = (sessions = [], now = Infinity) => {
+export const overlaps = (sessions = [], now = Infinity, projects = []) => {
   const spans = [];
   for (const session of sessions) {
     if (session.deletedAt || !isBilled(session)) continue;
     for (const segment of session.segments ?? []) {
       const end = segment.endedAt ?? now;
-      if (end > segment.startedAt) spans.push({ id: session.id, from: segment.startedAt, to: end });
+      if (end > segment.startedAt) spans.push({ id: session.id, session, from: segment.startedAt, to: end });
     }
   }
   spans.sort((a, b) => a.from - b.from);
   const found = [];
-  for (let i = 1; i < spans.length; i += 1) {
-    const previous = spans[i - 1];
-    const current = spans[i];
-    const ms = overlapMs({ startedAt: current.from, endedAt: current.to }, previous.from, previous.to, previous.to);
-    if (ms > 0) found.push({ a: previous.id, b: current.id, ms, at: current.from });
+  let going = [];
+  for (const current of spans) {
+    going = going.filter((s) => s.to > current.from);
+    for (const previous of going) {
+      if (mayOverlap(previous.session, current.session, projects)) continue;
+      const ms = overlapMs({ startedAt: current.from, endedAt: current.to }, previous.from, previous.to, previous.to);
+      if (ms > 0) found.push({ a: previous.id, b: current.id, ms, at: current.from });
+    }
+    going.push(current);
   }
   return found;
 };

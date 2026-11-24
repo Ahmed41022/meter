@@ -54,7 +54,7 @@ function Form({ projects, start, label, onSave, onCancel, keepOpen = false }) {
   );
 }
 
-function Row({ todo, projects, running, onStart, onOpen, onToggle, onEdit, onRemove }) {
+function Row({ todo, projects, blocksStart, onStart, onOpen, onToggle, onEdit, onRemove }) {
   const [editing, setEditing] = useState(false);
   const project = linkedProject(todo, projects);
   const done = isDone(todo);
@@ -82,10 +82,10 @@ function Row({ todo, projects, running, onStart, onOpen, onToggle, onEdit, onRem
         </div>
       )}
       <div className="obj-actions">
-        {/* Not while a meter runs: starting one stops it, and a row of
+        {/* Not where starting would stop a meter that is going: a row of
             one-click starts beside it is a row of ways to end it by accident.
             Nor on a paused or finished project, which takes no time. */}
-        {project && !done && !running && acceptsTime(project) && (
+        {project && !done && acceptsTime(project) && !blocksStart(project.id) && (
           <button className="linkish todo-go" aria-label={`Start ${project.name}`}
                   onClick={() => onStart(project.id)}>▶ start</button>
         )}
@@ -97,14 +97,14 @@ function Row({ todo, projects, running, onStart, onOpen, onToggle, onEdit, onRem
 }
 
 export default function Todos({
-  todos, projects, running, onStart, onOpen, onAdd, onToggle, onEdit, onRemove, onClearDone,
+  todos, projects, blocksStart, onStart, onOpen, onAdd, onToggle, onEdit, onRemove, onClearDone,
 }) {
   const [adding, setAdding] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const open = openTodos(todos);
   const done = doneTodos(todos);
   const row = (t) => (
-    <Row key={t.id} todo={t} projects={projects} running={running} onStart={onStart}
+    <Row key={t.id} todo={t} projects={projects} blocksStart={blocksStart} onStart={onStart}
          onOpen={onOpen} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />
   );
 

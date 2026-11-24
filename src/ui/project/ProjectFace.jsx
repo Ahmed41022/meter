@@ -1,6 +1,7 @@
-import { startedAt } from "../../domain/time.js";
+import { elapsedMs, isRunning, startedAt } from "../../domain/time.js";
 import { formatDuration, formatMoney, moneyParts } from "../../domain/money.js";
 import { companyOf, isDone, isPaused } from "../../domain/projects.js";
+import { allowsParallel } from "../../domain/concurrency.js";
 import { priceFor } from "../../domain/earnings.js";
 import { KIND } from "../../domain/sessions.js";
 import { findTask, rateFor, taskLabel } from "../../domain/tasks.js";
@@ -21,6 +22,7 @@ export default function ProjectFace({
   project, current, running, idling, stopped, offClock, piece, settles, w, currency,
   shownMs, whole, sessions, idleSessions, prompt, setPrompt, settling, setSettling,
   onStart, onPause, onResume, onStop, onSettle, onAssign, onSetStatus,
+  meter = null, openMeters = [], onShowMeter, onMakeMain, takenTasks, takenByOthers, now,
 }) {
   const { head, tail } = moneyParts(current ? whole(current) : 0, currency);
 
@@ -32,6 +34,10 @@ export default function ProjectFace({
    *  start. What it came to is the panel below. */
   const bare = stopped && !current;
   const company = companyOf(project);
+  const behind = Boolean(running && meter?.background);
+  const stateWord = running
+    ? (idling ? "Idling" : behind ? "Working in background" : "Running")
+    : current ? "Paused" : "Stopped";
 
   return (
     <div className={"face" + (idling ? " idle" : "")}>
@@ -58,11 +64,27 @@ export default function ProjectFace({
           </div>
         </div>
         {!bare && (
-          <span className={`state${running ? (idling ? " idling" : " on") : ""}`}>
-            {running ? (idling ? "Idling" : "Running") : current ? "Paused" : "Stopped"}
+          <span className={`state${running && !behind ? (idling ? " idling" : " on") : ""}`}>
+            {stateWord}
           </span>
         )}
       </div>
+
+      {/* Several tasks at once: which of them the figures below are about. */}
+      {openMeters.length > 1 && (
+        <div className="meters" role="group" aria-label="Open meters on this project">
+          {openMeters.map(({ session: s, background }) => (
+            <button key={s.id} type="button" aria-pressed={s.id === current?.id}
+                    className={"meter-pick" + (s.id === current?.id ? " on" : "")}
+                    onClick={() => onShowMeter(s.id)}>
+              <span className="meter-pick-name">{s.taskId ? taskLabel(project, s.taskId) : w.noTask}</span>
+              <span className="meter-pick-time">{formatDuration(elapsedMs(s, now))}</span>
+              {!isRunning(s) ? <span className="tag">paused</span>
+                : background && <span className="tag">in background</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* An off-clock project has no earnings to show, and a huge 0.00 reads
           as a broken meter. The elapsed time is the figure that matters.
@@ -81,7 +103,7 @@ export default function ProjectFace({
       {idling && <div className="money-label">Not billed — idle time at this project&apos;s rate</div>}
 
       {current && (
-        <button className="task-chip" onClick={() => setPrompt({ reassign: true })}>
+        <button className="task-chip" onClick={() => setPrompt({ reassign: current.id })}>
           {w.taskCap} · {current.taskId ? taskLabel(project, current.taskId) : "none"} · change
         </button>
       )}
@@ -139,15 +161,16 @@ export default function ProjectFace({
 
       {prompt && !settling && (
         <TaskPrompt
-          key={prompt.reassign ? `move:${current?.id}` : `start:${prompt.kind}`}
+          key={prompt.reassign ? `move:${prompt.reassign}` : `start:${prompt.kind}`}
           project={project} words={w}
+          taken={!allowsParallel(project) ? undefined : prompt.reassign ? takenByOthers : takenTasks}
           initialTaskId={prompt.reassign ? current?.taskId : null}
           confirmLabel={
             prompt.reassign ? "Save" : prompt.kind === KIND.IDLE ? "Start idle" : w.start
           }
           onCancel={() => setPrompt(null)}
           onConfirm={(pick) => {
-            if (prompt.reassign) onAssign([current.id], pick);
+            if (prompt.reassign) onAssign([prompt.reassign], pick);
             else onStart(prompt.kind, pick);
             setPrompt(null);
           }}
@@ -182,6 +205,15 @@ export default function ProjectFace({
               {idling ? "Stop idling" : w.stop}
             </button>
           </>
+        )}
+        {/* A project that allows parallel tasks can start another beside them. */}
+        {current && !prompt && !stopped && allowsParallel(project) && (
+          <button className="btn ghost" onClick={() => setPrompt({ kind: KIND.BILLED })}>
+            Start another task
+          </button>
+        )}
+        {meter?.canBeMain && (
+          <button className="btn ghost" onClick={onMakeMain}>Make it the main task</button>
         )}
         {!current && !prompt && stopped && (
           <button className="btn primary" onClick={() => onSetStatus("active")}>

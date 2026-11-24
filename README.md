@@ -41,6 +41,11 @@ rates. `npm run shots` regenerates every one of them.</sub>
   was work, and a one-click restart of the last few things you ran.
 - **Times a session against a project** and shows the money as it accrues —
   from wherever you are in the app, not just the project you started on.
+- **Runs one meter at a time, except where that is wrong.** A project whose
+  clock ticks while something else does the waiting can allow parallel tasks:
+  they run side by side and beside other projects, and whatever is not your
+  main task is marked as working in background. A life activity runs beside
+  any work.
 - **Snapshots the rate onto the session**, so changing a project's rate
   reaches back only as far as you say: from now on, which leaves work already
   handed in alone, or the whole project, past included.

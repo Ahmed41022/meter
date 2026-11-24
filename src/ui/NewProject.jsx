@@ -11,7 +11,7 @@ export const CURRENCIES = ["EGP", "USD", "EUR", "GBP", "SAR", "AED"];
 
 const blank = (currency) => ({
   name: "", rate: "", perTask: "", currency, company: "",
-  limit: "", over: "", reward: "none", each: "", perHour: "",
+  parallel: false, limit: "", over: "", reward: "none", each: "", perHour: "",
   sessionGoal: { type: "money", target: "" },
   overallGoal: { type: "money", target: "", period: "week" },
 });
@@ -109,6 +109,7 @@ export default function NewProject({
       bonusPerHour: !life && reward === REWARD.PER_HOUR ? Number(form.perHour) : null,
       taskLimit: !life && form.limit.trim() !== ""
         ? { ms: Math.round(limitHours * HOUR), factor: overPct / 100 } : null,
+      parallelTasks: !life && form.parallel,
       sessionGoal: asGoal(form.sessionGoal),
       overallGoal: asGoal(form.overallGoal),
     // A payday only for a client that has none: one that has a schedule keeps
@@ -275,6 +276,25 @@ export default function NewProject({
                   )}
                 </>
               )}
+            </>
+          )}
+          {!life && (
+            <>
+              <div className="sec-head" style={{ marginTop: 18 }}>
+                <span className="eyebrow">Parallel tasks</span>
+              </div>
+              <div className="modes" role="tablist" aria-label="Whether its tasks can run in parallel">
+                {[[false, "One at a time"], [true, "Allowed"]].map(([on, label]) => (
+                  <button key={label} type="button" role="tab" aria-selected={form.parallel === on}
+                          className={"seg-btn" + (form.parallel === on ? " on" : "")}
+                          onClick={() => set({ parallel: on })}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="hint">
+                Allowed lets several of its tasks run at once, and beside other projects.
+              </div>
             </>
           )}
           <div className="sec-head" style={{ marginTop: 18 }}>

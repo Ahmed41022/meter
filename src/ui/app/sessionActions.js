@@ -1,5 +1,5 @@
 import {
-  addManualSession, assignTaskToMany, correctSession, deleteSession, overlappingSessions,
+  addManualSession, assignTaskToMany, correctSession, deleteSession, makeMain, overlappingSessions,
   pauseSession, restoreSession, resumeSession, revertCorrection, startSession, stopSession,
 } from "../../domain/sessions.js";
 import { acceptsTime, isDone } from "../../domain/projects.js";
@@ -13,14 +13,18 @@ import { payFields, resolveTaskPick, uid } from "./shared.js";
  * overlaps. Called on every render, as the inline handlers were, and handed to
  * the view by spreading, so each view prop is the same function as before.
  */
-export function sessionActions({ commit, flash, stateRef, device, project, current }) {
+export function sessionActions({ commit, flash, stateRef, device, project, current, showMeter }) {
   return {
+    onMakeMain: () => commit((s) => makeMain(s, current.id, Date.now())),
     onStart: (kind, pick) => {
       const taskId = resolveTaskPick(project, pick, (st, id, label, pay, note) =>
         addTask(st, project.id, { id, label, note, ...payFields(project, pay) }, Date.now()));
+      const id = uid();
       commit((s) => startSession(
         taskId.prepare(s), project,
-        { now: Date.now(), id: uid(), kind, taskId: taskId.id, device }));
+        { now: Date.now(), id, kind, taskId: taskId.id, device }));
+      // With several going on one project, the page follows the one just started.
+      showMeter(id);
     },
     onPause: () => commit((s) => pauseSession(s, current.id, Date.now())),
     onResume: () => commit((s) => resumeSession(s, current.id, Date.now(), device)),
@@ -45,7 +49,9 @@ export function sessionActions({ commit, flash, stateRef, device, project, curre
        that threw the half-typed entry away to show you the clash
        would cost more than it told you — so it says which record it
        is instead, and you decide. */
-    findOverlaps: (window_) => overlappingSessions(stateRef.current, window_).map((s) => {
+    findOverlaps: (window_, subject) => overlappingSessions(
+      stateRef.current, window_, null, { ...subject, projectId: project.id },
+    ).map((s) => {
       const owner = stateRef.current.projects.find((x) => x.id === s.projectId);
       return {
         ...s,

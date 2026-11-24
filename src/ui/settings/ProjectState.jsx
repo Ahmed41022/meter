@@ -1,4 +1,5 @@
 import { isOffClock, statusOf } from "../../domain/projects.js";
+import { allowsParallel } from "../../domain/concurrency.js";
 import { paysOnAcceptance } from "../../domain/earnings.js";
 
 /**
@@ -55,6 +56,25 @@ export default function ProjectState({ project, onPatch, onSetStatus }) {
             their own line rather than in your earnings; the acceptance reward waits beside them.
             Accepting pays both. A rejection cancels both, and the hours stay on the record with
             their time and without their money.
+          </div>
+
+          <div className="sec-head" style={{ marginTop: 22 }}>
+            <span className="eyebrow">Parallel tasks</span>
+          </div>
+          <div className="modes" role="tablist" aria-label="Whether this project's tasks can run in parallel">
+            {[[false, "One at a time"], [true, "Allowed"]].map(([on, label]) => (
+              <button key={label} role="tab" aria-selected={allowsParallel(project) === on}
+                      className={"seg-btn" + (allowsParallel(project) === on ? " on" : "")}
+                      onClick={() => onPatch({ parallelTasks: on })}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="hint">
+            Allowed is for work whose clock keeps ticking while something else does the waiting.
+            Several of its tasks can run at once, and it can run beside other projects; whatever
+            is not your main task says <strong>working in background</strong>. Each task&apos;s
+            time counts in full, so the hours can add up to more than the clock on the wall.
           </div>
         </>
       )}

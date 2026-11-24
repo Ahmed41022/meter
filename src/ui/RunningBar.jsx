@@ -12,12 +12,16 @@ import { isPieceOnly } from "../domain/earnings.js";
  * project, which meant the Overview could show a day's earnings while saying
  * nothing about the session adding to them as you read it.
  *
+ * One strip per meter. Where several run at once the main one comes first, and
+ * work running behind it says it is working in the background.
+ *
  * It renders nothing at all when nothing is running. A strip that is always
  * there, saying "not tracking", is furniture — and this one sits above every
  * screen in the app, so it has to earn the row it occupies.
  */
 export default function RunningBar({
   project, session, now, elsewhere = false, runningOn = null, onOpen, onStop,
+  background = false, onMakeMain = null,
   price = (s) => rateFor(project, s),
 }) {
   if (!project || !session) return null;
@@ -39,7 +43,7 @@ export default function RunningBar({
       : <>over{more(" the limit")} · {Math.round(terms.factor * 100)}%</>;
 
   return (
-    <div className={"runbar" + (idling ? " idling" : "")}>
+    <div className={"runbar" + (idling ? " idling" : "") + (background ? " behind" : "")}>
       <span className="runbar-dot" aria-hidden="true" />
       <button className="runbar-what" onClick={() => onOpen(project.id)}>
         <span className="runbar-name">{project.name}</span>
@@ -57,6 +61,12 @@ export default function RunningBar({
         <span className={"runbar-limit" + (terms.at > now ? "" : " over")}>{limitTag}</span>
       )}
       {idling && <span className="runbar-tag">idle</span>}
+      {/* A task whose clock ticks beside the one being worked. */}
+      {background && (
+        <span className="runbar-tag quiet" title="Working in background">
+          {more("Working in ")}background
+        </span>
+      )}
       {/* Said out loud, because the strip is otherwise indistinguishable from
           a meter running here, and Stop reaches across either way. Named when
           that device has said so lately (Meter Sync's presence), which also
@@ -65,6 +75,9 @@ export default function RunningBar({
         <span className="runbar-tag" title={runningOn ? `Started on ${runningOn}` : "Started on another device"}>
           {runningOn ? `on ${runningOn}` : "on another device"}
         </span>
+      )}
+      {onMakeMain && (
+        <button className="linkish runbar-main" onClick={onMakeMain}>Make main</button>
       )}
       <button className="runbar-stop" onClick={onStop}>Stop</button>
     </div>

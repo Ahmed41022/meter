@@ -39,13 +39,18 @@ export const closedTaskNote = (project, taskId) => {
  */
 export default function TaskPrompt({
   project, initialTaskId = null, confirmLabel = "Start", onConfirm, onCancel,
-  words = wordsFor(false),
+  words = wordsFor(false), taken,
 }) {
+  // Tasks of this project with a meter going (null for no task), where several
+  // can: another meter on one of them would count the same work twice.
+  const busyOn = (id) => Boolean(taken?.has(id));
   // Submitted work takes no more hours, so offering it here would be a
   // choice that starts nothing and moves nothing.
   const tasks = tasksFor(project).filter(takesTime);
-  const [mode, setMode] = useState(tasks.length ? "existing" : "new");
-  const [taskId, setTaskId] = useState(initialTaskId ?? NONE);
+  const free = tasks.filter((t) => !busyOn(t.id));
+  const start = initialTaskId ?? (busyOn(null) && free.length ? free[0].id : NONE);
+  const [mode, setMode] = useState(tasks.length && !(busyOn(null) && !free.length) ? "existing" : "new");
+  const [taskId, setTaskId] = useState(start);
   const [draft, setDraft] = useState("");
   // What this task is worth, asked here because here is where the task comes
   // into existence. Setting it afterwards meant editing the project's rate to
@@ -79,7 +84,15 @@ export default function TaskPrompt({
     ? findTaskByLabel(project, draft)
     : findTask(project, taskId === NONE ? null : taskId);
   const closed = named ? closedTaskNote(project, named.id) : null;
-  const refusal = closed && (
+  // What confirming would pick, or undefined for a task not made yet.
+  const picking = named?.id ?? (mode === "existing" || !draft.trim() ? null : undefined);
+  const busy = !closed && picking !== undefined && busyOn(picking);
+  const refusal = busy ? (
+    <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
+      {named ? `“${named.label}” already has a meter going.` : "A meter with no task is already going."}
+      {" "}Choose another {words.task}.
+    </span>
+  ) : closed && (
     <span className="hint warn" role="alert" style={{ marginTop: 8, display: "block" }}>
       {closed} Reopen it in the {words.byTask} list if there is more to do on it, or
       choose another.
@@ -87,7 +100,7 @@ export default function TaskPrompt({
   );
 
   const confirm = () => {
-    if (closed || payIssue) return;
+    if (closed || busy || payIssue) return;
     if (mode === "new") {
       const clean = draft.trim();
       return onConfirm(clean ? { label: clean, pay: pay.trim(), note: note.trim() } : { taskId: null });
@@ -190,7 +203,7 @@ export default function TaskPrompt({
       )}
 
       <div className="controls">
-        <button className="btn primary" disabled={!!closed || !!payIssue} onClick={confirm}>
+        <button className="btn primary" disabled={!!closed || busy || !!payIssue} onClick={confirm}>
           {confirmLabel}
         </button>
         <button className="btn ghost" onClick={onCancel}>Cancel</button>

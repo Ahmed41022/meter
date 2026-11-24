@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "../storage/store.js";
-import { isRunning, startedAt } from "../domain/time.js";
+import { isOpen, isRunning, startedAt } from "../domain/time.js";
 import { formatShortDuration } from "../domain/money.js";
 import {
-  currentSession, idleSessionsFor, isBilled, liveSessions, ownedBy, sessionsFor, stopSession,
+  allSessionsFor, idleSessionsFor, isBilled, liveSessions, makeMain, ownedBy, sessionsFor, stopSession,
 } from "../domain/sessions.js";
 import { liveProjects } from "../domain/projects.js";
 import { earningsFor, liveEarnings } from "../domain/earnings.js";
@@ -15,6 +15,7 @@ import { useRates } from "./app/useRates.js";
 import { CurrencyContext } from "./CurrencyContext.jsx";
 import { SORT_PREFS, prefOf, setPref } from "../domain/prefs.js";
 import { companyList } from "../domain/payPeriod.js";
+import { metersClash, runningMeters, tasksGoing, wouldStop } from "../domain/concurrency.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
 import { createDrive, syncOnce } from "../sync/drive.js";
@@ -126,7 +127,16 @@ export default function App({ store: injectedStore }) {
   const [intentSeq, setIntentSeq] = useState(0);
   const [tab, setTab] = useState(intent ? "settings" : "today");
   const [now, setNow] = useState(() => Date.now());
-  const [recoveryId, setRecoveryId] = useState(null);
+  /** Meters found left running at startup, asked about one at a time. One that
+   *  has since been stopped, here or elsewhere, has nothing left to ask. */
+  const [recoveryIds, setRecoveryIds] = useState([]);
+  const recovering = recoveryIds
+    .map((id) => liveSessions(state.sessions).find((s) => s.id === id))
+    .find((s) => s && isRunning(s)) ?? null;
+  const recoveryId = recovering?.id ?? null;
+  /** Which open meter a project's page shows, where it has several: the one
+   *  picked, or else its main one. */
+  const [shownMeter, setShownMeter] = useState(null);
   const [conflict, setConflict] = useState(false);
   /** A session the user has been sent to look at, from a warning that named
    *  it. Cleared on the way out, so returning later does not re-scroll. */
@@ -186,15 +196,17 @@ export default function App({ store: injectedStore }) {
   const { answerPayment, answerPayments, markPaymentLines } = paymentActions({ commit, flash, stateRef });
 
   useStartup({
-    store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryId,
+    store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryIds,
     setConflict,
   });
 
   const anyRunning = useMemo(() => liveSessions(state.sessions).some(isRunning), [state.sessions]);
-  /** The meter this device holds, if any: what it tells its other devices it is running. */
-  const heldSession = useMemo(
-    () => liveSessions(state.sessions).find((s) => isRunning(s) && ownedBy(s, device))?.id ?? null,
-    [state.sessions, device],
+  /** The meters this device holds, the main one first: what it tells its other
+   *  devices it is running. */
+  const heldSessions = useMemo(
+    () => runningMeters(state.sessions, liveProjects(state.projects))
+      .filter(({ session }) => ownedBy(session, device)).map(({ session }) => session.id),
+    [state.sessions, state.projects, device],
   );
   /** A meter THIS device is holding. Only it may write proof of life. */
   const meterHere = useMemo(
@@ -271,9 +283,9 @@ export default function App({ store: injectedStore }) {
         // Two things only a merge can produce, and both need saying rather than
         // absorbing: time counted twice, and a meter apparently running in two
         // places. The second reuses the banner built for two browser tabs.
-        const clashes = overlaps(liveSessions(out.state.sessions), Date.now());
+        const clashes = overlaps(liveSessions(out.state.sessions), Date.now(), out.state.projects);
         if (clashes.length) setMerged({ overlaps: clashes });
-        if (liveSessions(out.state.sessions).filter(isRunning).length > 1) setConflict(true);
+        if (metersClash(out.state.sessions, out.state.projects)) setConflict(true);
       }
       // Named fields, never `...out`: it carries the merged ledger under `state`,
       // and spreading it would put the whole thing into the field that holds the
@@ -296,12 +308,12 @@ export default function App({ store: injectedStore }) {
    * when a merge makes time count twice or shows a meter running in two places.
    */
   const noteMerge = useCallback((next) => {
-    const clashes = overlaps(liveSessions(next.sessions), Date.now());
+    const clashes = overlaps(liveSessions(next.sessions), Date.now(), next.projects);
     if (clashes.length) setMerged({ overlaps: clashes });
-    if (liveSessions(next.sessions).filter(isRunning).length > 1) setConflict(true);
+    if (metersClash(next.sessions, next.projects)) setConflict(true);
   }, []);
   const relay = useRelaySync({
-    ready, stateRef, write, anyRunning, presenceSession: heldSession, device, onMerged: noteMerge,
+    ready, stateRef, write, anyRunning, heldSessions, device, onMerged: noteMerge,
   });
   const relayOn = relay.active;
   const { schedulePush } = relay;
@@ -383,19 +395,28 @@ export default function App({ store: injectedStore }) {
   // goes through here. One place to forget instead of seven.
   const projects = liveProjects(state.projects);
   const project = projects.find((p) => p.id === openProjectId) || null;
-  const current = project ? currentSession(state, project.id) : null;
 
-  /** The one meter that is going, wherever it belongs. Two at once is already
-   *  reported as a conflict elsewhere; this takes the first either way, so the
-   *  strip never disagrees with itself between renders. Computed plainly
-   *  rather than memoised: it runs after an early return, where a hook cannot
-   *  go, and it is a filter over a list this render walks several times
-   *  already. */
-  const runningSession = liveSessions(state.sessions).filter(isRunning)[0] ?? null;
-  const runningProject = runningSession
-    ? projects.find((p) => p.id === runningSession.projectId) ?? null
-    : null;
-  const recovering = recoveryId ? state.sessions.find((s) => s.id === recoveryId) : null;
+  /** Every meter that is going, wherever it belongs, the main one first.
+   *  Computed plainly rather than memoised: it runs after an early return,
+   *  where a hook cannot go, and it is a filter over a list this render walks
+   *  several times already. */
+  const meters = runningMeters(state.sessions, projects);
+  /** The open project's meters: running ones as ordered above, then paused
+   *  ones, newest first. Only a project that allows parallel tasks has more
+   *  than one. */
+  const openMeters = project ? [
+    ...meters.filter((m) => m.project.id === project.id),
+    ...allSessionsFor(state, project.id)
+      .filter((s) => isOpen(s) && !isRunning(s))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((session) => ({ session, project, main: false, background: false, canBeMain: false })),
+  ] : [];
+  const meter = openMeters.find((m) => m.session.id === shownMeter) ?? openMeters[0] ?? null;
+  const current = meter?.session ?? null;
+  /** Whether a one-click start would end a meter that is going. */
+  const openNow = liveSessions(state.sessions).filter(isOpen);
+  const blocksStart = (projectId, taskId = null, kind = undefined) =>
+    wouldStop(openNow, projects, { id: null, projectId, taskId, kind });
 
   // The one display currency, for every total below.
   const currency = {
@@ -415,15 +436,18 @@ export default function App({ store: injectedStore }) {
       <div className="wrap">
         {/* Above everything, because it is about right now and the rest of the
             page is about what has already happened. */}
-        {runningProject && (
+        {meters.map(({ session, project: owner, background, canBeMain }) => (
           <RunningBar
-            project={runningProject} session={runningSession} now={now} price={price}
-            elsewhere={!ownedBy(runningSession, device)}
-            runningOn={relayOn ? relay.runningOn(runningSession.id, now) : null}
-            onOpen={openProject}
-            onStop={() => commit((s) => stopSession(s, runningSession.id, Date.now()))}
+            key={session.id}
+            project={owner} session={session} now={now} price={price} background={background}
+            elsewhere={!ownedBy(session, device)}
+            runningOn={relayOn ? relay.runningOn(session.id, now) : null}
+            onOpen={(id) => { openProject(id); setShownMeter(session.id); }}
+            onMakeMain={canBeMain
+              ? () => commit((s) => makeMain(s, session.id, Date.now())) : null}
+            onStop={() => commit((s) => stopSession(s, session.id, Date.now()))}
           />
-        )}
+        ))}
 
         <TopBar
           project={project} tab={tab} setTab={setTab} setOpenProjectId={setOpenProjectId}
@@ -454,7 +478,7 @@ export default function App({ store: injectedStore }) {
         {recovering && (
           <RecoveryPrompt
             recovering={recovering} now={now} state={state} projects={projects} commit={commit}
-            setRecoveryId={setRecoveryId}
+            onAnswered={() => setRecoveryIds((ids) => ids.filter((id) => id !== recovering.id))}
           />
         )}
 
@@ -516,9 +540,14 @@ export default function App({ store: injectedStore }) {
                rate, and Save would write them onto the second. */
             key={project.id}
             project={project} current={current} now={now}
+            meter={meter} openMeters={openMeters} onShowMeter={setShownMeter}
+            takenTasks={tasksGoing(state.sessions, project.id)}
+            takenByOthers={tasksGoing(state.sessions, project.id, current?.id ?? null)}
             sessions={sessionsFor(state, project.id)}
             idleSessions={idleSessionsFor(state, project.id)}
-            {...sessionActions({ commit, flash, stateRef, device, project, current })}
+            {...sessionActions({
+              commit, flash, stateRef, device, project, current, showMeter: setShownMeter,
+            })}
             {...taskActions({ commit, flash, stateRef, project })}
             {...moneyActions({ commit, flash, stateRef, project })}
             {...projectActions({ commit, flash, stateRef, project, setOpenProjectId })}
@@ -543,9 +572,11 @@ export default function App({ store: injectedStore }) {
             projects={projects}
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
-            now={now} running={Boolean(runningSession)}
+            now={now} blocksStart={blocksStart}
             todos={liveTodos(state)}
-            {...todayActions({ commit, flash, stateRef, projects, device, openProject })}
+            {...todayActions({
+              commit, flash, stateRef, projects, device, openProject, showMeter: setShownMeter,
+            })}
             onOpen={openProject}
             onShowSession={showSession}
           />

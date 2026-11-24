@@ -295,6 +295,33 @@ describe("with a live socket", () => {
     await waitFor(again, (p) => /Running on .+, seen \d+ s ago/.test(p.textContent), "presence on the reloaded B", 15_000);
   }, 120_000);
 
+  it("names the device on every meter it runs, when it runs several", async () => {
+    const w = newRelay();
+    const now = Date.now();
+    const meter = (id, taskId) => ({
+      id, projectId: "a", taskId, kind: "billed", rate: 20, currency: "USD", createdAt: now - 60_000, device: "dev-a",
+      segments: [{ startedAt: now - 60_000, endedAt: null, lastTick: now }], closedAt: null, deletedAt: null,
+    });
+    const running = {
+      projects: [{ ...project("a", "Orion"), parallelTasks: true, tasks: [{ id: "t1", label: "one" }, { id: "t2", label: "two" }] }],
+      sessions: [meter("s1", "t1"), meter("s2", "t2")],
+    };
+    const A = await bootApp(w, { seed: running, settings: { "meter:device": "dev-a" }, live: true });
+    const B = await bootApp(w, { seed: ledgerB, settings: { "meter:device": "dev-b" }, live: true });
+    await settle();
+    await toApproval(A, B, w);
+    await press(A, /^Approve$/);
+    await waitFor(B, (p) => /Joined\./.test(p.textContent), "the joiner to finish");
+    await press(B, /^Done$/);
+    const tags = () => [...doc(B).querySelectorAll(".runbar")].map((b) => {
+      const last = [...b.querySelectorAll(".runbar-tag")].at(-1)?.textContent ?? "";
+      return /^on (?!another device)/.test(last);
+    });
+    await until(() => tags().length === 2 && tags().every(Boolean), { timeout: 20_000, what: "both meters to be named" });
+    // Two meters of one project that allows it are not two devices fighting.
+    expect([...doc(B).querySelectorAll(".banner")].some((b) => /Already running|counted twice/.test(b.textContent))).toBe(false);
+  }, 120_000);
+
   it("delivers an edit made on one device to the other with no manual sync", async () => {
     const w = newRelay();
     const A = await bootApp(w, { seed: ledgerA, live: true });

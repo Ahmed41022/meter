@@ -62,7 +62,7 @@ export default function SessionEditor({
    */
   const clashes = [];
   for (const block of preview?.segments ?? []) {
-    for (const other of findOverlaps(block)) {
+    for (const other of findOverlaps(block, session)) {
       if (other.id !== session.id && !clashes.some((c) => c.id === other.id)) clashes.push(other);
     }
   }

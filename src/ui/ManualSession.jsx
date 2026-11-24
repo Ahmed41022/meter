@@ -65,8 +65,8 @@ export function Clashes({ clashes, confirmed, onConfirm, anyway }) {
  * Two things make this more than a form. The preview shows the figure before
  * it is committed, because a block you type in goes straight into the money
  * with nothing having watched it. And it checks the window against every other
- * record: the meter physically cannot produce two overlapping sessions, so a
- * window typed in by hand — here, or in a correction — is the only way the
+ * record it may not run beside: the meter cannot produce two of those over the
+ * same hour, so a window typed in by hand — here, or in a correction — is the only way the
  * same wall-clock hour could be counted twice, and it is worth saying out loud
  * rather than silently accepting.
  */
@@ -93,7 +93,7 @@ export default function ManualSession({
   const valid = lo !== null && hi !== null && hi > lo;
 
   const ms = valid ? hi - lo : 0;
-  const clashes = valid ? findOverlaps({ startedAt: lo, endedAt: hi }) : [];
+  const clashes = valid ? findOverlaps({ startedAt: lo, endedAt: hi }, { kind, taskId: taskId || null }) : [];
   const blocked = clashes.length > 0 && !confirmed;
 
   const rate = project.currentRate;

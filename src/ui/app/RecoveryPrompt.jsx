@@ -6,14 +6,14 @@ import { deleteSession, liveSessions, recoverSession } from "../../domain/sessio
  * answers to the ledger. The banner itself stays in parts.jsx; this holds what
  * answering it does.
  */
-export default function RecoveryPrompt({ recovering, now, state, projects, commit, setRecoveryId }) {
+export default function RecoveryPrompt({ recovering, now, state, projects, commit, onAnswered }) {
   return (
     <RecoveryBanner
       session={recovering} now={now} sessions={liveSessions(state.sessions)}
       project={projects.find((p) => p.id === recovering.projectId)}
-      onStopAtLastTick={() => { commit((s) => recoverSession(s, recovering.id)); setRecoveryId(null); }}
-      onKeepRunning={() => setRecoveryId(null)}
-      onDelete={() => { commit((s) => deleteSession(s, recovering.id, Date.now())); setRecoveryId(null); }}
+      onStopAtLastTick={() => { commit((s) => recoverSession(s, recovering.id)); onAnswered(); }}
+      onKeepRunning={onAnswered}
+      onDelete={() => { commit((s) => deleteSession(s, recovering.id, Date.now())); onAnswered(); }}
     />
   );
 }

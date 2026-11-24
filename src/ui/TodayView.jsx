@@ -78,7 +78,7 @@ const daySum = (totals, nothing = "", shown = null, fmt = money) => {
  * nor money and must not reach a heading that says what a day came to.
  */
 export default function TodayView({
-  projects, sessions, earnings, now, running, onStart, onOpen, onShowSession,
+  projects, sessions, earnings, now, blocksStart, onStart, onOpen, onShowSession,
   todos = [], onAddTodo, onToggleTodo, onEditTodo, onRemoveTodo, onClearDone,
 }) {
   const [shown, setShown] = useState(STEP);
@@ -88,7 +88,11 @@ export default function TodayView({
   const rateOf = pricer(projects, sessions);
   const nameOf = (id) => projects.find((p) => p.id === id) ?? null;
 
-  const picks = recentPicks(sessions, projects);
+  // Only what can start without ending a meter that is going: a row of one-click
+  // starts beside a running session is otherwise a row of one-click ways to end
+  // it by accident. With nothing going that is all of them.
+  const picks = recentPicks(sessions, projects, Infinity)
+    .filter((p) => !blocksStart(p.project.id, p.taskId, p.kind)).slice(0, 5);
   const days = daysOfWork(sessions, now);
 
   const { work, offClock } = splitByClock(projects, sessions);
@@ -119,16 +123,12 @@ export default function TodayView({
     <>
       {/* First, above the day's figures: what is left to do is what you open
           the app to see in the morning, before there are any. */}
-      <Todos todos={todos} projects={projects} running={running}
+      <Todos todos={todos} projects={projects} blocksStart={blocksStart}
              onStart={(projectId) => onStart(projectId, null)} onOpen={onOpen}
              onAdd={onAddTodo} onToggle={onToggleTodo} onEdit={onEditTodo}
              onRemove={onRemoveTodo} onClearDone={onClearDone} />
 
-      {/* Hidden while a meter is going. Starting one closes whatever else is
-          open, so a row of one-click starts beside a running session is a row
-          of one-click ways to end it by accident. The running bar above is
-          the right control then, and it is already there. */}
-      {picks.length > 0 && !running && (
+      {picks.length > 0 && (
         <div className="sec">
           <div className="sec-head">
             <span className="eyebrow">Start again</span>

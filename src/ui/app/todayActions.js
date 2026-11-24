@@ -5,7 +5,7 @@ import {
 import { uid } from "./shared.js";
 
 /** What the Today screen does: the to-do list, and starting a session on a project. */
-export function todayActions({ commit, flash, stateRef, projects, device, openProject }) {
+export function todayActions({ commit, flash, stateRef, projects, device, openProject, showMeter }) {
   return {
     onAddTodo: (fields) => commit((s) => addTodo(s, fields, Date.now(), uid())),
     onToggleTodo: (id) => commit((s) => toggleTodo(s, id, Date.now())),
@@ -26,10 +26,12 @@ export function todayActions({ commit, flash, stateRef, projects, device, openPr
     onStart: (projectId, taskId, kind) => {
       const owner = projects.find((p) => p.id === projectId);
       if (!owner) return;
+      const id = uid();
       commit((s) => startSession(s, owner, {
-        now: Date.now(), id: uid(), kind: kind ?? KIND.BILLED, taskId, device,
+        now: Date.now(), id, kind: kind ?? KIND.BILLED, taskId, device,
       }));
       openProject(projectId);
+      showMeter(id);
     },
   };
 }

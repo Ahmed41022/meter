@@ -13,7 +13,7 @@ const STALE_MS = 150_000;
 export const EMPTY = { projects: [], sessions: [], objectives: [], earnings: [] };
 
 export function useStartup({
-  store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryId,
+  store, device, stateRef, toastTimer, setState, setUnreadable, setReady, setRecoveryIds,
   setConflict,
 }) {
   const booted = useRef(false);
@@ -48,8 +48,9 @@ export function useStartup({
        */
       const running = liveSessions(data.sessions)
         .filter((s) => isRunning(s) && ownedBy(s, device));
-      const stale = running.find((s) => isStale(s, t, STALE_MS));
-      if (stale) setRecoveryId(stale.id);
+      const stale = running.filter((s) => isStale(s, t, STALE_MS));
+      // Several can be left running at once; they are asked about one by one.
+      if (stale.length) setRecoveryIds(stale.map((s) => s.id));
       // A fresh heartbeat is another tab, or this one from before a reload.
       // Tabs that can ask each other do (app/otherTabs.js); elsewhere it is
       // taken as another tab, unless this one just reloaded into an update.

@@ -7,29 +7,33 @@ import { taskLabel } from "../../domain/tasks.js";
 import { notify } from "../notify.js";
 
 /**
- * Saying so when the running meter's task crosses its time limit. The strip
+ * Saying so when a running meter's task crosses its time limit. The strip
  * counts down to the moment; this is the one-off notice as it passes.
  */
 export function useOverLimit({ state, now, price, device, flash }) {
-  const runningHere = liveSessions(state.sessions).find((s) => isRunning(s) && ownedBy(s, device));
   /**
-   * Where the running meter's task crosses its time limit, if it has one.
+   * Where each running meter's task crosses its time limit, if it has one.
    * Known before it happens — the sitting is going, so the moment the limit
    * is reached is already fixed — which is what the strip counts down to.
    */
-  const limitAt = runningHere ? price.terms(runningHere)?.at ?? null : null;
+  const limits = liveSessions(state.sessions)
+    .filter((s) => isRunning(s) && ownedBy(s, device))
+    .map((session) => ({ session, terms: price.terms(session) }))
+    .filter(({ terms }) => (terms?.at ?? null) !== null);
+  const key = limits.map(({ session, terms }) => `${session.id}:${terms.at}`).join("|");
   // Said once, as the line is crossed, and only by the device running the
   // meter. A window opened after it was crossed says so in the strip instead.
   const lastTick = useRef(Date.now());
   useEffect(() => {
     const before = lastTick.current;
     lastTick.current = now;
-    if (limitAt === null || !(before < limitAt && now >= limitAt)) return;
-    const owner = liveProjects(state.projects).find((p) => p.id === runningHere.projectId);
-    const terms = price.terms(runningHere);
-    const task = owner ? taskLabel(owner, runningHere.taskId) : "This task";
-    const message = `${task} is past its ${formatShortDuration(terms.ms)} limit. Time from now pays ${Math.round(terms.factor * 100)}%.`;
-    notify("Over the time limit", message, `limit-${runningHere.taskId}`);
-    flash(message);
-  }, [now, limitAt]); // eslint-disable-line react-hooks/exhaustive-deps -- fires on the tick that crosses the line
+    for (const { session, terms } of limits) {
+      if (!(before < terms.at && now >= terms.at)) continue;
+      const owner = liveProjects(state.projects).find((p) => p.id === session.projectId);
+      const task = owner ? taskLabel(owner, session.taskId) : "This task";
+      const message = `${task} is past its ${formatShortDuration(terms.ms)} limit. Time from now pays ${Math.round(terms.factor * 100)}%.`;
+      notify("Over the time limit", message, `limit-${session.taskId}`);
+      flash(message);
+    }
+  }, [now, key]); // eslint-disable-line react-hooks/exhaustive-deps -- fires on the tick that crosses the line
 }

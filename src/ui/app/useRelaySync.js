@@ -46,9 +46,15 @@ const RETRIES = new Set(["busy", "backoff", "network", "paused", "quota"]);
 /** As the Settings list has it: two missed minutes means gone, not slow. */
 const PRESENCE_FRESH_MS = 150_000;
 
+/** A device can hold several meters. A build from before that reads `sessionId`
+ *  alone, so the main one goes there and all of them in `sessionIds`. */
+const presenceOf = (device, held) => ({ dev: device, sessionId: held[0], sessionIds: held, tick: Date.now() });
+const heldIn = (p) => (Array.isArray(p.sessionIds)
+  ? p.sessionIds.filter((id) => typeof id === "string") : [p.sessionId]);
+
 const validPresence = (p) => p && typeof p === "object" && typeof p.sessionId === "string" && Number.isFinite(p.tick);
 
-export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSession, device, onMerged }) {
+export function useRelaySync({ ready, stateRef, write, anyRunning, heldSessions = [], device, onMerged }) {
   const [vault, setVault] = useState(() => loadVault());
   const active = Boolean(vault?.vaultId);
   const [status, setStatus] = useState({ state: "idle", at: null });
@@ -68,8 +74,9 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
 
   const presenceRef = useRef({});
   /** What this device holds, for answering a hello from inside the engine. */
-  const heldRef = useRef(presenceSession);
-  heldRef.current = presenceSession;
+  const heldRef = useRef(heldSessions);
+  heldRef.current = heldSessions;
+  const heldKey = heldSessions.join("|");
   const deviceRef = useRef(device);
   deviceRef.current = device;
   /** What the running effect offers the rest of the hook: `{ sync, sendPresence, kill }`. */
@@ -218,12 +225,12 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
           // and knows of no meter until it hears of one. Holding one, say so
           // now rather than on the next minute, which left it saying "on
           // another device" for up to a minute after every reload.
-          if (dev !== vault.deviceId && heldRef.current) {
-            live.current?.sendPresence({ dev: deviceRef.current, sessionId: heldRef.current, tick: Date.now() });
+          if (dev !== vault.deviceId && heldRef.current.length) {
+            live.current?.sendPresence(presenceOf(deviceRef.current, heldRef.current));
           }
           return;
         }
-        presenceRef.current = { ...presenceRef.current, [dev]: { sessionId: payload.sessionId, tick: payload.tick, at: Date.now() } };
+        presenceRef.current = { ...presenceRef.current, [dev]: { sessionIds: heldIn(payload), tick: payload.tick, at: Date.now() } };
         setPresenceVersion((v) => v + 1);
       };
 
@@ -304,12 +311,12 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
   /** The device holding a meter says so once a minute. Sent, not stored: see the
    *  header. Sent at once when the socket comes up, so a receiver need not wait. */
   useEffect(() => {
-    if (!active || !presenceSession || socketState !== "connected") return undefined;
-    const send = () => live.current?.sendPresence({ dev: device, sessionId: presenceSession, tick: Date.now() });
+    if (!active || !heldKey || socketState !== "connected") return undefined;
+    const send = () => live.current?.sendPresence(presenceOf(device, heldRef.current));
     send();
     const id = setInterval(send, PRESENCE_MS);
     return () => clearInterval(id);
-  }, [active, presenceSession, socketState, device]);
+  }, [active, heldKey, socketState, device]);
 
   const namesRef = useRef(deviceNames);
   namesRef.current = deviceNames;
@@ -321,7 +328,7 @@ export function useRelaySync({ ready, stateRef, write, anyRunning, presenceSessi
    */
   const runningOn = useCallback((sessionId, now = Date.now()) => {
     for (const [dev, p] of Object.entries(presenceRef.current)) {
-      if (p.sessionId === sessionId && now - p.at < PRESENCE_FRESH_MS) return namesRef.current[dev] ?? null;
+      if (p.sessionIds.includes(sessionId) && now - p.at < PRESENCE_FRESH_MS) return namesRef.current[dev] ?? null;
     }
     return null;
   }, []);
