@@ -5,7 +5,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from "vitest";
-import { wait, settle, boot, runningSeed, btn, toProjects, setValue, startMeter, guardBuiltApp } from "./app.integration.helpers.js";
+import { wait, settle, boot, runningSeed, btn, toProjects, setValue, startMeter, until, guardBuiltApp } from "./app.integration.helpers.js";
 
 guardBuiltApp();
 
@@ -32,8 +32,7 @@ describe("the tab-conflict notice, where tabs can ask each other", () => {
 
   it("appears when another tab answers that it holds the meter", async () => {
     const dom = await boot(runningSeed(5_000), null, tabs(true));
-    await wait(900);
-    expect(conflictShown(dom)).toBe(true);
+    await until(() => conflictShown(dom), { what: "the notice", timeout: 15_000 });
   }, 20_000);
 });
 

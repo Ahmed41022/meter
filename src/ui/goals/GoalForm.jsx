@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { EVERY_DAY, readGoal } from "../../domain/workGoals.js";
+import { EVERY_DAY, coverWords, readGoal } from "../../domain/workGoals.js";
 import { hoursText, readHours } from "../../domain/minimum.js";
-import { companiesIn, isOffClock } from "../../domain/projects.js";
+import { activeProjects, companiesIn, isOffClock } from "../../domain/projects.js";
 import { useCurrency } from "../CurrencyContext.jsx";
 import { CURRENCIES } from "../NewProject.jsx";
 import { A_WORD, EVERY_WORD } from "./words.js";
@@ -45,7 +45,8 @@ export default function GoalForm({ goal = null, projects, onSave, onCancel }) {
   const [covers, setCovers] = useState(goal ? scopeKey(goal.scope) : "all");
   const [days, setDays] = useState(terms?.days ?? EVERY_DAY);
 
-  const work = projects.filter((p) => !isOffClock(p));
+  // What can be worked on: nothing on hold or done is a thing to aim at.
+  const work = activeProjects(projects).filter((p) => !isOffClock(p));
   const companies = companiesIn(work);
   const kept = goal ? scopeKey(goal.scope) : "all";
   const listed = ["all", ...companies.map((c) => `c:${c}`), ...work.map((p) => `p:${p.id}`)];
@@ -101,9 +102,9 @@ export default function GoalForm({ goal = null, projects, onSave, onCancel }) {
         <span className="eyebrow">Covers</span>
         <select className="inp" value={covers} onChange={(e) => setCovers(e.target.value)}>
           <option value="all">All work</option>
-          {/* What it covers now, when that has since gone, so saving something
-              else does not quietly move it. */}
-          {!listed.includes(kept) && <option value={kept}>{goal.scope.company ?? "A removed project"}</option>}
+          {/* What it covers now, when that has since stopped or gone, so saving
+              something else does not quietly move it. */}
+          {!listed.includes(kept) && <option value={kept}>{coverWords(goal, projects)}</option>}
           {companies.length > 0 && (
             <optgroup label="Companies">
               {companies.map((c) => <option key={c} value={`c:${c}`}>{c}</option>)}

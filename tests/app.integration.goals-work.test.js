@@ -101,6 +101,40 @@ describe("setting goals", () => {
     expect(rows(d)).toHaveLength(3);
   }, 30_000);
 
+  it("leaves out projects that are paused or done, but for managing their goals", async () => {
+    const base = seed({ goals: [
+      goal("g1", { scope: { kind: "project", projectId: "a" } }),
+      goal("g2", { order: 1, period: "week", scope: { kind: "project", projectId: "b" } }),
+      goal("g3", { order: 2, scope: { kind: "company", company: "Alignerr" } }),
+    ] });
+    const status = { a: "done", b: "paused" };
+    const dom = await boot({ ...base, projects: [
+      ...base.projects.map((p) => (status[p.id] ? { ...p, status: status[p.id], statusAt: 2 } : p)),
+      { ...base.projects[0], id: "c", name: "Open", company: "Other" },
+    ] });
+    const d = dom.window.document;
+    expect(rows(d)).toHaveLength(0);
+    expect(section(d).textContent).not.toMatch(/Show all/);
+    await press(d, /Set goal$/);
+    expect([...field(d, "Covers").options].map((o) => o.textContent)).toEqual(["All work", "Other", "Open"]);
+    await press(d, /^Cancel$/);
+
+    await press(d, /^Manage$/);
+    const text = rows(d).map((r) => r.textContent);
+    expect(text[0]).toMatch(/Alphadaily, project done/);
+    expect(text[1]).toMatch(/Betaweekly, project paused/);
+    expect(text[2]).toMatch(/Alignerrdaily, no active project/);
+    expect(section(d).textContent).not.toMatch(/Met|Missed/);
+    // Editing one keeps what it covers unless that is changed.
+    await press(d, /^Edit$/, rows(d)[0]);
+    expect(field(d, "Covers").selectedOptions[0].textContent).toBe("Alpha");
+    await press(d, /^Cancel$/);
+
+    await press(d, /^Done$/);
+    await toProjects(d, "Overview");
+    expect(d.body.textContent).not.toMatch(/(Beta|Alpha)(this week|today)/);
+  }, 40_000);
+
   it("is edited, paused, moved and deleted, and what is undone comes back", async () => {
     const dom = await boot(seed({ goals: [goal("g1"), goal("g2", { order: 1, period: "week", scope: { kind: "company", company: "Alignerr" } })] }));
     const d = dom.window.document;

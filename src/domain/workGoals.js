@@ -1,4 +1,4 @@
-import { companyOf, fold, isOffClock } from "./projects.js";
+import { companyOf, fold, isActive, isOffClock } from "./projects.js";
 import { performanceIn } from "./performance.js";
 import { pace, paceState, periodBoundary, weekdayOf } from "./goals.js";
 import { dayGoalState, isDayGoal } from "./dayGoal.js";
@@ -174,6 +174,17 @@ export const coveredBy = (goal, projects) => (projects ?? []).filter((p) => {
   if (goal.scope.kind === "company") return fold(companyOf(p)) === fold(goal.scope.company);
   return true;
 });
+
+/**
+ * Whether a goal is one to work towards now: not paused, and with a project
+ * running to work on. A project on hold or done takes its own goal off the
+ * screens, and so does the last one of a company's to stop; the goal is kept,
+ * and is back when one runs again. Everything that shows or announces goals
+ * asks here, so none of them shows one the others do not.
+ */
+export const hasOpenWork = (goal, projects) =>
+  goal.scope.kind === "all" || coveredBy(goal, projects).some(isActive);
+export const isGoing = (goal, projects) => !isPausedGoal(goal) && hasOpenWork(goal, projects);
 
 /** Whose goal it is, in words. */
 export const coverWords = (goal, projects) => {

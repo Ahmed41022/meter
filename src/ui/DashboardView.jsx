@@ -25,7 +25,7 @@ import OffClockList from "./dashboard/OffClockList.jsx";
 import Activity from "./dashboard/Activity.jsx";
 import WhenYouWork from "./dashboard/WhenYouWork.jsx";
 import { BEFORE, SO_FAR } from "./dashboard/labels.js";
-import { coverWords, goalStanding, isPausedGoal } from "../domain/workGoals.js";
+import { coverWords, goalStanding, isGoing } from "../domain/workGoals.js";
 import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
 
 /**
@@ -125,7 +125,7 @@ export default function DashboardView({
   const { from, to, current, previous, trend, rows, offRows, companies } = view;
   // The goals for work first, in their own order, then each project's own.
   const targets = [
-    ...goals.filter((g) => !isPausedGoal(g)).map((g) => {
+    ...goals.filter((g) => isGoing(g, projects)).map((g) => {
       const at = goalStanding(g, { ...goalCtx, ...fx.settings });
       return {
         id: g.id, name: coverWords(g, projects), currency: g.currency,

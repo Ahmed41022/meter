@@ -7,6 +7,12 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Goals leave out projects that are paused or done. The form no longer offers
+  them, and a goal for one, or for a company with no active project, leaves
+  Today and the Overview until it runs again. Manage still lists it.
+
 ## [1.5.0] — 2026-11-24
 
 Minor rather than major: everything new is stored in optional fields, on a

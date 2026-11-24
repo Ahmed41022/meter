@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { coverWords, goalStanding, isPausedGoal } from "../../domain/workGoals.js";
+import { coverWords, goalStanding, isGoing } from "../../domain/workGoals.js";
 import { goalFormatter } from "../parts.jsx";
 import { PERIOD_WORD } from "../goals/words.js";
 import { notify } from "../notify.js";
@@ -20,7 +20,7 @@ export function useGoalMet({ goals, projects, ctx, ready, meterHere, flash }) {
   useEffect(() => {
     if (!ready) return;
     for (const goal of goals) {
-      if (isPausedGoal(goal)) continue;
+      if (!isGoing(goal, projects)) continue;
       const at = goalStanding(goal, ctx);
       const key = `${goal.id}|${goal.type}|${goal.period}|${at.from}|${at.target}`;
       const was = seen.current.get(goal.id);

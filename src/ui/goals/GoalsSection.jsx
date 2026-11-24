@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { coverWords, goalResults, goalStanding, isPausedGoal } from "../../domain/workGoals.js";
+import { coverWords, goalResults, goalStanding, hasOpenWork, isGoing, isPausedGoal } from "../../domain/workGoals.js";
 import { currenciesByValue } from "../../domain/performance.js";
 import { formatMoney } from "../../domain/money.js";
 import { useCurrency } from "../CurrencyContext.jsx";
 import { GoalMeter, goalFormatter } from "../parts.jsx";
 import { rateDay } from "../fxMoney.js";
 import GoalForm from "./GoalForm.jsx";
-import { EVERY_WORD, PERIOD_WORD, resultWords } from "./words.js";
+import { EVERY_WORD, PERIOD_WORD, restWords, resultWords } from "./words.js";
 
 /** How many goals Today shows before "Show all": more than a few at once is a
  *  list, not a focus. */
@@ -28,20 +28,25 @@ const caveat = (at) => [
 
 function Goal({ goal, projects, ctx, results, managing, first, last, actions, onEdit }) {
   const paused = isPausedGoal(goal);
+  const open = hasOpenWork(goal, projects);
+  const resting = paused || !open;
   const at = goalStanding(goal, ctx);
   const show = goalFormatter(goal.type, goal.currency);
   const note = caveat(at);
-  const said = resultWords(results, goal.period);
+  // With its projects stopped there was nothing to miss.
+  const said = open ? resultWords(results, goal.period) : "";
   return (
-    <div className={"trg wgoal" + (paused ? " paused" : "")}>
+    <div className={"trg wgoal" + (resting ? " paused" : "")}>
       <div className="trg-top">
         <span className="trg-name">{coverWords(goal, projects)}</span>
-        <span className="trg-of">{paused ? `${EVERY_WORD[goal.period].toLowerCase()}, paused` : PERIOD_WORD[goal.period]}</span>
+        <span className="trg-of">
+          {resting ? `${EVERY_WORD[goal.period].toLowerCase()}, ${restWords(goal, projects, paused)}` : PERIOD_WORD[goal.period]}
+        </span>
         <span className="goal-val">
-          {paused ? show(at.target) : `${at.approx ? "≈ " : ""}${show(at.value)} / ${show(at.target)}`}
+          {resting ? show(at.target) : `${at.approx ? "≈ " : ""}${show(at.value)} / ${show(at.target)}`}
         </span>
       </div>
-      {!paused && (
+      {!resting && (
         <>
           <GoalMeter type={goal.type} target={at.target} value={at.value} currency={goal.currency} pace={at.pacing} />
           {goal.period === "day" && (
@@ -95,9 +100,11 @@ export default function GoalsSection({ goals, projects, ctx: given, actions }) {
     [goals, given.source, fxOn, rates, minute],
   );
 
-  // Paused ones after the rest, and only when they are asked for.
-  const ordered = [...goals.filter((g) => !isPausedGoal(g)), ...goals.filter(isPausedGoal)];
-  const going = ordered.filter((g) => !isPausedGoal(g));
+  // Paused ones after the rest, and only when they are asked for. One whose
+  // projects are on hold or done is listed only where goals are managed, so it
+  // can still be moved to something else or deleted.
+  const going = goals.filter((g) => isGoing(g, projects));
+  const ordered = [...going, ...goals.filter((g) => isPausedGoal(g) && hasOpenWork(g, projects))];
   // Managed in their own order, so moving one is seen to move it.
   const shown = managing ? goals : showAll ? ordered : going.slice(0, SHOWN);
   const hidden = ordered.length - shown.length;

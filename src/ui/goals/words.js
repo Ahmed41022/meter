@@ -1,8 +1,19 @@
+import { isDone, isPaused } from "../../domain/projects.js";
+
 /** How a goal is spoken of, in one place, for Today, the Overview and the notice. */
 export const PERIOD_WORD = { day: "today", week: "this week", month: "this month" };
 export const EVERY_WORD = { day: "Daily", week: "Weekly", month: "Monthly" };
 export const A_WORD = { day: "a day", week: "a week", month: "a month" };
 const MANY = { day: "days", week: "weeks", month: "months" };
+
+/** Why a goal is not being worked towards: its own pause, or its projects'. */
+export const restWords = (goal, projects, paused) => {
+  if (paused) return "paused";
+  if (goal.scope.kind === "company") return "no active project";
+  const project = projects.find((p) => p.id === goal.scope.projectId);
+  if (!project) return "project removed";
+  return isDone(project) ? "project done" : isPaused(project) ? "project paused" : "not work";
+};
 
 /** "Met 4 of the last 5 weeks", or nothing before there is one to speak of. */
 export const resultWords = (results, period) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addGoal, coverWords, editGoal, goalResults, goalStanding, isPausedGoal, liveGoals, moveGoal, pauseGoal,
+  addGoal, coverWords, editGoal, goalResults, goalStanding, hasOpenWork, isGoing, isPausedGoal, liveGoals, moveGoal, pauseGoal,
   readGoal, removeGoal, restoreGoal, resumeGoal, termsAt,
 } from "../src/domain/workGoals.js";
 import { pace, paceState } from "../src/domain/goals.js";
@@ -74,6 +74,20 @@ describe("where a goal stands", () => {
     expect([{ kind: "all" }, { kind: "company", company: "Alignerr" }, { kind: "project", projectId: "a" },
       { kind: "project", projectId: "zz" }].map((scope) => coverWords(one({ scope }), projects)))
       .toEqual(["All work", "Alignerr", "A", "A removed project"]);
+  });
+
+  it("is going only while something it covers is, and is back when that is", () => {
+    const stopped = (...ids) => projects.map((p, i) => (ids.includes(p.id) ? { ...p, status: i ? "done" : "paused" } : p));
+    const going = (scope, list) => isGoing(one({ scope }), list);
+    expect(going({ kind: "project", projectId: "a" }, projects)).toBe(true);
+    expect(going({ kind: "project", projectId: "a" }, stopped("a"))).toBe(false);
+    expect(going({ kind: "project", projectId: "b" }, stopped("b"))).toBe(false);
+    expect(going({ kind: "project", projectId: "zz" }, projects)).toBe(false);
+    expect(going({ kind: "company", company: "Alignerr" }, stopped("a"))).toBe(true);
+    expect(going({ kind: "company", company: "Alignerr" }, stopped("a", "b"))).toBe(false);
+    expect(going({ kind: "all" }, stopped("a", "b", "c"))).toBe(true);
+    const paused = liveGoals(pauseGoal(addGoal({ projects }, F(), at(2), "g"), "g", at(3)))[0];
+    expect([isGoing(paused, projects), hasOpenWork(paused, projects)]).toEqual([false, true]);
   });
 
   it("asks nothing of a daily goal on a day off, and counts what is done anyway", () => {
