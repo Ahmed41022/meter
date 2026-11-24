@@ -34,7 +34,7 @@ import { mayOverlap } from "./concurrency.js";
  *  added is merged too (see `collectionKeys`), because filtering by this list
  *  made an older device drop, on its next sync, everything it did not
  *  recognise. */
-export const COLLECTIONS = ["projects", "sessions", "objectives", "earnings", "companies", "todos", "payouts", "prefs"];
+export const COLLECTIONS = ["projects", "sessions", "objectives", "earnings", "companies", "todos", "payouts", "prefs", "goals"];
 
 /** Absent means older than anything stamped, which is what every record written
  *  before sync existed is. It loses to a record that has been touched since, and

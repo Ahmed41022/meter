@@ -93,7 +93,7 @@ describe("merging whole ledgers", () => {
     // Pinned on purpose: a new collection has to be added here deliberately,
     // by somebody who has just checked that the merge handles it.
     expect(COLLECTIONS)
-      .toEqual(["projects", "sessions", "objectives", "earnings", "companies", "todos", "payouts", "prefs"]);
+      .toEqual(["projects", "sessions", "objectives", "earnings", "companies", "todos", "payouts", "prefs", "goals"]);
     const mine = ledger({ projects: [rec("p1", 1, { name: "old" })], sessions: [rec("s1", 1)] });
     const theirs = ledger({
       projects: [rec("p1", 9, { name: "new" })],

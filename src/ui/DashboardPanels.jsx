@@ -16,9 +16,10 @@ import { useMoney } from "./useMoney.js";
 import { moneyText, rateNote } from "./fxMoney.js";
 
 /** A goal's period, said the way the sentence needs it. */
-const PERIOD_WORD = { week: "this week", month: "this month" };
+const PERIOD_WORD = { day: "today", week: "this week", month: "this month" };
 
-/** What each project is aiming at this period, and whether it is on pace. */
+/** What each project, and each goal for work, is aiming at this period, and
+ *  whether it is on pace. A goal for all work or a company opens nothing. */
 export function TargetsPanel({ targets, behind, onOpenProject }) {
   if (!targets.length) return null;
   return (
@@ -28,18 +29,20 @@ export function TargetsPanel({ targets, behind, onOpenProject }) {
             <span className="eyebrow">{behind > 0 ? `${behind} behind` : "all on pace"}</span>
           </div>
           <div className="panel">
-            {targets.map(({ project, goal, value, pacing }) => {
-              const show = goalFormatter(goal.type, project.currency);
+            {targets.map(({ id, name, project, currency, goal, value, pacing }) => {
+              const show = goalFormatter(goal.type, currency);
               return (
-                <div className="trg" key={project.id}>
+                <div className="trg" key={id}>
                   <div className="trg-top">
-                    <button className="linkish trg-name"
-                            onClick={() => onOpenProject(project.id)}>{project.name}</button>
+                    {project ? (
+                      <button className="linkish trg-name"
+                              onClick={() => onOpenProject(project.id)}>{name}</button>
+                    ) : <span className="trg-name plain">{name}</span>}
                     <span className="trg-of">{PERIOD_WORD[goal.period]}</span>
                     <span className="goal-val">{show(value)} / {show(goal.target)}</span>
                   </div>
                   <GoalMeter type={goal.type} target={goal.target} value={value}
-                             currency={project.currency} pace={pacing} />
+                             currency={currency} pace={pacing} />
                 </div>
               );
             })}

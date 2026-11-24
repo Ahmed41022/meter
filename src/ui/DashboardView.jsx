@@ -25,6 +25,7 @@ import OffClockList from "./dashboard/OffClockList.jsx";
 import Activity from "./dashboard/Activity.jsx";
 import WhenYouWork from "./dashboard/WhenYouWork.jsx";
 import { BEFORE, SO_FAR } from "./dashboard/labels.js";
+import { coverWords, goalStanding, isPausedGoal } from "../domain/workGoals.js";
 import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
 
 /**
@@ -38,7 +39,7 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  */
 export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", now, today,
-  onOpenProject, onToggleObjective, pastUnanswered = false, onOpenPayments,
+  onOpenProject, onToggleObjective, pastUnanswered = false, onOpenPayments, goals = [], goalCtx = null,
 }) {
   const fx = useMoney();
   // Remembered, because reopening the app to a span you did not choose is a
@@ -121,7 +122,20 @@ export default function DashboardView({
     };
   }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack]);
 
-  const { from, to, current, previous, trend, rows, offRows, targets, companies } = view;
+  const { from, to, current, previous, trend, rows, offRows, companies } = view;
+  // The goals for work first, in their own order, then each project's own.
+  const targets = [
+    ...goals.filter((g) => !isPausedGoal(g)).map((g) => {
+      const at = goalStanding(g, { ...goalCtx, ...fx.settings });
+      return {
+        id: g.id, name: coverWords(g, projects), currency: g.currency,
+        project: g.scope.kind === "project" ? projects.find((p) => p.id === g.scope.projectId) : null,
+        goal: { type: g.type, period: g.period, target: at.target }, value: at.value,
+        pacing: at.pacing, state: at.state,
+      };
+    }),
+    ...view.targets,
+  ];
   /** The side of every comparison figure that is this period's. */
   const base = view.sofar ?? current;
   /** Worth showing once it groups anything: either several clients, or one

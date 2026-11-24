@@ -15,7 +15,7 @@ import { isOffClock, offClockProjects, workProjects } from "../domain/projects.j
 import { taskLabel } from "../domain/tasks.js";
 import { pricer } from "../domain/terms.js";
 import Todos from "./Todos.jsx";
-import DayGoal from "./DayGoal.jsx";
+import GoalsSection from "./goals/GoalsSection.jsx";
 
 /** One more week each time. Seven is the span you actually think in, and the
  *  ledger has hundreds of sessions in it — all of them at once is not a page. */
@@ -80,7 +80,7 @@ const daySum = (totals, nothing = "", shown = null, fmt = money) => {
  */
 export default function TodayView({
   projects, sessions, earnings, now, blocksStart, onStart, onOpen, onShowSession,
-  dayGoal = null, onDayGoal, todos = [], onAddTodo, onToggleTodo, onEditTodo, onRemoveTodo, onClearDone,
+  goals = [], goalCtx, goalActions, todos = [], onAddTodo, onToggleTodo, onEditTodo, onRemoveTodo, onClearDone,
 }) {
   const [shown, setShown] = useState(STEP);
 
@@ -129,7 +129,7 @@ export default function TodayView({
              onAdd={onAddTodo} onToggle={onToggleTodo} onEdit={onEditTodo}
              onRemove={onRemoveTodo} onClearDone={onClearDone} />
 
-      <DayGoal goal={dayGoal} totals={today} onSave={onDayGoal} />
+      <GoalsSection goals={goals} projects={projects} ctx={goalCtx} actions={goalActions} />
 
       {picks.length > 0 && (
         <div className="sec">

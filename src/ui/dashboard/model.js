@@ -52,7 +52,10 @@ export const targetsFor = (projects, work, now, rateOf, earnings) =>
         work.filter((s) => s.projectId === project.id),
         earnings.filter((e) => e.projectId === project.id), from, to, now, rateOf);
       const pacing = pace({ target: goal.target, from, to }, value, now);
-      return { project, goal, value, pacing, state: paceState(pacing) };
+      return {
+        id: project.id, name: project.name, project, currency: project.currency,
+        goal, value, pacing, state: paceState(pacing),
+      };
     })
     .filter(Boolean)
     .sort((a, b) => a.pacing.drift / a.pacing.flatPerDay - b.pacing.drift / b.pacing.flatPerDay);

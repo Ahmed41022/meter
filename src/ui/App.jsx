@@ -15,6 +15,8 @@ import { useRates } from "./app/useRates.js";
 import { CurrencyContext } from "./CurrencyContext.jsx";
 import { SORT_PREFS, prefOf, setPref } from "../domain/prefs.js";
 import { companyList } from "../domain/payPeriod.js";
+import { liveGoals } from "../domain/workGoals.js";
+import { RELEASES, newsFor } from "../whatsNew.js";
 import { metersClash, runningMeters, tasksGoing, wouldStop } from "../domain/concurrency.js";
 import { mergeState, overlaps, stampChanges } from "../domain/merge.js";
 import { createAuth, originAllowed } from "../sync/google.js";
@@ -48,6 +50,9 @@ import { useHeartbeat } from "./app/useHeartbeat.js";
 import UnreadableBanner from "./app/UnreadableBanner.jsx";
 import AlreadyRunning from "./app/AlreadyRunning.jsx";
 import { useAutoUpdate } from "./app/useAutoUpdate.js";
+import { useGoalMet } from "./app/useGoalMet.js";
+import { goalActions } from "./app/goalActions.js";
+import WhatsNew from "./app/WhatsNew.jsx";
 import { useShellTheme } from "./app/useShellTheme.js";
 import { answerWhileHolding } from "./app/otherTabs.js";
 import { sessionActions } from "./app/sessionActions.js";
@@ -252,6 +257,24 @@ export default function App({ store: injectedStore }) {
   );
   useOverLimit({ state, now, price, device, flash });
 
+  /** The goals for work, and what they are read from: the same live records the
+   *  rest of the app counts. `source` is what finished periods depend on. */
+  const goals = useMemo(() => liveGoals(state), [state]);
+  const goalSource = useMemo(() => ({
+    projects: liveProjects(state.projects), sessions: liveSessions(state.sessions), earnings: liveEarnings(state),
+  }), [state]);
+  const goalCtx = { ...goalSource, source: goalSource, rateOf: price, now };
+  useGoalMet({
+    goals, projects: goalSource.projects, ctx: { ...goalCtx, fxOn, rates: fx.rates }, ready, meterHere, flash,
+  });
+  const [newsOpen, setNewsOpen] = useState(false);
+  const news = useMemo(() => {
+    const began = Math.min(Infinity, ...liveProjects(state.projects).map((p) => p.createdAt).filter(Number.isFinite));
+    return ready ? newsFor({
+      version: VERSION, seen: prefOf(state, "newsSeen"), began: Number.isFinite(began) ? began : null,
+    }) : [];
+  }, [state, ready]);
+
   // ------------------------------------------------------------------ syncing
   const [clientId, setClientId] = useState(() => loadSetting(SETTING.CLIENT_ID));
   const [clientDraft, setClientDraft] = useState("");
@@ -454,6 +477,14 @@ export default function App({ store: injectedStore }) {
           setFocusSession={setFocusSession}
         />
 
+        {/* An update is told about once, on whichever device opens first after
+            it: the mark that it was read follows the ledger. */}
+        <WhatsNew releases={newsOpen ? RELEASES.filter((r) => r.version === VERSION) : news}
+                  onClose={() => {
+                    setNewsOpen(false);
+                    if (news.length) commit((s) => setPref(s, "newsSeen", VERSION, Date.now()));
+                  }} />
+
         {/* First, because it is about the ledger itself. Opening empty without
             a word is how the original used to get saved over: nothing looked
             wrong until the first change had already replaced it. */}
@@ -573,8 +604,7 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             now={now} blocksStart={blocksStart}
-            dayGoal={prefOf(state, "dayGoal")}
-            onDayGoal={(goal) => commit((s) => setPref(s, "dayGoal", goal, Date.now()))}
+            goals={goals} goalCtx={goalCtx} goalActions={goalActions({ commit, flash })}
             todos={liveTodos(state)}
             {...todayActions({
               commit, flash, stateRef, projects, device, openProject, showMeter: setShownMeter,
@@ -590,6 +620,7 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
+            goals={goals} goalCtx={goalCtx}
             /* The synced default, or "last" for this device's own memory. */
             defaultPeriod={prefOf(state, "overviewPeriod")}
             defaultProjectSort={prefOf(state, "byProjectSort")}
@@ -715,7 +746,14 @@ export default function App({ store: injectedStore }) {
         {/* Which build you are looking at. Three copies of this app can be in
             use at once — browser, phone and desktop — and "it works on mine"
             is not answerable without it. */}
-        <p className="version">Meter v{VERSION}</p>
+        <p className="version">
+          {RELEASES.some((r) => r.version === VERSION) ? (
+            <button className="linkish" title="What's new in this version"
+                    onClick={() => { setNewsOpen(true); globalThis.scrollTo?.({ top: 0 }); }}>
+              Meter v{VERSION}
+            </button>
+          ) : `Meter v${VERSION}`}
+        </p>
       </div>
 
       {toast && (

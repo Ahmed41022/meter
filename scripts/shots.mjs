@@ -59,8 +59,10 @@ const serve = () => new Promise((resolve) => {
     const path = (req.url ?? "/").split("?")[0];
     const file = join(SERVE, path === "/" ? "index.html" : path);
     try {
+      // Read first: a file that is not there has to be able to say so.
+      const body = readFileSync(file);
       res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-      res.end(readFileSync(file));
+      res.end(body);
     } catch {
       res.writeHead(404).end("no");
     }
@@ -246,6 +248,18 @@ function rebased({ running = null } = {}) {
   // has ever exported, and it is the first thing in every shot. A real user who
   // has taken one backup does not see it, so neither should the README.
   seed.lastBackupAt = Date.now();
+
+  // The same for the news of the last release, which is read once. And two
+  // goals, dated here because they are about now rather than about the seed.
+  seed.prefs = [{ id: "newsSeen", value: "999.0.0", createdAt: 1, deletedAt: null }];
+  const since = Date.now() - 60 * 86_400_000;
+  const goal = (id, order, target, days, rest) => ({
+    id, order, pauses: [], createdAt: since, deletedAt: null, terms: [{ from: since, target, days }], ...rest,
+  });
+  seed.goals = [
+    goal("g1", 0, 360, [1, 2, 3, 4, 5], { type: "time", period: "day", scope: { kind: "all" } }),
+    goal("g2", 1, 1_200, [1, 2, 3, 4, 5], { type: "time", period: "week", scope: { kind: "company", company: "Northwind" } }),
+  ];
 
   if (running) seed.sessions.push(liveSession(seed, running));
   return seed;

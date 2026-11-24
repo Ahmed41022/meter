@@ -65,7 +65,10 @@ export const PREFS = {
   byCompanySort: sortPref(BY_COMPANY_ORDERS, "earned"),
   earningsSort: sortPref(EARNINGS_ORDERS, "newest"),
   sessionsSort: sortPref(SESSION_ORDERS, "newest"),
-  // A goal for each day of work, over every project: see dayGoal.js.
+  // The last release whose news was read: see whatsNew.js.
+  newsSeen: { default: "", valid: (v) => v === "" || /^\d+\.\d+\.\d+$/.test(v) },
+  // A goal for each day of work. Only read, for the one that became a goal
+  // among others: see workGoals.js.
   dayGoal: { default: null, valid: (v) => v === null || isDayGoal(v) },
   // Live exchange rates (domain/fx.js, fx/rates.js). Off until asked for, so
   // an app that never turns it on never touches the network.

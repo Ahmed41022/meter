@@ -16,7 +16,7 @@ project, a client or an amount.
 
 ![A session running: the elapsed time and the money both climbing in real time, in the meter face and in the bar that sits above every screen](docs/images/running.gif)
 
-![The screen it opens on: a to-do list, one with a start button for its project's meter, then one-click restarts of the last few things you ran, what today has come to per project, and every day there was work](docs/images/today.png)
+![The screen it opens on: a to-do list, one with a start button for its project's meter, then the goals for the day and the week with how the last ones went, then one-click restarts of the last few things you ran, what today has come to per project, and every day there was work](docs/images/today.png)
 
 | Every project at once | A month, across all of them |
 | --- | --- |
@@ -54,7 +54,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
   down the full-rate time that is left.
 - **Knows a task's minimum time** where one is required: its clock counts down
   over every sitting until it is met.
-- **Keeps a daily goal** for all your work together, in hours or in money.
+- **Keeps goals** for a day, a week or a month, in hours or money, over all work,
+  a company or a project: with a pace over the days you work, and an honest
+  record of how the last ones went.
 - **Prices work four ways**, and a project can move between the first two
   whenever its platform does: by the hour, per accepted item, a task at its own
   rate, or a task at a fraction of the project's. A task can also be priced at

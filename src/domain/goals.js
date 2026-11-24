@@ -71,6 +71,9 @@ export const dayEnds = (from, to) => {
   return ends;
 };
 
+/** The weekday of an instant, Monday 1 to Sunday 7, on this device's calendar. */
+export const weekdayOf = (t) => ((new Date(t).getDay() + 6) % 7) + 1;
+
 /** Below this share of a day's worth, being off the line is noise, not news.
  *  "$2 behind" on a $1,260 week is a true statement that tells you nothing. */
 const EVEN_ENOUGH = 0.02;
@@ -95,12 +98,19 @@ const EVEN_ENOUGH = 0.02;
  * `today` is not counted as done and not counted as gone: it is the first of
  * the days left, because it is still yours to use.
  *
+ * `days` (weekdays, Monday 1) are the days the goal is worked on, where it is
+ * not all of them: the others carry nothing, so a rest day is neither behind
+ * nor one of the days left.
+ *
  * Null when there is nothing to pace — no target, or a lifetime goal, which has
  * no end to be measured against.
  */
-export const pace = ({ target, from, to }, value, now) => {
+export const pace = ({ target, from, to, days = null }, value, now) => {
   if (!(target > 0) || !(to > from)) return null;
-  const ends = dayEnds(from, to);
+  // A day is named by where it starts, and one ends where the next begins.
+  const ends = dayEnds(from, to)
+    .filter((end) => !days || days.includes(weekdayOf(end - 1)));
+  if (ends.length === 0) return null;
   const totalDays = ends.length;
   const daysDone = ends.filter((end) => end <= now).length;
   const daysLeft = totalDays - daysDone;
@@ -118,7 +128,9 @@ export const pace = ({ target, from, to }, value, now) => {
     remaining,
     over: Math.max(0, value - target),
     met,
-    closed: daysLeft === 0,
+    // Over, which is not the same as having no working day left: a Sunday off
+    // is still in the week.
+    closed: days ? now >= to : daysLeft === 0,
     // What each day that is left would have to carry. Null once there is
     // nothing left to carry it, or nothing left to do.
     needPerDay: met || daysLeft === 0 ? null : remaining / daysLeft,

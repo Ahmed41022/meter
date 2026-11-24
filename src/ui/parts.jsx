@@ -6,7 +6,7 @@ import { centsAsIf } from "../domain/terms.js";
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
-const daysLeftWords = (n) => (n === 1 ? "last day" : `${n} days left`);
+export const daysLeftWords = (n) => (n === 1 ? "last day" : `${n} days left`);
 
 /**
  * The pacing sentence. `show` is the caller's formatter, so the same wording
@@ -24,6 +24,8 @@ const paceWords = (state, p, show) => {
   const standing = state === "behind" ? `${show(-p.drift)} behind`
     : state === "ahead" ? `${show(p.drift)} ahead`
     : "On pace";
+  // On a day off at the end of the period there is no day left to ask it of.
+  if (p.needPerDay === null) return `${show(p.remaining)} to go · no working days left`;
   return `${standing} · ${daysLeftWords(p.daysLeft)} · needs ${show(p.needPerDay)}/day`;
 };
 

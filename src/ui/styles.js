@@ -300,9 +300,29 @@ export const CSS = `
 .runbar.behind .runbar-dot{background:var(--muted);}
 .runbar-tag.quiet{color:var(--muted);max-width:none;flex:none;font-size:10px;letter-spacing:.03em;}
 .runbar .runbar-main{font-size:12px;white-space:nowrap;}
-.daygoal .goal{margin:0;}
-.daygoal-form .modes{margin:0 0 18px;}
-.daygoal .goal-pace{margin-top:8px;}
+.goal-form .modes{margin-top:0;}
+.wgoal.paused .trg-top,.wgoal.paused .goal-results{opacity:.65;}
+.trg-name.plain:hover{color:var(--ink);text-decoration:none;}
+.goal-results{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:12px;color:var(--muted);}
+.goal-dots{display:inline-flex;gap:4px;}
+.goal-dots i{width:7px;height:7px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--line-hi);}
+.goal-dots i.met{background:var(--jade);box-shadow:none;}
+.goal-actions{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;}
+.goal-actions .linkish{font-size:12.5px;}
+.goal-actions .linkish:disabled{color:var(--faint);cursor:default;text-decoration:none;}
+.goal-actions .linkish.danger{color:var(--flag);}
+.goal-foot{display:flex;justify-content:space-between;gap:16px;margin-top:22px;}
+.goal-foot.first{margin-top:0;}
+.whatsnew{margin:18px 0 8px;padding:18px 20px;border:1px solid var(--jade);border-radius:14px;
+  background:var(--card);}
+.whatsnew-head{display:flex;justify-content:space-between;align-items:center;}
+.whatsnew-release + .whatsnew-release{margin-top:18px;}
+.whatsnew-title{margin:8px 0 10px;font-weight:600;font-size:16px;}
+.whatsnew ul{margin:0 0 12px;padding-left:18px;font-size:13.5px;line-height:1.55;color:var(--ink-2);}
+.whatsnew li + li{margin-top:6px;}
+.whatsnew li strong{color:var(--ink);}
+.whatsnew .linkish{font-size:12.5px;}
+.version .linkish{font-size:inherit;color:inherit;}
 .meters{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 20px;}
 .runbar.behind .runbar-limit .runbar-limit-more{display:none;}
 .meter-pick .tag{margin-left:0;}
