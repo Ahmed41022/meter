@@ -219,15 +219,23 @@ export const setOwnLimit = (state, projectId, taskId, ms) =>
 export const setProjectRate = (state, projectId, rate, scope) => {
   const project = state.projects.find((p) => p.id === projectId);
   if (!project || !(rate > 0)) return state;
+  return {
+    ...editProject(repriceSessions(state, project, rate, scope), projectId, (p) => ({ ...p, currentRate: rate })),
+  };
+};
+
+/** The sessions half of it: what each one a change reaches is recorded at. Zero
+ *  is a rate here, for a project that stops paying by the hour (payModel.js). */
+export const repriceSessions = (state, project, rate, scope) => {
   const reaches = (s) => {
-    if (s.projectId !== projectId || s.deletedAt) return false;
+    if (s.projectId !== project.id || s.deletedAt) return false;
     const task = s.taskId ? findTask(project, s.taskId) : null;
     if (task?.rate != null) return false;
     if (scope === SCOPE.ALL) return true;
     return task !== null && taskState(task) === null;
   };
   return {
-    ...editProject(state, projectId, (p) => ({ ...p, currentRate: rate })),
+    ...state,
     sessions: state.sessions.map((s) => (reaches(s) && s.rate !== rate ? { ...s, rate } : s)),
   };
 };

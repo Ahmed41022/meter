@@ -22,11 +22,17 @@ ledger changed such that an older build can no longer read it.
   without refusing. No pay depends on it.
 - A **daily goal** for work as a whole, in time or money, on Today. It counts
   every work project together and follows you to every device.
+- **How it pays** in a project's settings: by the hour or per task, where it
+  could only be chosen when the project was made. It asks how far the change
+  reaches, and past included can be undone.
 - Today offers every start that would not stop a running meter, rather than
   none while one runs.
 
 ### Changed
 
+- A project paid per task no longer says its hourly rate has to be above zero,
+  and its price cannot be saved empty. A sitting or a task on one that does hold
+  hourly money shows it.
 - Resuming a paused session closes whatever may not run beside it, as starting
   one does.
 - Time is reported as counted twice only where the two records may not share

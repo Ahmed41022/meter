@@ -1,6 +1,7 @@
 import { formatMoney } from "../../domain/money.js";
-import { REWARD } from "../../domain/earnings.js";
+import { REWARD, paysOnAcceptance } from "../../domain/earnings.js";
 import { SCOPE } from "../../domain/terms.js";
+import { MODEL } from "../../domain/payModel.js";
 import { isOffClock } from "../../domain/projects.js";
 
 /**
@@ -9,12 +10,13 @@ import { isOffClock } from "../../domain/projects.js";
  * that explains arithmetic at length, so it lives apart from the form's wiring.
  */
 export default function RateTerms({
-  project, least, leastRefused, rate, limit, over, reward, each, perHour, set, onKey, limitRefused, limitHours,
+  project, model, modelChanged, payMissing, saved, least, leastRefused, rate, limit, over, reward, each, perHour, set, onKey, limitRefused, limitHours,
   overPct, rateChanged, limitChanged, scope, setScope, hasRunningSession,
 }) {
   // A rate that is not a number above zero has never been applied, and with an
   // explicit Save that silence would read as the button not working.
-  const rateRefused = !isOffClock(project) && rate.trim() !== "" && !(Number(rate) > 0);
+  const piece = model === MODEL.PER_TASK;
+  const rateRefused = !isOffClock(project) && !piece && !modelChanged && rate.trim() !== "" && !(Number(rate) > 0);
 
   /**
    * The arithmetic spelled out. "+10/hr" is precisely the thing that reads as
@@ -43,11 +45,57 @@ export default function RateTerms({
         </div>
       ) : (
         <>
-          <label className="field">
-            <span className="eyebrow">Hourly rate ({project.currency})</span>
-            <input className="inp" type="number" min="0" step="any" value={rate}
-                   onKeyDown={onKey} onChange={(e) => set({ rate: e.target.value })} />
-          </label>
+          <div className="field">
+            <span className="eyebrow">How it pays</span>
+            <div className="modes" role="tablist" aria-label="How this project pays">
+              {[[MODEL.HOURLY, "By the hour"], [MODEL.PER_TASK, "Per task"]].map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={model === key}
+                        className={"seg-btn" + (model === key ? " on" : "")}
+                        // Leaving per task, the price does not become a bonus on
+                        // top of the hours unless that is chosen.
+                        onClick={() => set({
+                          model: key,
+                          ...(saved.model === MODEL.PER_TASK
+                            ? { reward: key === MODEL.PER_TASK ? saved.reward : "none" } : {}),
+                        })}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {piece ? (
+            <label className="field">
+              <span className="eyebrow">Per accepted task ({project.currency})</span>
+              <input className="inp" type="number" min="0" step="any" value={each}
+                     placeholder="what one accepted item pays"
+                     onKeyDown={onKey} onChange={(e) => set({ each: e.target.value })} />
+            </label>
+          ) : (
+            <label className="field">
+              <span className="eyebrow">Hourly rate ({project.currency})</span>
+              <input className="inp" type="number" min="0" step="any" value={rate}
+                     onKeyDown={onKey} onChange={(e) => set({ rate: e.target.value })} />
+            </label>
+          )}
+          {payMissing && (
+            <div className="hint warn" role="alert">
+              {piece
+                ? "What does one task pay? A number above zero, before this can be saved."
+                : "What does an hour pay? A rate above zero, before this can be saved."}
+            </div>
+          )}
+          {piece && (
+            <div className="hint">
+              The clock still runs, so you can see what an hour of it came to — but the money comes
+              from the tasks accepted, not from the time. A task can have a price of its own.
+              {modelChanged && " It pays once accepted."}
+            </div>
+          )}
+          {modelChanged && !piece && paysOnAcceptance(project) && (
+            <div className="hint">
+              Its money is still counted once accepted. Change that under When it pays, below.
+            </div>
+          )}
           {/* A platform that pays a task's time in full only up to a limit,
               and the time over it at a share of the rate, or not at all. */}
           <div className="pair">
@@ -96,6 +144,7 @@ export default function RateTerms({
               A minimum has to be a number of hours, so this one will be left as it is.
             </div>
           )}
+          {!piece && <>
           <div className="sec-head" style={{ marginTop: 18 }}>
             <span className="eyebrow">Acceptance reward</span>
           </div>
@@ -157,11 +206,14 @@ export default function RateTerms({
               </>
             )}
           </div>
-          {rateChanged || limitChanged ? (
+          </>}
+          {rateChanged || limitChanged || modelChanged ? (
             <>
               <div className="sec-head" style={{ marginTop: 18 }}>
                 <span className="eyebrow">
-                  Apply the new {rateChanged && limitChanged ? "rate and limit" : rateChanged ? "rate" : "limit"}
+                  Apply the new {[
+                    modelChanged && "way it pays", rateChanged && "rate", limitChanged && "limit",
+                  ].filter(Boolean).join(" and ")}
                 </span>
               </div>
               <div className="modes" role="tablist" aria-label="How far the change reaches">
@@ -178,27 +230,33 @@ export default function RateTerms({
                   <>
                     Tasks already handed in keep the terms they were handed in under. Tasks
                     still open take the new ones, and so does everything recorded from now on.
-                    {rateChanged && " Work filed under no task keeps the rate it was recorded at."}
+                    {(rateChanged || modelChanged) && " Work filed under no task keeps the rate it was recorded at."}
+                    {modelChanged && " Hours already on an open task change with it."}
                   </>
                 ) : (
                   <>
                     Every task on this project is worked out again under the new terms, the
                     ones already handed in and paid included, so past figures will move. A task
                     with a rate or a limit of its own keeps it.
+                    {modelChanged && (piece
+                      ? " Hours already recorded stop paying, under no task too, and every task handed in is paid the price instead."
+                      : " Hours already recorded are paid the rate, and the per-task pay written when each task was handed in is worked out again.")}
+                    {modelChanged && " Amounts you entered yourself stay as they are. You can undo it."}
                   </>
                 )}
               </div>
             </>
           ) : (
             <div className="hint">
-              Changing the rate or the time limit asks whether it reaches work already handed
+              Changing {piece ? "how it pays" : "how it pays, the rate"} or the time limit asks whether it reaches work already handed
               in{hasRunningSession ? " or the sitting running now" : ""}.
             </div>
           )}
           {rateRefused && (
             <div className="hint warn">
               An hourly rate has to be a number above zero, so this one will be left as it is.
-              To stop charging by the hour, set this project off the clock or price it per task.
+              To stop charging by the hour, choose Per task above, or set this project off the
+              clock under Counts as.
             </div>
           )}
         </>

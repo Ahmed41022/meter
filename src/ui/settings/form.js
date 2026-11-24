@@ -1,6 +1,7 @@
 import { PERIOD } from "../../domain/payPeriod.js";
 import { companyOf } from "../../domain/projects.js";
 import { bonusPerHour, perTask, rewardModel } from "../../domain/earnings.js";
+import { modelOf } from "../../domain/payModel.js";
 import { currentLimit } from "../../domain/terms.js";
 import { hoursText, projectMinimum } from "../../domain/minimum.js";
 
@@ -75,7 +76,9 @@ export const formOf = (project, payPeriod) => ({
   name: project.name,
   company: companyOf(project) ?? "",
   period: periodForm(payPeriod),
-  rate: String(project.currentRate),
+  // How it pays, and the rate, empty where the project has none to show.
+  model: modelOf(project),
+  rate: project.currentRate > 0 ? String(project.currentRate) : "",
   ...limitForm(project),
   least: hoursText(projectMinimum(project)),
   /**

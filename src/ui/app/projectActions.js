@@ -3,6 +3,7 @@ import {
 } from "../../domain/projects.js";
 import { repriceHourlyRewards } from "../../domain/settle.js";
 import { setPayPeriod } from "../../domain/payPeriod.js";
+import { setPayModel } from "../../domain/payModel.js";
 import { SCOPE, setOwnLimit, setProjectRate, setTaskLimit } from "../../domain/terms.js";
 import { setOwnMinimum } from "../../domain/minimum.js";
 import { askToNotify } from "../notify.js";
@@ -23,11 +24,13 @@ export function projectActions({ commit, flash, stateRef, project, setOpenProjec
       // Asked while the person is clicking: see onSetTerms.
       if (patch.taskMinMs > 0 && patch.taskMinMs !== project.taskMinMs) askToNotify();
     },
-    onSetTerms: ({ rate, limit }, scope) => {
+    onSetTerms: ({ rate, limit, pay = null }, scope) => {
       const snapshot = stateRef.current;
       const at = Date.now();
       commit((s) => {
-        let next = rate ? setProjectRate(s, project.id, rate, scope) : s;
+        // The pay model carries its own rate, so it is one change or the other.
+        let next = pay ? setPayModel(s, project.id, pay, scope, at, uid)
+          : rate ? setProjectRate(s, project.id, rate, scope) : s;
         if (limit) {
           next = setTaskLimit(next, project.id, limit, scope, at);
           // A bonus already written for a task handed in was priced

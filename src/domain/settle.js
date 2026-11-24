@@ -47,7 +47,7 @@ import { isBilled, stopSession } from "./sessions.js";
 import { findTask, taskLabel } from "./tasks.js";
 import { overLimitFor } from "./terms.js";
 import {
-  TASK, isAccepted, isOpenTask, isRejected, setTaskStateMany,
+  TASK, isAccepted, isOpenTask, isRejected, setTaskStateMany, taskState,
 } from "./taskState.js";
 import {
   EARNING, PAY, REWARD, acceptanceCents, addEarning, bonusPerHour, earningsForTask,
@@ -312,6 +312,42 @@ export const reopenTasks = (state, project, taskIds, now) => {
   }
   const next = withdrawn.length === 0 ? state : setPayStateMany(state, withdrawn, PAY.PENDING);
   return setTaskStateMany(next, owner.id, ids, null, now);
+};
+
+/**
+ * Works out every handed-in task's acceptance pay again from what the project
+ * pays now, for a change of pay model that reaches the past.
+ *
+ * A line this app wrote is priced afresh, keeping its date and whether it was
+ * paid, or taken off where the project no longer pays it. A task that has no
+ * reward at all gets one, standing where the task stands: pending while it is
+ * submitted, paid once accepted, cancelled when rejected. A line somebody typed
+ * is theirs, and a task that has one gets no second.
+ */
+const STANDS = {
+  [TASK.SUBMITTED]: PAY.PENDING, [TASK.ACCEPTED]: PAY.PAID, [TASK.CANCELLED]: PAY.CANCELLED,
+};
+export const repriceRewards = (state, projectId, now, nextId) => {
+  const project = (state.projects ?? []).find((p) => p.id === projectId);
+  if (!project) return state;
+  let next = state;
+  for (const task of project.tasks ?? []) {
+    if (isOpenTask(task)) continue;
+    const billedMs = billedMsForTask(next, projectId, task.id, now);
+    const over = overLimitFor(project, sessionsUnder(next, projectId, task.id), now);
+    const own = soleRewardsFor(next.earnings, task.id).filter(isReward);
+    if (own.length > 0) {
+      const keep = own.find(writtenHere);
+      if (keep) next = repriceReward(next, project, task.id, billedMs, own, now, keep.at, over);
+      continue;
+    }
+    const line = rewardLine(project, task.id, billedMs, over);
+    if (!line) continue;
+    next = addEarning(next, project, {
+      ...line, taskIds: [task.id], status: STANDS[taskState(task)],
+    }, task.submittedAt ?? task.stateAt ?? now, nextId());
+  }
+  return next;
 };
 
 /**

@@ -55,9 +55,11 @@ export default function TaskBreakdown({
 }) {
   // On work paid per accepted item the hours earn nothing by the hour, so the
   // earned column is a row of zeroes sitting next to the money that was
-  // actually paid — the one place a reader would take it for a figure.
+  // actually paid — the one place a reader would take it for a figure. A row
+  // that does hold hourly money, from before the project paid per task or from
+  // a task with a rate of its own, still shows it.
   const fx = useMoney();
-  const money = !offClock && !piece;
+  const moneyOn = (r) => !offClock && (!piece || r.billedCents !== 0);
   // Whether a batch can be acted on is the caller's question, not this one's.
   // "No task" is never selectable: it is a bucket, not a thing anyone accepted.
   const picking = !!onToggleSelect && !!selected;
@@ -139,7 +141,7 @@ export default function TaskBreakdown({
           <span className="trow-time">
             {r.billedMs > 0 ? formatShortDuration(r.billedMs) : "—"}
           </span>
-          {money && <span className="trow-amt" title={fx.note(r.billedCents, currency) || undefined}>
+          {moneyOn(r) && <span className="trow-amt" title={fx.note(r.billedCents, currency) || undefined}>
             {fx.fmt(r.billedCents, currency)}
           </span>}
         </div>

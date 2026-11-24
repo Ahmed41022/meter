@@ -80,9 +80,12 @@ export default function Ledger({
    * both sink. A running sitting is valued as of now, as its row shows it.
    * Off the clock there is no money, so the row's figure is its length.
    */
+  // On a project paid per task, a sitting recorded by the hour before it was
+  // (or on a task with its own rate) is still worth its hours.
+  const byItem = (s) => piece && !(rateFor(project, s) > 0);
   const moneyOf = (s) => {
     if (isIdle(s) || isCancelled(s)) return {};
-    return piece
+    return byItem(s)
       ? { [currency]: earnedFrom(earnings, s.id) }
       : { [s.currency]: whole(s) };
   };
@@ -325,7 +328,7 @@ export default function Ledger({
               <div className="row-meta">
                 {s.taskId ? `${taskLabel(project, s.taskId)} · ` : `${w.noTask} · `}
                 {formatDuration(elapsedMs(s, now))}
-                {!offClock && (piece ? (
+                {!offClock && (byItem(s) ? (
                   // A piece-rate project pays for accepted items, so an
                   // hourly figure here is a $0.00 that means nothing. What it
                   // is worth is the price of what this sitting produced.
@@ -352,7 +355,7 @@ export default function Ledger({
             <span className="row-amt">
               {offClock
                 ? formatShortDuration(elapsedMs(s, now))
-                : piece
+                : byItem(s)
                   ? formatMoney(earnedFrom(earnings, s.id), currency)
                   : formatMoney(whole(s), s.currency)}
             </span>

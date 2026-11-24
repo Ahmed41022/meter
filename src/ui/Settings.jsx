@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { normaliseGoal } from "../domain/goals.js";
 import { companyOf, fold, isOffClock } from "../domain/projects.js";
 import { REWARD } from "../domain/earnings.js";
+import { MODEL } from "../domain/payModel.js";
 import { readHours } from "../domain/minimum.js";
 import { SCOPE } from "../domain/terms.js";
 import { findCompany, samePeriod, storedPeriod } from "../domain/payPeriod.js";
@@ -70,7 +71,16 @@ export default function Settings({
   }, [ledger]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the ledger, never the draft
 
   const { name, company, rate, reward, each, perHour, period, sessionGoal, overallGoal } = form;
-  const { limit, over, least } = form;
+  const { limit, over, least, model } = form;
+  const work = !isOffClock(project);
+  const piece = work && model === MODEL.PER_TASK;
+  const modelChanged = work && model !== saved.model;
+  /**
+   * A figure the pay model cannot do without. Save waits for it: saving the
+   * rest and dropping it would leave a project paying neither way, or still
+   * paying the old way under a switch that says the new one.
+   */
+  const payMissing = piece ? !(Number(each) > 0) : modelChanged && !(Number(rate) > 0);
   // Not a number of hours: left as it is, and said so beside the box.
   const leastMs = readHours(least);
 
@@ -85,7 +95,7 @@ export default function Settings({
   // A limit that is not a number above zero, or a share that is not a number
   // from zero up, would read as "no limit" and quietly lift the one there is.
   const limitRefused = limit.trim() !== "" && (!(limitHours > 0) || !(overPct >= 0));
-  const rateChanged = !isOffClock(project) && rate !== saved.rate && Number(rate) > 0;
+  const rateChanged = work && !piece && !modelChanged && rate !== saved.rate && Number(rate) > 0;
   const limitChanged = !isOffClock(project) && !limitRefused
     && (limit !== saved.limit || (limit.trim() !== "" && over !== saved.over));
 
@@ -138,6 +148,7 @@ export default function Settings({
     normaliseGoal(isOffClock(project) ? { ...goal, type: "time" } : goal);
 
   const save = () => {
+    if (payMissing) return;
     const parsed = Number(rate);
     /** The amount, but only for the model actually chosen. */
     const chosen = (kind, value) =>
@@ -147,7 +158,7 @@ export default function Settings({
       company: company.trim(),
       // A changed rate goes through `onSetTerms` below, because how far back
       // it reaches is part of the change.
-      ...(Number.isFinite(parsed) && parsed > 0 && !(rateChanged && onSetTerms)
+      ...(Number.isFinite(parsed) && parsed > 0 && !piece && !modelChanged && !(rateChanged && onSetTerms)
         ? { currentRate: parsed } : {}),
       // Cleared on purpose means cleared, and the model NOT chosen is always
       // cleared: null rather than skipped, so a project can stop being paid
@@ -156,8 +167,11 @@ export default function Settings({
       // on a project that has never had a minimum.
       ...(least !== saved.least && !Number.isNaN(leastMs)
         ? { taskMinMs: leastMs > 0 ? leastMs : null } : {}),
-      bonusPerHour: chosen(REWARD.PER_HOUR, Number(perHour)),
-      perTask: chosen(REWARD.PER_TASK, Number(each)),
+      // Moving to the other pay model writes these with it, below.
+      ...(modelChanged && onSetTerms ? {} : {
+        bonusPerHour: piece ? null : chosen(REWARD.PER_HOUR, Number(perHour)),
+        perTask: piece ? Number(each) : chosen(REWARD.PER_TASK, Number(each)),
+      }),
       sessionGoal: asGoal(sessionGoal),
       overallGoal: asGoal(overallGoal),
     });
@@ -167,8 +181,14 @@ export default function Settings({
     // is new. "No schedule" for a company that has none has nothing to say,
     // and writes nothing rather than an empty record.
     if (target && (rule !== null || scheduleOf(target) !== null)) onSetPayPeriod?.(target, rule);
-    if ((rateChanged || limitChanged) && onSetTerms) {
+    if ((rateChanged || limitChanged || modelChanged) && onSetTerms) {
       onSetTerms({
+        pay: !modelChanged ? null : {
+          model,
+          rate: parsed,
+          perTask: piece ? Number(each) : chosen(REWARD.PER_TASK, Number(each)),
+          bonusPerHour: piece ? null : chosen(REWARD.PER_HOUR, Number(perHour)),
+        },
         rate: rateChanged ? parsed : null,
         limit: limitChanged
           ? { ms: limit.trim() === "" ? null : Math.round(limitHours * HOUR), factor: overPct / 100 }
@@ -191,7 +211,8 @@ export default function Settings({
       </label>
 
 
-      <RateTerms project={project} least={least} leastRefused={Number.isNaN(leastMs)} rate={rate} limit={limit} over={over} reward={reward}
+      <RateTerms project={project} model={model} modelChanged={modelChanged} payMissing={payMissing}
+                 saved={saved} least={least} leastRefused={Number.isNaN(leastMs)} rate={rate} limit={limit} over={over} reward={reward}
                  each={each} perHour={perHour} set={set} onKey={onKey}
                  limitRefused={limitRefused} limitHours={limitHours} overPct={overPct}
                  rateChanged={rateChanged} limitChanged={limitChanged} scope={scope}
@@ -228,7 +249,7 @@ export default function Settings({
         {dirty ? (
           <>
             <span className="savebar-note">Unsaved changes</span>
-            <button className="btn primary" onClick={save}>Save changes</button>
+            <button className="btn primary" disabled={payMissing} onClick={save}>Save changes</button>
             <button className="btn ghost" onClick={() => setForm(saved)}>Discard</button>
           </>
         ) : (
