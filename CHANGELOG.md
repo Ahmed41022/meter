@@ -7,6 +7,13 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-11-24
+
+Minor rather than major: everything new is stored in optional fields, on a
+project, a task, a session or the preferences, which older builds ignore. An
+older build still runs one meter at a time, so starting one there stops the
+others.
+
 ### Added
 
 - A project can allow **parallel tasks**, in its settings or when it is made.
@@ -20,8 +27,14 @@ ledger changed such that an older build can no longer read it.
   on one task. Its clock counts down, over every sitting on it, and says when it
   is met; the task list says how much is left, and handing one in short warns
   without refusing. No pay depends on it.
-- A **daily goal** for work as a whole, in time or money, on Today. It counts
-  every work project together and follows you to every device.
+- **Goals** on Today: as many as you like, daily, weekly or monthly, in time or
+  money, over all work, one company or one project. Each says its pace over the
+  days you work, a rest day is never a miss, and a changed target applies from
+  that day, so past results stay true. Each shows how its last five periods went
+  and says once when it is met. The Overview's Targets lists them beside the
+  projects' own.
+- **What's new**, told once after an update, on whichever device opens first. The
+  version at the foot of the page opens it again.
 - **How it pays** in a project's settings: by the hour or per task, where it
   could only be chosen when the project was made. It asks how far the change
   reaches, and past included can be undone.
@@ -826,7 +839,8 @@ is recorded here as the baseline rather than as a set of changes.
 - JSON backup export and restore, a CSV export of every line item, and a nudge
   when the ledger has gone too long without being written to a file.
 
-[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Ahmed41022/meter/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Ahmed41022/meter/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Ahmed41022/meter/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ahmed41022/meter/compare/v1.1.0...v1.2.0
