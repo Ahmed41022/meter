@@ -22,7 +22,7 @@ import { countdownMs, hoursText, minimumOf } from "../domain/minimum.js";
  */
 export default function RunningBar({
   project, session, now, elsewhere = false, runningOn = null, onOpen, onStop,
-  background = false, onMakeMain = null, sessions = [],
+  background = false, several = false, onMakeMain = null, sessions = [],
   price = (s) => rateFor(project, s),
 }) {
   if (!project || !session) return null;
@@ -48,7 +48,8 @@ export default function RunningBar({
       : <>over{more(" the limit")} · {Math.round(terms.factor * 100)}%</>;
 
   return (
-    <div className={"runbar" + (idling ? " idling" : "") + (background ? " behind" : "")}>
+    <div className={"runbar" + (idling ? " idling" : "") + (background ? " behind" : "")
+      + (several || least ? " tall" : "")}>
       <span className="runbar-dot" aria-hidden="true" />
       <button className="runbar-what" onClick={() => onOpen(project.id)}>
         <span className="runbar-name">{project.name}</span>

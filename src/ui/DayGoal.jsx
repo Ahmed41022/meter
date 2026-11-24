@@ -88,8 +88,11 @@ export default function DayGoal({ goal, totals, onSave }) {
 
   if (!state && !editing) {
     return (
-      <div className="daygoal-none">
-        <button className="linkish" onClick={() => setEditing(true)}>+ Set a daily goal</button>
+      <div className="sec">
+        <div className="sec-head"><span className="eyebrow">Daily goal</span></div>
+        <div className="panel">
+          <button className="linkish obj-add first" onClick={() => setEditing(true)}>+ Set a daily goal</button>
+        </div>
       </div>
     );
   }

@@ -438,7 +438,7 @@ export default function App({ store: injectedStore }) {
             page is about what has already happened. */}
         {meters.map(({ session, project: owner, background, canBeMain }) => (
           <RunningBar
-            key={session.id} sessions={state.sessions}
+            key={session.id} sessions={state.sessions} several={meters.length > 1}
             project={owner} session={session} now={now} price={price} background={background}
             elsewhere={!ownedBy(session, device)}
             runningOn={relayOn ? relay.runningOn(session.id, now) : null}

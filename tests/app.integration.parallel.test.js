@@ -72,7 +72,7 @@ describe("parallel tasks", () => {
     picks(d)[1].click();
     await settle();
     expect(d.querySelector(".state").textContent).toBe("Working in background");
-    btn(d, /Make it the main task/).click();
+    [...d.querySelectorAll(".face .btn")].find((b) => b.textContent === "Make main").click();
     await settle();
     expect(d.querySelector(".state").textContent).toBe("Running");
     expect(bars(d)[0].textContent).toMatch(/Beta one/);
@@ -105,7 +105,7 @@ describe("parallel tasks", () => {
     await settle();
     // Started last, and still the one in the background: the other cannot be.
     expect(d.querySelector(".state").textContent).toBe("Working in background");
-    expect(btn(d, /Make it the main task/)).toBeUndefined();
+    expect(btn(d, /Make main/)).toBeUndefined();
     expect(bars(d)[0].textContent).toMatch(/Alpha/);
     await openCard(d, "Gamma");
     await startMeter(dom, { existing: "Gamma one" });

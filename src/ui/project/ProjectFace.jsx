@@ -233,7 +233,7 @@ export default function ProjectFace({
           </button>
         )}
         {meter?.canBeMain && (
-          <button className="btn ghost" onClick={onMakeMain}>Make it the main task</button>
+          <button className="btn ghost" onClick={onMakeMain}>Make main</button>
         )}
         {!current && !prompt && stopped && (
           <button className="btn primary" onClick={() => onSetStatus("active")}>
