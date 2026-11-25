@@ -7,6 +7,30 @@ ledger changed such that an older build can no longer read it.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-11-25
+
+Minor rather than major: the one new thing stored is a preference, which older
+builds ignore. An older build keeps every goal's day midnight to midnight.
+
+### Added
+
+- Goals take the **hours left in the day** into account. A daily goal says what
+  is left to do against what is left of today, and when it would be met with the
+  meter going. A weekly or monthly one has a share of today, settled as the day
+  starts; what today can no longer hold moves to the days after. A money goal
+  says how long the rest takes at what its work has earned an hour lately. The
+  same on Today, in the Overview's Targets and on a project's page.
+- **My day ends at**, in Settings under Defaults, shared by every device. A time
+  past midnight moves when a goal's day turns over, so late work counts toward
+  the day before. Nothing else moves: other screens keep midnight and pay keeps
+  each client's clock.
+- A notice, once, when the time left for a goal is nearly all needed.
+
+### Changed
+
+- Where today's share is said, a goal's pace no longer says what it needs a day:
+  that figure counted today as a whole day however late it was.
+
 ### Fixed
 
 - Goals leave out projects that are paused or done. The form no longer offers
@@ -845,7 +869,8 @@ is recorded here as the baseline rather than as a set of changes.
 - JSON backup export and restore, a CSV export of every line item, and a nudge
   when the ledger has gone too long without being written to a file.
 
-[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Ahmed41022/meter/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Ahmed41022/meter/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Ahmed41022/meter/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Ahmed41022/meter/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Ahmed41022/meter/compare/v1.2.0...v1.3.0
