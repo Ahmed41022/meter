@@ -263,7 +263,8 @@ export default function App({ store: injectedStore }) {
   const goalSource = useMemo(() => ({
     projects: liveProjects(state.projects), sessions: liveSessions(state.sessions), earnings: liveEarnings(state),
   }), [state]);
-  const goalCtx = { ...goalSource, source: goalSource, rateOf: price, now };
+  const endsAt = prefOf(state, "dayEndsAt");
+  const goalCtx = { ...goalSource, source: goalSource, rateOf: price, now, endsAt };
   useGoalMet({
     goals, projects: goalSource.projects, ctx: { ...goalCtx, fxOn, rates: fx.rates }, ready, meterHere, flash,
   });
@@ -570,7 +571,7 @@ export default function App({ store: injectedStore }) {
                next project, Settings would show the first project's name and
                rate, and Save would write them onto the second. */
             key={project.id}
-            project={project} current={current} now={now}
+            project={project} current={current} now={now} endsAt={endsAt}
             meter={meter} openMeters={openMeters} onShowMeter={setShownMeter}
             takenTasks={tasksGoing(state.sessions, project.id)}
             takenByOthers={tasksGoing(state.sessions, project.id, current?.id ?? null)}
@@ -620,7 +621,7 @@ export default function App({ store: injectedStore }) {
             sessions={liveSessions(state.sessions)}
             earnings={liveEarnings(state)}
             objectives={liveObjectives(state)}
-            goals={goals} goalCtx={goalCtx}
+            goals={goals} goalCtx={goalCtx} endsAt={endsAt}
             /* The synced default, or "last" for this device's own memory. */
             defaultPeriod={prefOf(state, "overviewPeriod")}
             defaultProjectSort={prefOf(state, "byProjectSort")}
@@ -653,6 +654,8 @@ export default function App({ store: injectedStore }) {
             theme={theme}
             overviewPeriod={prefOf(state, "overviewPeriod")}
             onOverviewPeriod={(value) => commit((s) => setPref(s, "overviewPeriod", value, Date.now()))}
+            dayEndsAt={endsAt}
+            onDayEndsAt={(value) => commit((s) => setPref(s, "dayEndsAt", value, Date.now()))}
             sorts={Object.fromEntries(SORT_PREFS.map((key) => [key, prefOf(state, key)]))}
             onSort={(key, value) => commit((s) => setPref(s, key, value, Date.now()))}
             onTheme={(key) => {

@@ -4,6 +4,21 @@ import {
   SESSION_ORDERS,
 } from "../../domain/order.js";
 import { NAMES } from "../dashboard/labels.js";
+import { dayTurn } from "../../domain/hoursLeft.js";
+import { clockOfMinutes } from "../goals/words.js";
+
+/** When a day can end: every half hour from the evening before to noon. */
+const EVENING = 17 * 60;
+const HALF = 30;
+const span = (from, to) => Array.from({ length: (to - from) / HALF + 1 }, (_, i) => from + i * HALF);
+const DAY_ENDS = [...span(EVENING, 23 * 60 + HALF), ...span(0, 12 * 60)];
+
+const endsWords = (at) => {
+  if (at === 0) return "Goals count each day from midnight to midnight.";
+  return dayTurn(at) > 0
+    ? `Goals count work until ${clockOfMinutes(at)} toward the day before. Every other screen still turns over at midnight, and pay goes by each client’s own clock.`
+    : `Goals say how long is left until ${clockOfMinutes(at)}. Work after it still counts, until midnight.`;
+};
 
 /** One select per list: which order it opens in. Each label names its list,
  *  because "sorted by" alone would not say which screen it changes. */
@@ -17,11 +32,13 @@ const SORTS = [
 ];
 
 /**
- * Choices about how screens open, kept in the ledger so every device that
+ * Choices about how screens open, and when a day ends, kept in the ledger so every device that
  * syncs agrees. The theme above is the opposite on purpose: what suits a phone
  * at night and a desktop at noon differ, so it stays per device.
  */
-export default function DefaultsSection({ overviewPeriod, onOverviewPeriod, sorts = {}, onSort }) {
+export default function DefaultsSection({
+  overviewPeriod, onOverviewPeriod, sorts = {}, onSort, dayEndsAt = 0, onDayEndsAt,
+}) {
   return (
     <section className="settings-sec" aria-labelledby="settings-defaults">
       <h2 className="settings-title" id="settings-defaults">Defaults</h2>
@@ -43,6 +60,17 @@ export default function DefaultsSection({ overviewPeriod, onOverviewPeriod, sort
             </select>
           </label>
         ))}
+        <label className="field">
+          <span className="eyebrow">My day ends at</span>
+          <select className="inp" value={dayEndsAt} onChange={(e) => onDayEndsAt(Number(e.target.value))}>
+            {/* One another build set that is not on the half hour. */}
+            {!DAY_ENDS.includes(dayEndsAt) && <option value={dayEndsAt}>{clockOfMinutes(dayEndsAt)}</option>}
+            {DAY_ENDS.map((m) => (
+              <option key={m} value={m}>{m === 0 ? "Midnight" : clockOfMinutes(m)}{dayTurn(m) > 0 ? ", next day" : ""}</option>
+            ))}
+          </select>
+        </label>
+        <div className="hint day-ends">{endsWords(dayEndsAt)}</div>
         <div className="hint">
           Shared by every device that syncs. The theme above is per device.
         </div>

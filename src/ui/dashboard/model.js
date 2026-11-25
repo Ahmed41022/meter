@@ -1,6 +1,6 @@
 import { activeProjects } from "../../domain/projects.js";
-import { dailyTotals, goalValue, heatRange } from "../../domain/performance.js";
-import { normaliseGoal, pace, paceState, periodBoundary } from "../../domain/goals.js";
+import { dailyTotals, heatRange } from "../../domain/performance.js";
+import { projectGoalStanding } from "../../domain/projectGoal.js";
 
 /**
  * What the Overview works out from the ledger before drawing: the year of
@@ -38,24 +38,17 @@ export const earliestOf = (sessions) => Math.min(
  * is at the top.
  *
  * A money goal counts what the headline counts, the settled money no clock
- * measured included; `goalValue` is the one place that says so, shared with
- * the project page's own goal.
+ * measured included; `projectGoalStanding` is the one place that reads it, shared
+ * with the project page's own goal.
  */
-export const targetsFor = (projects, work, now, rateOf, earnings) =>
+export const targetsFor = (projects, work, now, rateOf, earnings, endsAt = 0) =>
   activeProjects(projects)
     .map((project) => {
-      const goal = normaliseGoal(project.overallGoal);
-      if (!goal || goal.period === "lifetime") return null;
-      const from = periodBoundary(goal.period, now, 0);
-      const to = periodBoundary(goal.period, now, 1);
-      const value = goalValue(goal, project,
-        work.filter((s) => s.projectId === project.id),
-        earnings.filter((e) => e.projectId === project.id), from, to, now, rateOf);
-      const pacing = pace({ target: goal.target, from, to }, value, now);
-      return {
-        id: project.id, name: project.name, project, currency: project.currency,
-        goal, value, pacing, state: paceState(pacing),
-      };
+      const at = projectGoalStanding(project, project.overallGoal, {
+        sessions: work.filter((s) => s.projectId === project.id),
+        earnings: earnings.filter((e) => e.projectId === project.id), now, rateOf, endsAt,
+      });
+      return at && { id: project.id, name: project.name, project, currency: project.currency, ...at };
     })
     .filter(Boolean)
     .sort((a, b) => a.pacing.drift / a.pacing.flatPerDay - b.pacing.drift / b.pacing.flatPerDay);

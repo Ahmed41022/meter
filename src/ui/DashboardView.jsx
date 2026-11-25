@@ -39,7 +39,7 @@ import { calendarFor, earliestOf, targetsFor } from "./dashboard/model.js";
  */
 export default function DashboardView({
   projects, sessions, earnings = [], objectives = [], defaultPeriod = "last", defaultProjectSort = "time", defaultCompanySort = "earned", now, today,
-  onOpenProject, onToggleObjective, pastUnanswered = false, onOpenPayments, goals = [], goalCtx = null,
+  onOpenProject, onToggleObjective, pastUnanswered = false, onOpenPayments, goals = [], goalCtx = null, endsAt = 0,
 }) {
   const fx = useMoney();
   // Remembered, because reopening the app to a span you did not choose is a
@@ -97,7 +97,7 @@ export default function DashboardView({
       trend: trendFor(period, work, now, offset, rateOf, earliest),
       rows: byProject(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       offRows: byProject(offClockProjects(projects), offClock, from, to, now, rateOf),
-      targets: targetsFor(workProjects(projects), work, now, rateOf, workEarnings),
+      targets: targetsFor(workProjects(projects), work, now, rateOf, workEarnings, endsAt),
       companies: byCompany(workProjects(projects), work, from, to, now, rateOf, workEarnings),
       // A fixed rolling year, like Targets and for the same reason: it is
       // context for everything above it, not another reading of the period.
@@ -120,7 +120,7 @@ export default function DashboardView({
       },
       hasOffClock: offClock.length > 0,
     };
-  }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack]);
+  }, [projects, sessions, earnings, now, period, offset, rateOf, heatBack, endsAt]);
 
   const { from, to, current, previous, trend, rows, offRows, companies } = view;
   // The goals for work first, in their own order, then each project's own.
@@ -131,7 +131,7 @@ export default function DashboardView({
         id: g.id, name: coverWords(g, projects), currency: g.currency,
         project: g.scope.kind === "project" ? projects.find((p) => p.id === g.scope.projectId) : null,
         goal: { type: g.type, period: g.period, target: at.target }, value: at.value,
-        pacing: at.pacing, state: at.state,
+        pacing: at.pacing, state: at.state, today: at.today,
       };
     }),
     ...view.targets,

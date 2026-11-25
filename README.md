@@ -55,8 +55,9 @@ rates. `npm run shots` regenerates every one of them.</sub>
 - **Knows a task's minimum time** where one is required: its clock counts down
   over every sitting until it is met.
 - **Keeps goals** for a day, a week or a month, in hours or money, over all work,
-  a company or a project: with a pace over the days you work, and an honest
-  record of how the last ones went.
+  a company or a project: with a pace over the days you work, what is left of
+  today against what is left to do, and an honest record of how the last ones
+  went. Your day can end after midnight.
 - **Prices work four ways**, and a project can move between the first two
   whenever its platform does: by the hour, per accepted item, a task at its own
   rate, or a task at a fraction of the project's. A task can also be priced at

@@ -202,6 +202,7 @@ describe("the synced default for the lists", () => {
       "Overview, By company, opens sorted by",
       "A project’s earnings open sorted by",
       "A project’s sessions open sorted by",
+      "My day ends at",
     ]);
     expect([...select(d, "Life projects").options].map((o) => o.textContent))
       .toEqual(["Added", "Recently worked", "Name", "Time"]);

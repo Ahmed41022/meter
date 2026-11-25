@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import { elapsedMs, lastActivityAt, startedAt } from "../domain/time.js";
 import { formatMoney, formatShortDuration } from "../domain/money.js";
 import { goalProgress, isGoalMet, paceState } from "../domain/goals.js";
 import { centsAsIf } from "../domain/terms.js";
+import { todayTone, todayWords } from "./goals/words.js";
 
 const time = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const date = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -16,9 +18,10 @@ export const daysLeftWords = (n) => (n === 1 ? "last day" : `${n} days left`);
  * is something you can act on, "86% of pace" is a figure you then have to do
  * arithmetic on to use. The required daily rate is included whenever the target
  * is still open, because early in a period it is the only figure that carries
- * any information — the drift cannot yet.
+ * any information — the drift cannot yet. Unless today's part is said under it
+ * (`today`), which is that rate with the hours left taken into account.
  */
-const paceWords = (state, p, show) => {
+const paceWords = (state, p, show, today) => {
   if (state === "met") return p.over > 0 ? `Met · ${show(p.over)} over` : "Met";
   if (state === "missed") return `Ended ${show(p.remaining)} short`;
   const standing = state === "behind" ? `${show(-p.drift)} behind`
@@ -26,6 +29,7 @@ const paceWords = (state, p, show) => {
     : "On pace";
   // On a day off at the end of the period there is no day left to ask it of.
   if (p.needPerDay === null) return `${show(p.remaining)} to go · no working days left`;
+  if (today) return `${standing} · ${daysLeftWords(p.daysLeft)}`;
   return `${standing} · ${daysLeftWords(p.daysLeft)} · needs ${show(p.needPerDay)}/day`;
 };
 
@@ -34,15 +38,23 @@ const paceWords = (state, p, show) => {
 export const goalFormatter = (type, currency) => (v) =>
   type === "money" ? formatMoney(Math.round(v * 100), currency) : formatShortDuration(v * 60000);
 
+/** A line of several things, broken between them and not inside one. */
+const whole = (text) => text.split(" · ").map((part, i, all) => (
+  <Fragment key={i}>
+    <span className="whole">{part}{i < all.length - 1 ? " ·" : ""}</span>{i < all.length - 1 ? " " : ""}
+  </Fragment>
+));
+
 /**
  * The bar, the pace mark and the sentence — everything about a goal except
  * what it is called.
  *
  * Split out from `GoalBar` so the project page and the Overview render one
  * pacing visual between them rather than two that could drift apart. The
- * headings differ; the reading does not.
+ * headings differ; the reading does not. `today` is today's part of the goal
+ * and what is left of the day for it (`todayOf`).
  */
-export function GoalMeter({ type, target, value, currency, pace }) {
+export function GoalMeter({ type, target, value, currency, pace, today = null }) {
   const pct = goalProgress(value, target) * 100;
   const show = goalFormatter(type, currency);
   const state = paceState(pace);
@@ -64,12 +76,13 @@ export function GoalMeter({ type, target, value, currency, pace }) {
                 title={`On pace, ${pace.daysDone} ${pace.daysDone === 1 ? "day" : "days"} in, would be ${show(pace.expected)}`} />
         )}
       </div>
-      {state && <div className={`goal-pace ${state}`}>{paceWords(state, pace, show)}</div>}
+      {state && <div className={`goal-pace ${state}`}>{paceWords(state, pace, show, today)}</div>}
+      {today && <div className={`goal-pace today ${todayTone(today)}`}>{whole(todayWords(today, show))}</div>}
     </>
   );
 }
 
-export function GoalBar({ label, type, target, value, currency, pace }) {
+export function GoalBar({ label, type, target, value, currency, pace, today = null }) {
   const show = goalFormatter(type, currency);
   return (
     <div className="goal">
@@ -77,7 +90,7 @@ export function GoalBar({ label, type, target, value, currency, pace }) {
         <span className="eyebrow">{label}</span>
         <span className="goal-val">{show(value)} / {show(target)}</span>
       </div>
-      <GoalMeter type={type} target={target} value={value} currency={currency} pace={pace} />
+      <GoalMeter type={type} target={target} value={value} currency={currency} pace={pace} today={today} />
     </div>
   );
 }

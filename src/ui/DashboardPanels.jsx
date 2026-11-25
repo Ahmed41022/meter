@@ -29,7 +29,7 @@ export function TargetsPanel({ targets, behind, onOpenProject }) {
             <span className="eyebrow">{behind > 0 ? `${behind} behind` : "all on pace"}</span>
           </div>
           <div className="panel">
-            {targets.map(({ id, name, project, currency, goal, value, pacing }) => {
+            {targets.map(({ id, name, project, currency, goal, value, pacing, today }) => {
               const show = goalFormatter(goal.type, currency);
               return (
                 <div className="trg" key={id}>
@@ -42,7 +42,7 @@ export function TargetsPanel({ targets, behind, onOpenProject }) {
                     <span className="goal-val">{show(value)} / {show(goal.target)}</span>
                   </div>
                   <GoalMeter type={goal.type} target={goal.target} value={value}
-                             currency={currency} pace={pacing} />
+                             currency={currency} pace={pacing} today={today} />
                 </div>
               );
             })}

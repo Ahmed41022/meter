@@ -5,10 +5,12 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { RELEASES } from "../src/whatsNew.js";
+import { dayLeft } from "../src/domain/hoursLeft.js";
 import { boot, btn, guardBuiltApp, setValue, settle, toProjects, until } from "./app.integration.helpers.js";
 
 guardBuiltApp();
 
+const M = 60_000;
 const H = 3_600_000;
 const DAY = 24 * H;
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -67,7 +69,7 @@ describe("setting goals", () => {
     expect(text[0]).toMatch(/All worktoday2m \/ 6m/);
     expect(text[0]).toMatch(/4m to go/);
     expect(text[1]).toMatch(/Alignerrthis week1m \/ 10h 00m/);
-    expect(text[1]).toMatch(/needs .*\/day/);
+    expect(text[1]).toMatch(/Today 1m of .*left today/);
     expect(text[2]).toMatch(/Betathis month\$2\.00 \/ \$5\.00/);
   }, 40_000);
 
@@ -206,6 +208,81 @@ describe("setting goals", () => {
     });
     await until(() => /Alpha.*Goal met/.test(dom.window.document.querySelector(".toast")?.textContent ?? ""),
       { what: "the notice", timeout: 12_000 });
+  }, 30_000);
+});
+
+describe("when the day ends", () => {
+  const dayEnds = (d) => [...d.querySelectorAll("#settings-defaults ~ .panel label.field, #settings-defaults + .panel label.field")]
+    .find((l) => l.querySelector(".eyebrow").textContent === "My day ends at").querySelector("select");
+  const hint = (d) => d.querySelector("#settings-defaults + .panel .day-ends").textContent;
+  /** A day end an hour ahead of the clock, whatever the hour is, so the day cannot turn over in a test. */
+  const hourAhead = () => {
+    const t = new Date();
+    const m = (t.getHours() * 60 + t.getMinutes() + 60) % 1440;
+    return m >= 1 && m <= 720 ? m : 0;
+  };
+
+  it("is chosen in Settings, kept as a preference, and said in a hint", async () => {
+    const dom = await boot(seed());
+    const d = dom.window.document;
+    await toProjects(d, "Settings");
+    expect(dayEnds(d).value).toBe("0");
+    expect(hint(d)).toMatch(/midnight to midnight/);
+    const choose = async (minutes) => {
+      setValue(dom.window, dayEnds(d), String(minutes));
+      await settle();
+    };
+    await choose(180);
+    expect(stored(dom).prefs.find((p) => p.id === "dayEndsAt").value).toBe(180);
+    expect(hint(d)).toMatch(/work until .* toward the day before/);
+    expect(dayEnds(d).selectedOptions[0].textContent).toMatch(/next day/);
+    await choose(23 * 60);
+    expect(stored(dom).prefs.find((p) => p.id === "dayEndsAt").value).toBe(1380);
+    expect(hint(d)).toMatch(/how long is left until .*Work after it still counts, until midnight/);
+    await choose(0);
+    expect(stored(dom).prefs.find((p) => p.id === "dayEndsAt").value).toBe(0);
+    expect(hint(d)).toMatch(/midnight to midnight/);
+  }, 30_000);
+
+  it("shows what a goal asks of what is left of the day", async () => {
+    const dom = await boot(seed({ goals: [goal("g1")] }));
+    // Two minutes done of a goal of an hour: the rest, and the hours there are for it.
+    await until(() => /58m to go · .*left today/.test(section(dom.window.document).textContent), { what: "the line under the goal" });
+  }, 30_000);
+
+  it("says once that time is getting short, as a goal crosses to it, and not of one already there", async () => {
+    // Two parallel meters do two hours in one, so what is 1.2 times the time
+    // left fits until one of them stops. No waiting for a clock to get there.
+    const now = Date.now();
+    const endsAt = hourAhead();
+    const left = dayLeft(now, endsAt).leftMs;
+    const meter = (id) => ({
+      id, projectId: "a", taskId: `t${id}`, kind: "billed", rate: 60, currency: "USD", createdAt: now,
+      segments: [{ startedAt: now, endedAt: null, lastTick: now }], closedAt: null, deletedAt: null, parallel: true,
+    });
+    const asks = (id, projectId, share, order) => goal(id, {
+      scope: { kind: "project", projectId }, order, terms: [{ from: 0, target: (share * left) / M, days: [1, 2, 3, 4, 5, 6, 7] }],
+    });
+    const base = seed();
+    const dom = await boot(
+      seed({
+        projects: base.projects.map((p) => (p.id === "a" ? {
+          ...p, parallelTasks: true, tasks: [{ id: "t1", label: "One", createdAt: 1 }, { id: "t2", label: "Two", createdAt: 1 }],
+        } : p)),
+        sessions: [meter("1"), meter("2")], goals: [asks("g1", "a", 1.2, 0), asks("g2", "b", 0.95, 1)],
+        prefs: [{ id: "dayEndsAt", value: endsAt, createdAt: 1, deletedAt: null }],
+      }),
+      null,
+      "window.__notes = []; window.Notification = function (title, o) { window.__notes.push([title, o.body]); };"
+      + " window.Notification.permission = 'granted'; window.Notification.requestPermission = () => {};",
+    );
+    const d = dom.window.document;
+    const notes = () => dom.window.__notes.filter(([title]) => title === "Time is getting short").map(([, body]) => body);
+    expect(notes()).toEqual([]);
+    d.querySelector(".runbar-stop").click();
+    await until(() => notes().length > 0, { what: "the notice" });
+    await settle();
+    expect(notes()).toEqual([expect.stringMatching(/^Alpha: .* to go, .* left today\.$/)]);
   }, 30_000);
 });
 

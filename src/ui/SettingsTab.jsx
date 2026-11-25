@@ -13,13 +13,13 @@ import SyncBackupSection from "./settingsTab/SyncBackupSection.jsx";
  */
 export default function SettingsTab({
   theme, onTheme, overviewPeriod, onOverviewPeriod, sorts, onSort, companies, now, onSaveCompanyPayday,
-  backupProps, sync, currency,
+  backupProps, sync, currency, dayEndsAt, onDayEndsAt,
 }) {
   return (
     <>
       <AppearanceSection theme={theme} onTheme={onTheme} />
       <DefaultsSection overviewPeriod={overviewPeriod} onOverviewPeriod={onOverviewPeriod}
-                       sorts={sorts} onSort={onSort} />
+                       sorts={sorts} onSort={onSort} dayEndsAt={dayEndsAt} onDayEndsAt={onDayEndsAt} />
       <CurrencySection {...currency} now={now} />
       <CompaniesSection companies={companies} now={now} onSave={onSaveCompanyPayday} />
       <SyncBackupSection {...backupProps}>{sync}</SyncBackupSection>

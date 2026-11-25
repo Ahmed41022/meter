@@ -1,4 +1,3 @@
-import { paceGoal } from "../../domain/goals.js";
 import { GoalBar } from "../parts.jsx";
 
 /**
@@ -6,7 +5,7 @@ import { GoalBar } from "../parts.jsx";
  * page, because the closing summary of a finished project reads it too.
  */
 export default function Goals({
-  project, sessionGoal, overallGoal, currency, current, whole, shownMs, overallValue, now,
+  project, sessionGoal, overallGoal, currency, current, whole, shownMs, overallValue, overallAt = null,
 }) {
   return (
     <div className="sec">
@@ -24,7 +23,7 @@ export default function Goals({
             label={overallGoal.period === "lifetime" ? "All time"
                  : overallGoal.period === "week" ? "This week" : "This month"}
             type={overallGoal.type} target={overallGoal.target} currency={project.currency}
-            value={overallValue} pace={paceGoal(overallGoal, overallValue, now)} />
+            value={overallValue} pace={overallAt?.pacing} today={overallAt?.today} />
         )}
       </div>
     </div>

@@ -9,6 +9,16 @@
  */
 export const RELEASES = [
   {
+    version: "1.6.0",
+    at: "2026-11-25",
+    news: [
+      ["Hours left in the day", "Goals say what is left to do against what is left of today, and when you would meet one with the meter going. A weekly or monthly goal has a share of today, and what today can no longer hold moves to the days after."],
+      ["When your day ends", "Set it in Settings, under Defaults. Past midnight is fine: goals then count late work toward the day before."],
+      ["Time getting short", "You are told once when the time left for a goal is nearly all needed."],
+      ["Stopped projects", "Goals leave out projects that are paused or done."],
+    ],
+  },
+  {
     version: "1.5.0",
     at: "2026-11-24",
     news: [

@@ -70,6 +70,9 @@ export const PREFS = {
   // A goal for each day of work. Only read, for the one that became a goal
   // among others: see workGoals.js.
   dayGoal: { default: null, valid: (v) => v === null || isDayGoal(v) },
+  // When the owner's day ends, for goals alone: minutes after midnight, and up
+  // to noon it is the next morning (hoursLeft.js).
+  dayEndsAt: { default: 0, valid: (v) => Number.isInteger(v) && v >= 0 && v < 1440 },
   // Live exchange rates (domain/fx.js, fx/rates.js). Off until asked for, so
   // an app that never turns it on never touches the network.
   fxOn: { default: false, valid: (v) => typeof v === "boolean" },

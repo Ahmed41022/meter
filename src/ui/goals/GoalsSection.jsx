@@ -12,11 +12,11 @@ import { EVERY_WORD, PERIOD_WORD, restWords, resultWords } from "./words.js";
  *  list, not a focus. */
 const SHOWN = 3;
 
-/** What a day's goal says under its bar. A week's and a month's say their
- *  pace, from the bar itself. */
+/** What a day's goal says under its bar where nothing more is asked of today.
+ *  Otherwise the bar says it, and a week's and a month's pace. */
 const dayWords = (at, show) => {
   if (at.met) return at.over > 0 ? `Met · ${show(at.over)} over` : "Met";
-  return at.off ? "Day off" : `${show(at.toGo)} to go`;
+  return at.off ? "Day off" : "";
 };
 
 /** What the figure leaves out or estimates, or "". */
@@ -48,8 +48,8 @@ function Goal({ goal, projects, ctx, results, managing, first, last, actions, on
       </div>
       {!resting && (
         <>
-          <GoalMeter type={goal.type} target={at.target} value={at.value} currency={goal.currency} pace={at.pacing} />
-          {goal.period === "day" && (
+          <GoalMeter type={goal.type} target={at.target} value={at.value} currency={goal.currency} pace={at.pacing} today={at.today} />
+          {goal.period === "day" && (at.met || at.off) && (
             <div className={"goal-pace " + (at.met ? "met" : "even")}>{dayWords(at, show)}</div>
           )}
           {note && <div className="goal-pace">{note}</div>}
@@ -97,7 +97,7 @@ export default function GoalsSection({ goals, projects, ctx: given, actions }) {
   const results = useMemo(
     () => new Map(goals.map((g) => [g.id, goalResults(g, ctx)])),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the minute, not the second
-    [goals, given.source, fxOn, rates, minute],
+    [goals, given.source, given.endsAt, fxOn, rates, minute],
   );
 
   // Paused ones after the rest, and only when they are asked for. One whose

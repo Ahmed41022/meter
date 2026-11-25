@@ -626,6 +626,8 @@ export const CSS = `
 .bar-mark{position:absolute;top:-1px;bottom:-1px;width:2px;transform:translateX(-50%);
   background:var(--ink);opacity:.4;border-radius:2px;}
 .goal-pace{margin-top:9px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+.goal-pace + .goal-pace{margin-top:5px;}
+.goal-pace .whole{display:inline-block;}
 .goal-pace.behind{color:var(--amber);}
 .goal-pace.missed{color:var(--flag);}
 .goal-pace.ahead,.goal-pace.met{color:var(--jade);}

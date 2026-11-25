@@ -2,6 +2,7 @@ import { companyOf, fold, isActive, isOffClock } from "./projects.js";
 import { performanceIn } from "./performance.js";
 import { pace, paceState, periodBoundary, weekdayOf } from "./goals.js";
 import { dayGoalState, isDayGoal } from "./dayGoal.js";
+import { dayLeft, dayTurn, metersOn, recentRate, todayOf } from "./hoursLeft.js";
 import { prefOf } from "./prefs.js";
 
 /**
@@ -83,9 +84,15 @@ export const liveGoals = (state) => all(state)
 
 export const isPausedGoal = (goal) => (goal.pauses ?? []).some((p) => p.to === null);
 
+/** The calendar day an instant is on, as the instant it begins. Terms are dated
+ *  by it, whenever the owner's day turns over, so moving that moves no terms. */
+const calendarDay = (t) => periodBoundary("day", t, 0);
+
 /** The terms in force for a period that ends at `to`. */
-export const termsAt = (goal, to) =>
-  [...goal.terms].reverse().find((t) => t.from < to) ?? goal.terms[0];
+export const termsAt = (goal, to, turn = 0) => {
+  const last = calendarDay(periodBoundary("day", to - 1, 0, turn));
+  return [...goal.terms].reverse().find((t) => calendarDay(t.from) <= last) ?? goal.terms[0];
+};
 
 /* ── changing them ────────────────────────────────────────────────────────── */
 
@@ -98,7 +105,9 @@ const edit = (state, id, fn) => {
   const next = adopt(state);
   return { ...next, goals: next.goals.map((g) => (g.id === id ? fn(g) : g)) };
 };
-const startOfDay = (now) => periodBoundary("day", now, 0);
+/** The day it is for the owner, as its calendar day. */
+const startOfDay = (state, now) =>
+  calendarDay(periodBoundary("day", now, 0, dayTurn(prefOf(state, "dayEndsAt"))));
 
 export const addGoal = (state, fields, now, id) => {
   const goal = readGoal(fields);
@@ -109,7 +118,7 @@ export const addGoal = (state, fields, now, id) => {
   return {
     ...next,
     goals: [...next.goals, {
-      id, ...rest, terms: [{ from: startOfDay(now), target, days }], order, pauses: [], createdAt: now, deletedAt: null,
+      id, ...rest, terms: [{ from: startOfDay(state, now), target, days }], order, pauses: [], createdAt: now, deletedAt: null,
     }],
   };
 };
@@ -121,7 +130,7 @@ export const editGoal = (state, id, fields, now) => {
   if (!goal) return state;
   return edit(state, id, (g) => {
     const { target, days, type, currency = null, period, scope } = goal;
-    const entry = { from: startOfDay(now), target, days };
+    const entry = { from: startOfDay(state, now), target, days };
     const asks = (x) => [x.type, x.currency ?? null, x.period, x.scope];
     if (!same(asks(g), asks(goal))) {
       const next = { ...g, type, period, scope, terms: [entry], pauses: (g.pauses ?? []).filter((p) => p.to === null) };
@@ -146,7 +155,7 @@ export const resumeGoal = (state, id, now) => edit(state, id, (g) => ({
   ...g,
   pauses: (g.pauses ?? [])
     .map((p) => (p.to === null ? { ...p, to: now } : p))
-    .filter((p) => startOfDay(p.from) !== startOfDay(p.to)),
+    .filter((p) => startOfDay(state, p.from) !== startOfDay(state, p.to)),
 }));
 
 /** Moves a goal one place up (-1) or down (1) the list. */
@@ -198,34 +207,55 @@ export const coverWords = (goal, projects) => {
  * it, every session that is not off the clock, so a session whose project has
  * gone is still time that was worked.
  */
-const totalsIn = (goal, ctx, from, to) => {
+const recordsOf = (goal, ctx) => {
   const off = new Set(ctx.projects.filter(isOffClock).map((p) => p.id));
   const mine = goal.scope.kind === "all" ? null : new Set(coveredBy(goal, ctx.projects).map((p) => p.id));
   const counts = (x) => (mine ? mine.has(x.projectId) : !off.has(x.projectId));
-  return performanceIn(
-    ctx.sessions.filter(counts), from, to, ctx.now, ctx.rateOf, ctx.earnings.filter(counts));
+  return { sessions: ctx.sessions.filter(counts), earnings: ctx.earnings.filter(counts) };
 };
 
-const reading = (goal, terms, ctx, from, to) => dayGoalState(
-  { type: goal.type, currency: goal.currency, target: terms.target }, totalsIn(goal, ctx, from, to), ctx);
+const measure = (goal, totals, target, ctx) =>
+  dayGoalState({ type: goal.type, currency: goal.currency, target }, totals, ctx);
+const reading = (goal, terms, ctx, from, to, { sessions, earnings } = recordsOf(goal, ctx)) => measure(
+  goal, performanceIn(sessions, from, to, ctx.now, ctx.rateOf, earnings), terms.target, ctx);
+
+/** What an hour on a money goal's work has been earning, or null: also where
+ *  some of it was in money that could not be counted. */
+const rateFor = (goal, ctx, { sessions, earnings }) => recentRate(sessions, earnings, ctx.now, ctx.rateOf, (t) => {
+  const at = measure(goal, t, 1, ctx);
+  return { value: Object.keys(at.uncounted).length ? 0 : at.value, ms: t.billedMs };
+});
 
 /**
  * Where a goal stands in the period now is in. `ctx` is `{ projects, sessions,
- * earnings, rateOf, now, fxOn, rates }`, live records only.
+ * earnings, rateOf, now, fxOn, rates, endsAt }`, live records only; `endsAt` is
+ * when the owner's day ends (hoursLeft.js).
  *
  * `off` is a daily goal on a day it does not apply to: nothing is asked, and
  * what is done anyway still counts. Weeks and months carry a pace, over the
- * days they apply to.
+ * days they apply to. `today` is today's part of it, against what is left of
+ * the day (`todayOf`), or null on a day off and where there is none.
  */
 export const goalStanding = (goal, ctx) => {
-  const from = periodBoundary(goal.period, ctx.now, 0);
-  const to = periodBoundary(goal.period, ctx.now, 1);
-  const terms = termsAt(goal, to);
-  const at = reading(goal, terms, ctx, from, to);
-  const off = goal.period === "day" && !terms.days.includes(weekdayOf(ctx.now));
-  const pacing = goal.period === "day" ? null
-    : pace({ target: terms.target, from, to, days: terms.days }, at.value, ctx.now);
-  return { ...at, from, to, terms, off, pacing, state: paceState(pacing) };
+  const day = dayLeft(ctx.now, ctx.endsAt);
+  const turn = dayTurn(ctx.endsAt);
+  const daily = goal.period === "day";
+  const from = periodBoundary(goal.period, ctx.now, 0, turn);
+  const to = periodBoundary(goal.period, ctx.now, 1, turn);
+  const terms = termsAt(goal, to, turn);
+  const records = recordsOf(goal, ctx);
+  const at = reading(goal, terms, ctx, from, to, records);
+  const rest = !terms.days.includes(weekdayOf(ctx.now, turn));
+  const pacing = daily ? null : pace({ target: terms.target, from, to, days: terms.days, turn }, at.value, ctx.now);
+  return {
+    ...at, from, to, terms, off: daily && rest, pacing, state: paceState(pacing),
+    today: rest || at.met ? null : todayOf({
+      type: goal.type, target: terms.target, value: at.value,
+      valueToday: daily ? at.value : reading(goal, terms, ctx, day.from, day.to, records).value,
+      pacing, day, meters: metersOn(records.sessions), now: ctx.now,
+      perHour: goal.type === "money" ? rateFor(goal, ctx, records) : null,
+    }),
+  };
 };
 
 /**
@@ -238,15 +268,17 @@ export const goalStanding = (goal, ctx) => {
  */
 export const goalResults = (goal, ctx) => {
   const since = goal.terms[0].from;
+  const turn = dayTurn(ctx.endsAt);
+  const records = recordsOf(goal, ctx);
   const out = [];
   for (let n = -1; n >= -LOOK_BACK[goal.period] && out.length < RESULTS; n -= 1) {
-    const from = periodBoundary(goal.period, ctx.now, n);
-    const to = periodBoundary(goal.period, ctx.now, n + 1);
-    if (from < since) break;
+    const from = periodBoundary(goal.period, ctx.now, n, turn);
+    const to = periodBoundary(goal.period, ctx.now, n + 1, turn);
+    if (calendarDay(from) < since) break;
     if ((goal.pauses ?? []).some((p) => p.from < to && (p.to ?? Infinity) > from)) continue;
-    const terms = termsAt(goal, to);
-    const { met } = reading(goal, terms, ctx, from, to);
-    if (!met && goal.period === "day" && !terms.days.includes(weekdayOf(from))) continue;
+    const terms = termsAt(goal, to, turn);
+    const { met } = reading(goal, terms, ctx, from, to, records);
+    if (!met && goal.period === "day" && !terms.days.includes(weekdayOf(from, turn))) continue;
     out.push({ from, met });
   }
   return out;

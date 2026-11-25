@@ -53,7 +53,8 @@ describe("pacing a target", () => {
     expect(row.textContent).toMatch(/this week/);
     expect(row.querySelector(".goal-val").textContent).toBe("$300.00 / $1,260.00");
     // Whatever day it is, there is a standing and a daily figure to act on.
-    expect(row.querySelector(".goal-pace").textContent).toMatch(/needs \$[\d,.]+\/day/);
+    expect(row.querySelector(".goal-pace.today").textContent)
+      .toMatch(/Today \$[\d,.]+ of \$[\d,.]+ · .*left today|Today’s \$[\d,.]+ done/);
     expect(row.querySelector(".goal-pace").textContent).toMatch(/left|behind|ahead|On pace/);
   }, 25_000);
 

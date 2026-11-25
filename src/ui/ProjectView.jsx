@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { elapsedMs, isRunning } from "../domain/time.js";
 import { acceptsTime, isDone, isOffClock } from "../domain/projects.js";
 import { wordsFor } from "./words.js";
-import { periodBoundary } from "../domain/goals.js";
+import { projectGoalStanding } from "../domain/projectGoal.js";
 import { goalValue } from "../domain/performance.js";
 import { isCancelled, isPerTask, isPieceOnly } from "../domain/earnings.js";
 import { isIdle, sessionCents, utilisation } from "../domain/sessions.js";
@@ -20,7 +20,7 @@ import Objectives from "./Objectives.jsx";
 import Earnings from "./Earnings.jsx";
 
 export default function ProjectView({
-  project, sessions, idleSessions, current, now,
+  project, sessions, idleSessions, current, now, endsAt = 0,
   onStart, onPause, onResume, onStop, onSettle, onDeleteSession, onPatch, onDeleteProject,
   onSetTerms, onSetOwnLimit, onSetOwnMinimum,
   onAssign, onSaveTask, onDeleteTask, onCorrect, onRevertCorrection,
@@ -135,16 +135,13 @@ export default function ProjectView({
    * week on the Overview, which derives everything by overlap. Lifetime has no
    * boundaries, so its window is everything.
    *
-   * Asked of `goalValue`, the same question the Overview's Targets ask, so a
+   * Asked of `projectGoalStanding`, which the Overview's Targets ask too, so a
    * money goal counts what the headline counts: settled money, the clock's and
    * the money no clock measured alike.
    */
-  const goalWindow = overallGoal && overallGoal.period !== "lifetime"
-    ? { from: periodBoundary(overallGoal.period, now, 0), to: periodBoundary(overallGoal.period, now, 1) }
-    : { from: 0, to: Infinity };
-  const overallValue = overallGoal
-    ? goalValue(overallGoal, project, sessions, earnings, goalWindow.from, goalWindow.to, now, price)
-    : 0;
+  const overallAt = projectGoalStanding(project, overallGoal, { sessions, earnings, now, rateOf: price, endsAt });
+  const overallValue = overallAt?.value
+    ?? (overallGoal ? goalValue(overallGoal, project, sessions, earnings, 0, Infinity, now, price) : 0);
 
   const rawTaskRows = taskTotals(project, [...sessions, ...idleSessions], now, price)
     // What each still has to come to, where it has a minimum.
@@ -197,7 +194,7 @@ export default function ProjectView({
         <Goals
           project={project} sessionGoal={sessionGoal} overallGoal={overallGoal}
           currency={currency} current={current} whole={whole} shownMs={shownMs}
-          overallValue={overallValue} now={now}
+          overallValue={overallValue} overallAt={overallAt}
         />
       )}
 

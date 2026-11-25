@@ -19,15 +19,21 @@
  *
  * Weeks begin Monday, and years on 1 January. Lifetime has no boundary, so it
  * stays at the epoch.
+ *
+ * `turn` is how many minutes after midnight a day begins, which is none of them
+ * everywhere but in goals (hoursLeft.js): before it, it is still the day before.
  */
-export const periodBoundary = (period, now, n = 0) => {
-  const d = new Date(now);
-  if (period === "year") return new Date(d.getFullYear() + n, 0, 1).getTime();
-  if (period === "month") return new Date(d.getFullYear(), d.getMonth() + n, 1).getTime();
+export const periodBoundary = (period, now, n = 0, turn = 0) => {
+  let d = new Date(now);
+  if (turn > 0 && now < new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, turn).getTime()) {
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+  }
+  if (period === "year") return new Date(d.getFullYear() + n, 0, 1, 0, turn).getTime();
+  if (period === "month") return new Date(d.getFullYear(), d.getMonth() + n, 1, 0, turn).getTime();
   if (period === "week" || period === "day") {
     const fromMonday = period === "week" ? (d.getDay() + 6) % 7 : 0;
     const step = period === "week" ? 7 : 1;
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - fromMonday + n * step).getTime();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - fromMonday + n * step, 0, turn).getTime();
   }
   return 0; // lifetime
 };
@@ -61,10 +67,10 @@ export const normaliseGoal = (goal) => {
  * calendar boundaries is also what makes the ends tile the window exactly —
  * the last one is clamped to `to`, so nothing spills past the period.
  */
-export const dayEnds = (from, to) => {
+export const dayEnds = (from, to, turn = 0) => {
   const ends = [];
   for (let at = from; at < to; ) {
-    const next = Math.min(periodBoundary("day", at, 1), to);
+    const next = Math.min(periodBoundary("day", at, 1, turn), to);
     ends.push(next);
     at = next;
   }
@@ -72,7 +78,8 @@ export const dayEnds = (from, to) => {
 };
 
 /** The weekday of an instant, Monday 1 to Sunday 7, on this device's calendar. */
-export const weekdayOf = (t) => ((new Date(t).getDay() + 6) % 7) + 1;
+export const weekdayOf = (t, turn = 0) =>
+  ((new Date(periodBoundary("day", t, 0, turn)).getDay() + 6) % 7) + 1;
 
 /** Below this share of a day's worth, being off the line is noise, not news.
  *  "$2 behind" on a $1,260 week is a true statement that tells you nothing. */
@@ -105,11 +112,11 @@ const EVEN_ENOUGH = 0.02;
  * Null when there is nothing to pace — no target, or a lifetime goal, which has
  * no end to be measured against.
  */
-export const pace = ({ target, from, to, days = null }, value, now) => {
+export const pace = ({ target, from, to, days = null, turn = 0 }, value, now) => {
   if (!(target > 0) || !(to > from)) return null;
   // A day is named by where it starts, and one ends where the next begins.
-  const ends = dayEnds(from, to)
-    .filter((end) => !days || days.includes(weekdayOf(end - 1)));
+  const ends = dayEnds(from, to, turn)
+    .filter((end) => !days || days.includes(weekdayOf(end - 1, turn)));
   if (ends.length === 0) return null;
   const totalDays = ends.length;
   const daysDone = ends.filter((end) => end <= now).length;
